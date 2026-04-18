@@ -7,7 +7,12 @@ import { type NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const USER_AGENTS = [
+  'VLC/3.0.21 LibVLC/3.0.21',
+  'IPTVSmarters',
+  'Lavf/60.16.100',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+];
 
 interface Episode {
   id: string;
@@ -74,32 +79,31 @@ export async function GET(req: NextRequest) {
       errors.push('scanner: not configured');
     }
 
-    // Strategy 2: Direct fetch with HTTPS upgrade
-    if (!data && apiUrlHttps) {
-      try {
-        const res = await fetch(apiUrlHttps, {
-          signal: AbortSignal.timeout(10000),
-          headers: { 'User-Agent': UA },
-        });
-        if (res.ok) data = await res.json() as Record<string, unknown>;
-        else errors.push(`https: HTTP ${res.status}`);
-      } catch (e) { errors.push(`https: ${e instanceof Error ? e.message : String(e)}`); }
-    }
-
-    // Strategy 3: Direct fetch with original URL
+    // Strategy 2: Try multiple User-Agents (IPTV servers block browser UAs)
     if (!data) {
-      try {
-        const res = await fetch(apiUrl, {
-          signal: AbortSignal.timeout(15000),
-          redirect: 'follow',
-          headers: { 'User-Agent': UA },
-        });
-        if (res.ok) {
-          data = await res.json() as Record<string, unknown>;
-        } else {
-          errors.push(`direct: HTTP ${res.status}`);
+      for (const ua of USER_AGENTS) {
+        const uaLabel = ua.split('/')[0].toLowerCase();
+        // Try HTTPS upgrade
+        if (apiUrlHttps) {
+          try {
+            const res = await fetch(apiUrlHttps, {
+              signal: AbortSignal.timeout(8000),
+              headers: { 'User-Agent': ua },
+            });
+            if (res.ok) { data = await res.json() as Record<string, unknown>; break; }
+          } catch { /* next */ }
         }
-      } catch (e) { errors.push(`direct: ${e instanceof Error ? e.message : String(e)}`); }
+        // Try original URL
+        try {
+          const res = await fetch(apiUrl, {
+            signal: AbortSignal.timeout(10000),
+            redirect: 'follow',
+            headers: { 'User-Agent': ua },
+          });
+          if (res.ok) { data = await res.json() as Record<string, unknown>; break; }
+          else errors.push(`${uaLabel}: HTTP ${res.status}`);
+        } catch (e) { errors.push(`${uaLabel}: ${e instanceof Error ? e.message : String(e)}`); }
+      }
     }
 
     if (!data) {

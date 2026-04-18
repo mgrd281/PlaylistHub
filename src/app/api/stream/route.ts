@@ -15,16 +15,26 @@ function normalizeUrl(value: string): string {
   return value.replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
 }
 
-const HEADERS: Record<string, string> = {
-  'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  Accept: '*/*',
-  'Accept-Language': 'en-US,en;q=0.9',
-};
+/**
+ * User-Agents to try. IPTV servers commonly block browser UAs but allow
+ * media player UAs (VLC, Kodi, IPTV Smarters, etc.).
+ */
+const USER_AGENTS = [
+  'VLC/3.0.21 LibVLC/3.0.21',
+  'IPTVSmarters',
+  'Lavf/60.16.100',                        // FFmpeg/Kodi
+  'stagefright/1.2 (Linux;Android 14)',     // Android native player
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+];
 
-/** Fetch with manual redirect handling (needed for bare-% URLs in IPTV) */
+function makeHeaders(ua: string): Record<string, string> {
+  return { 'User-Agent': ua, Accept: '*/*', Connection: 'keep-alive' };
+}
+
+/** Fetch with manual redirect handling and specific UA */
 async function fetchWithRedirects(
   inputUrl: string,
+  headers: Record<string, string>,
   timeoutMs = 25000,
   maxRedirects = 8,
 ): Promise<{
@@ -38,7 +48,7 @@ async function fetchWithRedirects(
       const res = await fetch(currentUrl, {
         signal: AbortSignal.timeout(timeoutMs),
         redirect: 'manual',
-        headers: HEADERS,
+        headers,
       });
       if (res.status >= 300 && res.status < 400) {
         const location = res.headers.get('location');
@@ -113,24 +123,27 @@ export async function GET(req: NextRequest) {
     upstream = await fetchViaScanner(targetUrl);
     if (!upstream) errors.push('scanner: unavailable');
 
-    // Strategy 2: HTTPS upgrade
-    if (!upstream && targetUrl.startsWith('http://')) {
-      const httpsUrl = targetUrl.replace('http://', 'https://');
-      const result = await fetchWithRedirects(httpsUrl, 12000);
-      if (result.response) {
-        upstream = result.response;
-      } else {
-        errors.push('https: ' + result.error);
-      }
-    }
-
-    // Strategy 3: Direct fetch with original URL
+    // Strategy 2: Try each User-Agent (IPTV servers often block browser UAs)
     if (!upstream) {
-      const result = await fetchWithRedirects(targetUrl, 25000);
-      if (result.response) {
-        upstream = result.response;
-      } else {
-        errors.push('direct: ' + result.error);
+      for (const ua of USER_AGENTS) {
+        const uaLabel = ua.split('/')[0].toLowerCase();
+        // Try HTTPS upgrade first
+        if (targetUrl.startsWith('http://')) {
+          const httpsUrl = targetUrl.replace('http://', 'https://');
+          const result = await fetchWithRedirects(httpsUrl, makeHeaders(ua), 10000);
+          if (result.response) {
+            upstream = result.response;
+            break;
+          }
+        }
+        // Try original URL
+        const result = await fetchWithRedirects(targetUrl, makeHeaders(ua), 15000);
+        if (result.response) {
+          upstream = result.response;
+          break;
+        } else {
+          errors.push(`${uaLabel}: ${result.error}`);
+        }
       }
     }
 
