@@ -210,15 +210,7 @@ function QuickStats({ playlists }: { playlists: Playlist[] }) {
 
   if (ch + mv + sr === 0) return null;
 
-  function navTo(type: string) {
-    const pl = playlists.find((p) => {
-      if (type === 'channel') return p.channels_count > 0;
-      if (type === 'movie') return p.movies_count > 0;
-      return p.series_count > 0;
-    });
-    if (pl) router.push(`/playlists/${pl.id}`);
-    else router.push('/playlists');
-  }
+  const TYPE_ROUTES: Record<string, string> = { channel: '/live-tv', movie: '/movies', series: '/series' };
 
   const items = [
     { label: 'Channels', count: ch, icon: Tv, type: 'channel' },
@@ -232,7 +224,7 @@ function QuickStats({ playlists }: { playlists: Playlist[] }) {
         <button
           key={item.type}
           type="button"
-          onClick={() => navTo(item.type)}
+          onClick={() => router.push(TYPE_ROUTES[item.type] || '/playlists')}
           className="group flex items-center gap-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] px-4 py-2.5 transition-colors duration-150"
         >
           <item.icon className="h-4 w-4 text-white/30" />
@@ -557,9 +549,9 @@ export function MediaHome({ playlists }: { playlists: Playlist[] }) {
 
   function handlePlay(item: PlaylistItem) { setPlayerItem(item); }
 
+  const BROWSE_ROUTES: Record<string, string> = { channel: '/live-tv', movie: '/movies', series: '/series' };
   function navTo(type: string) {
-    const pl = playlists.find((p) => type === 'channel' ? p.channels_count > 0 : type === 'movie' ? p.movies_count > 0 : p.series_count > 0);
-    if (pl) router.push(`/playlists/${pl.id}`);
+    router.push(BROWSE_ROUTES[type] || '/playlists');
   }
 
   return (

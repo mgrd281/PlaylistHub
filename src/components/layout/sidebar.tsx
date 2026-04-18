@@ -41,9 +41,9 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: 'BROWSE',
     items: [
-      { name: 'Live TV', href: '/playlists', icon: Tv, shortcut: true },
-      { name: 'Movies', href: '/playlists', icon: Film, shortcut: true },
-      { name: 'Series', href: '/playlists', icon: Clapperboard, shortcut: true },
+      { name: 'Live TV', href: '/live-tv', icon: Tv },
+      { name: 'Movies', href: '/movies', icon: Film },
+      { name: 'Series', href: '/series', icon: Clapperboard },
       { name: 'Categories', href: '/playlists', icon: LayoutGrid, shortcut: true },
     ],
   },

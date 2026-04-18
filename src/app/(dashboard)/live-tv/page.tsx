@@ -1,0 +1,11 @@
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import { ContentBrowser } from '@/components/browse/content-browser';
+
+export default async function LiveTVPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  return <ContentBrowser contentType="channel" />;
+}
