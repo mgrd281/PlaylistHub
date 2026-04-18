@@ -84,6 +84,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing url param' }, { status: 400 });
   }
 
+  // "resolve" mode: follow the HTTPS redirect chain, return redirect URL to client
+  const mode = req.nextUrl.searchParams.get('mode');
+
   let targetUrl: string;
   try {
     targetUrl = decodeURIComponent(rawUrl);
@@ -91,6 +94,65 @@ export async function GET(req: NextRequest) {
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('bad');
   } catch {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+  }
+
+  // ── Resolve mode: follow redirects server-side, return final URL to client ──
+  // This lets the browser connect directly using the user's residential IP.
+  if (mode === 'resolve') {
+    try {
+      const httpsUrl = targetUrl.replace(/^http:\/\//, 'https://');
+      const res = await fetch(httpsUrl, {
+        redirect: 'manual',
+        headers: VLC_HEADERS,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        if (location) {
+          return NextResponse.json({ redirectUrl: location, original: httpsUrl });
+        }
+      }
+      // No redirect — return the HTTPS URL itself
+      return NextResponse.json({ redirectUrl: httpsUrl, original: httpsUrl });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 502 });
+    }
+  }
+
+  // ── Redirect mode: 302 redirect to let browser fetch directly (bypasses datacenter IP blocks) ──
+  if (mode === 'redirect') {
+    try {
+      const httpsUrl = targetUrl.replace(/^http:\/\//, 'https://');
+      const res = await fetch(httpsUrl, {
+        redirect: 'manual',
+        headers: VLC_HEADERS,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        if (location) {
+          return new NextResponse(null, {
+            status: 302,
+            headers: {
+              Location: location,
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'no-store',
+            },
+          });
+        }
+      }
+      // No redirect — redirect to HTTPS URL directly
+      return new NextResponse(null, {
+        status: 302,
+        headers: {
+          Location: httpsUrl,
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store',
+        },
+      });
+    } catch {
+      // Fall through to proxy mode
+    }
   }
 
   const errors: string[] = [];

@@ -83,6 +83,11 @@ function proxyUrl(streamUrl: string): string {
   return `/api/stream?url=${encodeURIComponent(streamUrl)}`;
 }
 
+/** Proxy URL that 302-redirects to the real stream (browser follows with its own residential IP) */
+function redirectUrl(streamUrl: string): string {
+  return `/api/stream?mode=redirect&url=${encodeURIComponent(streamUrl)}`;
+}
+
 /** Convert HTTP URL to HTTPS for direct browser playback (avoids mixed content + uses residential IP) */
 function toHttps(url: string): string {
   return url.replace(/^http:\/\//, 'https://');
@@ -304,11 +309,19 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
       // ── HTTPS direct URL (browser uses user's residential IP — bypasses datacenter IP blocks) ──
       const directHttps = toHttps(url);
       const directHlsHttps = toHttps(url).replace(/\.\w+$/, '.m3u8');
+      // Redirect mode: Vercel resolves HTTPS→HTTP redirect, browser follows with residential IP
+      const redirected = redirectUrl(url);
+      const redirectedHls = redirectUrl(url.replace(/\.\w+$/, '.m3u8'));
 
       if (isHls) {
-        // Safari native HLS — try direct HTTPS first, then proxy
+        // Safari native HLS — try redirect (residential IP) first, then direct HTTPS, then proxy
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          // Try direct HTTPS first (user's IP, no proxy needed)
+          if (await tryVideoUrl(video, redirectedHls, 10000)) {
+            if (saved > 10) setResumeOffer(saved);
+            try { await video.play(); } catch { /* user presses play */ }
+            setLoading(false);
+            return;
+          }
           if (await tryVideoUrl(video, directHlsHttps, 8000)) {
             if (saved > 10) setResumeOffer(saved);
             try { await video.play(); } catch { /* user presses play */ }
@@ -327,8 +340,8 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         // Chrome/Firefox — use hls.js
         const Hls = (await import('hls.js')).default;
         if (Hls.isSupported()) {
-          // Try direct HTTPS first (user's residential IP)
-          const hlsSources = [directHlsHttps, proxied];
+          // Try: redirect HLS (residential IP) → direct HTTPS → proxy
+          const hlsSources = [redirectedHls, directHlsHttps, proxied];
           let sourceIndex = 0;
 
           function loadHlsSource(hls: import('hls.js').default, src: string) {
@@ -419,7 +432,15 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
       }
 
       // ── VOD/MP4 (movies, series episodes) ──
-      // 1. Direct HTTPS (user's residential IP — bypasses datacenter blocks)
+      // 1. Redirect mode (Vercel resolves redirect, browser fetches with residential IP)
+      if (await tryVideoUrl(video, redirected, 12000)) {
+        if (saved > 10) setResumeOffer(saved);
+        try { await video.play(); } catch { /* user presses play */ }
+        setLoading(false);
+        return;
+      }
+
+      // 2. Direct HTTPS (user's residential IP — bypasses datacenter blocks)
       if (await tryVideoUrl(video, directHttps, 10000)) {
         if (saved > 10) setResumeOffer(saved);
         try { await video.play(); } catch { /* user presses play */ }
@@ -427,7 +448,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         return;
       }
 
-      // 2. Proxy (for servers that only work via proxy)
+      // 3. Proxy (for servers that only work via proxy)
       if (await tryVideoUrl(video, proxied, 15000)) {
         if (saved > 10) setResumeOffer(saved);
         try { await video.play(); } catch { /* user presses play */ }

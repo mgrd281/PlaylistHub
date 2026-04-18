@@ -58,20 +58,51 @@ export default {
     const decodedUrl = decodeURIComponent(targetUrl);
 
     try {
-      // Fetch the IPTV stream with VLC headers
-      const upstream = await fetch(decodedUrl, {
-        headers: VLC_HEADERS,
-        redirect: 'follow',
-        cf: {
-          // Cloudflare-specific: don't cache, pass through
-          cacheTtl: 0,
-          cacheEverything: false,
-        },
-      });
+      // Fetch the IPTV stream — handle redirects manually to deal with blocked IPs
+      let finalUrl = decodedUrl;
+      let upstream = null;
+      let redirectCount = 0;
+      const MAX_REDIRECTS = 5;
 
-      if (!upstream.ok && upstream.status !== 206) {
+      while (redirectCount < MAX_REDIRECTS) {
+        const res = await fetch(finalUrl, {
+          headers: VLC_HEADERS,
+          redirect: 'manual', // Don't auto-follow — we handle redirects ourselves
+          cf: { cacheTtl: 0, cacheEverything: false },
+        });
+
+        if (res.status >= 300 && res.status < 400) {
+          const location = res.headers.get('location');
+          if (!location) break;
+          // Resolve relative redirects
+          finalUrl = location.startsWith('http') ? location : new URL(location, finalUrl).href;
+          redirectCount++;
+          continue;
+        }
+
+        upstream = res;
+        break;
+      }
+
+      if (!upstream || (!upstream.ok && upstream.status !== 206)) {
+        // If redirect chain failed (e.g., 403 on IP), try connecting through Cloudflare's own fetch 
+        // which follows redirects in its network (may work if the domain is behind CF)
+        try {
+          const fallback = await fetch(decodedUrl, {
+            headers: VLC_HEADERS,
+            redirect: 'follow',
+            cf: { cacheTtl: 0, cacheEverything: false },
+          });
+          if (fallback.ok || fallback.status === 206) {
+            upstream = fallback;
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!upstream || (!upstream.ok && upstream.status !== 206)) {
+        const status = upstream ? upstream.status : 0;
         return jsonResponse(
-          { error: `Upstream returned ${upstream.status}` },
+          { error: `Upstream returned ${status}`, finalUrl, redirects: redirectCount },
           502,
           request,
         );
