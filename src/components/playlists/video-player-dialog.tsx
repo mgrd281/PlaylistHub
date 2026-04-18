@@ -237,6 +237,10 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const [viewMode, setViewMode] = useState<ViewMode>('normal');
   const [showSidePanel, setShowSidePanel] = useState(true);
 
+  /* ── Playback lifecycle guards ── */
+  const [mainVideoLoaded, setMainVideoLoaded] = useState(false);
+  const initInProgressRef = useRef(false);
+
   /* ── Seek preview thumbnails ── */
   const thumbnailCacheRef = useRef<Map<number, string>>(new Map());
   const thumbCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -354,8 +358,9 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   }, [isVod]);
 
   /* ── Thumbnail preview: hidden seekable video for real frame capture ── */
+  // IMPORTANT: Defer until main video is loaded to avoid competing connections.
   useEffect(() => {
-    if (!item) return;
+    if (!item || !mainVideoLoaded) return;
     const THUMB_W = 192;
     const THUMB_H = 108;
     const THUMB_BUCKET = 2;
@@ -478,7 +483,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       thumbSeekingRef.current = false;
       thumbLastSeekRef.current = null;
     };
-  }, [item, activeEpisode]);
+  }, [item, activeEpisode, mainVideoLoaded]);
 
   // Also capture from main video during playback (for HLS streams)
   useEffect(() => {
@@ -633,8 +638,8 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     setCurrentTime(0);
     setDuration(0);
     setBuffered(0);
-    // Don't reset speed on channel switch — preserve user's choice
-    // setSpeed(1) only on initial mount is handled by useState default
+    setMainVideoLoaded(false);
+    initInProgressRef.current = true;
 
     const video = videoRef.current;
     if (!video) return;
@@ -648,14 +653,122 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       url.includes('/hls/') ||
       item.content_type === 'channel';
 
+    // Detect Xtream VOD URLs — these support HLS conversion (.m3u8)
+    const isXtreamVod = !isHls && /\/(movie|series)\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url);
+
+    /** Attach hls.js to a video element and wait for manifest or fatal error. */
+    async function attachHls(
+      vid: HTMLVideoElement,
+      source: string,
+      opts: { live: boolean; timeoutMs?: number },
+    ): Promise<boolean> {
+      const Hls = (await getHlsModule()).default;
+      if (!Hls.isSupported()) return false;
+
+      return new Promise<boolean>((resolve) => {
+        let settled = false;
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: opts.live,
+          startLevel: opts.live ? 0 : -1,
+          maxBufferLength: opts.live ? 4 : 60,
+          maxMaxBufferLength: opts.live ? 15 : 240,
+          backBufferLength: opts.live ? 0 : 60,
+          liveSyncDurationCount: 2,
+          liveMaxLatencyDurationCount: 4,
+          liveDurationInfinity: opts.live,
+          fragLoadingTimeOut: 10000,
+          fragLoadingMaxRetry: 3,
+          fragLoadingRetryDelay: 500,
+          levelLoadingTimeOut: 8000,
+          manifestLoadingTimeOut: 8000,
+          manifestLoadingMaxRetry: 2,
+          manifestLoadingRetryDelay: 500,
+          startFragPrefetch: true,
+          testBandwidth: !opts.live,
+          capLevelToPlayerSize: false,
+          maxBufferHole: 1.0,
+          nudgeMaxRetry: 5,
+          abrEwmaDefaultEstimate: 5000000,
+          progressive: true,
+          highBufferWatchdogPeriod: 2,
+        });
+
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          hls.destroy();
+          resolve(false);
+        }, opts.timeoutMs ?? 12000);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, async (_: unknown, data: { levels: { height: number; width: number; bitrate: number }[] }) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+
+          hlsRef.current = hls;
+          setLoading(false);
+          setMainVideoLoaded(true);
+          initInProgressRef.current = false;
+
+          if (data.levels && data.levels.length > 1) {
+            const q = data.levels.map((lvl, i) => ({
+              height: lvl.height,
+              label: lvl.height >= 4320 ? '8K' :
+                     lvl.height >= 2160 ? '4K' :
+                     lvl.height >= 1440 ? '1440p' :
+                     lvl.height >= 1080 ? '1080p' :
+                     lvl.height >= 720 ? '720p' :
+                     lvl.height >= 480 ? '480p' :
+                     lvl.height >= 360 ? '360p' : `${lvl.height}p`,
+              index: i,
+            })).sort((a, b) => b.height - a.height);
+            setQualities(q);
+            if (opts.live) {
+              hls.currentLevel = -1;
+              setCurrentQuality(-1);
+            } else {
+              hls.currentLevel = q[0].index;
+              setCurrentQuality(q[0].index);
+            }
+          }
+          try { await vid.play(); } catch { /* user presses play */ }
+          resolve(true);
+        });
+
+        let mediaErrorRecoveries = 0;
+        let networkErrorRecoveries = 0;
+        hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; type: string; details: string }) => {
+          if (data.fatal) {
+            if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
+              mediaErrorRecoveries++;
+              hls.recoverMediaError();
+            } else if (data.type === 'networkError' && networkErrorRecoveries < 3) {
+              networkErrorRecoveries++;
+              setTimeout(() => { hls.startLoad(); }, 1000 * networkErrorRecoveries);
+            } else {
+              if (!settled) { settled = true; clearTimeout(timer); hls.destroy(); resolve(false); }
+            }
+          }
+          if (!data.fatal && data.details === 'bufferStalledError' && vid) {
+            const ct = vid.currentTime;
+            if (ct > 0) vid.currentTime = ct + 0.1;
+          }
+        });
+
+        hls.loadSource(source);
+        hls.attachMedia(vid);
+      });
+    }
+
     async function initPlayer() {
       if (!video) return;
       video.playbackRate = 1;
 
-      // All traffic goes through /api/stream → Scanner Service (non-blocked IP + VLC UA)
       const proxied = proxyUrl(url);
       const proxiedHls = proxyUrl(url.replace(/\.\w+$/, '.m3u8'));
 
+      // ── HLS streams (live channels, .m3u8 URLs) ──
       if (isHls) {
         // Safari native HLS
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -663,121 +776,47 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           video.load();
           try { await video.play(); } catch { /* user presses play */ }
           setLoading(false);
+          setMainVideoLoaded(true);
+          initInProgressRef.current = false;
           return;
         }
-
         // Chrome/Firefox — use hls.js
-        const Hls = (await getHlsModule()).default;
-        if (Hls.isSupported()) {
-          const hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: isLive,
-            // Fast-start: begin with lowest quality, buffer just enough to play
-            startLevel: isLive ? 0 : -1,
-            maxBufferLength: isLive ? 4 : 60,
-            maxMaxBufferLength: isLive ? 15 : 240,
-            backBufferLength: isLive ? 0 : 60,
-            liveSyncDurationCount: 2,
-            liveMaxLatencyDurationCount: 4,
-            liveDurationInfinity: isLive,
-            // Aggressive timeouts — fail fast, let parallel proxy retry
-            fragLoadingTimeOut: 8000,
-            fragLoadingMaxRetry: 3,
-            fragLoadingRetryDelay: 500,
-            levelLoadingTimeOut: 6000,
-            manifestLoadingTimeOut: 6000,
-            manifestLoadingMaxRetry: 2,
-            manifestLoadingRetryDelay: 500,
-            startFragPrefetch: true,
-            testBandwidth: !isLive,
-            capLevelToPlayerSize: false,
-            maxBufferHole: 1.0,
-            nudgeMaxRetry: 5,
-            abrEwmaDefaultEstimate: 5000000,
-            progressive: true,
-            highBufferWatchdogPeriod: 2,
-          });
-          hlsRef.current = hls;
-          hls.loadSource(proxied);
-          hls.attachMedia(video);
-
-          hls.on(Hls.Events.MANIFEST_PARSED, async (_: unknown, data: { levels: { height: number; width: number; bitrate: number }[] }) => {
-            setLoading(false);
-            if (data.levels && data.levels.length > 1) {
-              const q = data.levels.map((lvl, i) => ({
-                height: lvl.height,
-                label: lvl.height >= 4320 ? '8K' :
-                       lvl.height >= 2160 ? '4K' :
-                       lvl.height >= 1440 ? '1440p' :
-                       lvl.height >= 1080 ? '1080p' :
-                       lvl.height >= 720 ? '720p' :
-                       lvl.height >= 480 ? '480p' :
-                       lvl.height >= 360 ? '360p' : `${lvl.height}p`,
-                index: i,
-              })).sort((a, b) => b.height - a.height);
-              setQualities(q);
-              if (isLive) {
-                // Live: let ABR ramp up from low startLevel — don't force highest
-                hls.currentLevel = -1;
-                setCurrentQuality(-1);
-              } else {
-                hls.currentLevel = q[0].index;
-                setCurrentQuality(q[0].index);
-              }
-            }
-            try { await video.play(); } catch { /* user presses play */ }
-          });
-
-          let mediaErrorRecoveries = 0;
-          let networkErrorRecoveries = 0;
-          hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; type: string; details: string }) => {
-            if (data.fatal) {
-              if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
-                mediaErrorRecoveries++;
-                hls.recoverMediaError();
-              } else if (data.type === 'networkError' && networkErrorRecoveries < 3) {
-                networkErrorRecoveries++;
-                setTimeout(() => {
-                  hls.startLoad();
-                }, 1000 * networkErrorRecoveries);
-              } else {
-                setError('تعذّر تشغيل البث.');
-                setLoading(false);
-              }
-            }
-            // Non-fatal buffer stall — try to nudge playback
-            if (!data.fatal && data.details === 'bufferStalledError' && video) {
-              const ct = video.currentTime;
-              if (ct > 0) video.currentTime = ct + 0.1;
-            }
-          });
-          return;
-        }
-      }
-
-      // ── VOD/MP4 (movies, series episodes) — proxy through scanner ──
-      if (await tryVideoUrl(video, proxied, 20000)) {
-        try { await video.play(); } catch { /* user presses play */ }
+        if (await attachHls(video, proxied, { live: isLive, timeoutMs: 15000 })) return;
+        setError('تعذّر تشغيل البث.');
         setLoading(false);
+        initInProgressRef.current = false;
         return;
       }
 
-      // Try HLS conversion via proxy
-      if (/\/(movie|series)\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url) && !url.endsWith('.m3u8')) {
-        if (await tryVideoUrl(video, proxiedHls, 15000)) {
-          try { await video.play(); } catch { /* user presses play */ }
-          setLoading(false);
-          return;
-        }
+      // ── Xtream VOD: try HLS with hls.js first (faster + works on all browsers) ──
+      if (isXtreamVod) {
+        if (await attachHls(video, proxiedHls, { live: false, timeoutMs: 12000 })) return;
+        // HLS failed — fall through to direct MP4
+      }
+
+      // ── VOD/MP4 — direct proxy ──
+      if (await tryVideoUrl(video, proxied, 15000)) {
+        try { await video.play(); } catch { /* user presses play */ }
+        setLoading(false);
+        setMainVideoLoaded(true);
+        initInProgressRef.current = false;
+        return;
+      }
+
+      // ── Non-Xtream VOD: try HLS conversion as last resort ──
+      if (!isXtreamVod && /\.(mp4|mkv|avi|ts)(\?|$)/i.test(url)) {
+        if (await attachHls(video, proxiedHls, { live: false, timeoutMs: 10000 })) return;
       }
 
       setError('تعذّر تشغيل الفيديو. جرّب فتحه في VLC.');
       setLoading(false);
+      initInProgressRef.current = false;
     }
 
     void initPlayer();
 
     return () => {
+      initInProgressRef.current = false;
       if (video && video.currentTime > 5 && video.duration > 60 && !isLive) {
         savePosition(url, video.currentTime);
       }
@@ -810,7 +849,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       if (item && !isLive) clearPosition(resolveStreamUrl(item, activeEpisode?.streamUrl));
     };
     const onWaiting = () => setLoading(true);
-    const onCanPlay = () => setLoading(false);
+    const onCanPlay = () => { setLoading(false); setMainVideoLoaded(true); };
 
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
@@ -1208,7 +1247,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                       autoPlay
                       preload="auto"
                       onError={() => {
-                        if (hlsRef.current) return;
+                        if (hlsRef.current || initInProgressRef.current) return;
                         setError('Video could not be played. Try opening in VLC.');
                         setLoading(false);
                       }}
@@ -1935,7 +1974,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
             autoPlay
             preload="auto"
             onError={() => {
-              if (hlsRef.current) return;
+              if (hlsRef.current || initInProgressRef.current) return;
               setError('Video could not be played. Try opening in VLC.');
               setLoading(false);
             }}

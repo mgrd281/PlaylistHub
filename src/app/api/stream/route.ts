@@ -31,20 +31,22 @@ async function fetchViaScannerUrl(
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (rangeHeader) headers['Range'] = rangeHeader;
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000), headers });
+    const res = await fetch(url, { signal: AbortSignal.timeout(12000), headers });
     if (res.ok || res.status === 206) return res;
   } catch { /* timeout or network error */ }
   return null;
 }
 
 /** Try fetching through CF Worker */
-async function fetchViaCfWorker(targetUrl: string): Promise<Response | null> {
+async function fetchViaCfWorker(targetUrl: string, rangeHeader?: string | null): Promise<Response | null> {
   const proxyUrl = process.env.STREAM_PROXY_URL?.trim().replace(/\/$/, '');
   if (!proxyUrl) return null;
   try {
     const separator = proxyUrl.includes('?') ? '&' : '?';
     const url = `${proxyUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    const headers: Record<string, string> = {};
+    if (rangeHeader) headers['Range'] = rangeHeader;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000), headers });
     if (res.ok || res.status === 206) return res;
   } catch { /* timeout or network error */ }
   return null;
@@ -53,13 +55,16 @@ async function fetchViaCfWorker(targetUrl: string): Promise<Response | null> {
 /** Direct fetch with VLC UA (works only if Vercel IP isn't blocked) */
 async function directFetch(
   url: string,
-  timeoutMs = 5000,
+  timeoutMs = 8000,
+  rangeHeader?: string | null,
 ): Promise<Response | null> {
   try {
+    const headers: Record<string, string> = { ...VLC_HEADERS };
+    if (rangeHeader) headers['Range'] = rangeHeader;
     const res = await fetch(normalizeUrl(url), {
       signal: AbortSignal.timeout(timeoutMs),
       redirect: 'follow',
-      headers: VLC_HEADERS,
+      headers,
     });
     if (res.ok || res.status === 206) return res;
   } catch { /* failed */ }
@@ -87,10 +92,10 @@ async function raceStrategies(
   }
 
   // CF Worker
-  strategies.push(fetchViaCfWorker(targetUrl));
+  strategies.push(fetchViaCfWorker(targetUrl, rangeHeader));
 
   // Direct fetch (usually blocked but sometimes works — cheap to try in parallel)
-  strategies.push(directFetch(targetUrl));
+  strategies.push(directFetch(targetUrl, 8000, rangeHeader));
 
   // Race: first non-null result wins
   try {
@@ -196,7 +201,7 @@ export async function GET(req: NextRequest) {
 
   // All strategies exhausted — try HTTPS upgrade as last resort
   if (targetUrl.startsWith('http://')) {
-    const https = await directFetch(targetUrl.replace('http://', 'https://'), 8000);
+    const https = await directFetch(targetUrl.replace('http://', 'https://'), 10000, rangeHeader);
     if (https) return await streamResponse(https, targetUrl);
   }
 
