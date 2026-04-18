@@ -58,10 +58,7 @@ function resolveStreamUrl(item: PlaylistItem, episodeUrl?: string): string {
   if (item.content_type === 'channel' || url.includes('/live/')) {
     return url.replace(/\.\w+$/, '.m3u8');
   }
-  // Xtream movies: convert to HLS for chunk-based streaming through proxy
-  if (/\/movie\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url)) {
-    return url.replace(/\.\w+$/, '.m3u8');
-  }
+  // Keep original extension for movies/series (not all servers support HLS conversion)
   return url;
 }
 
@@ -331,12 +328,25 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
           });
 
           let mediaErrorRecoveries = 0;
-          hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; details: string; type: string }) => {
+          hls.on(Hls.Events.ERROR, async (_: unknown, data: { fatal: boolean; details: string; type: string; response?: { code?: number } }) => {
             if (data.fatal) {
               if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
                 mediaErrorRecoveries++;
                 hls.recoverMediaError();
               } else {
+                // Fetch detailed error from proxy
+                try {
+                  const res = await fetch(proxied);
+                  if (!res.ok) {
+                    const body = await res.json().catch(() => ({}));
+                    const details = (body as { details?: string[] }).details;
+                    if (details?.length) {
+                      setError(`تعذّر تشغيل البث: ${details.join(' | ')}`);
+                      setLoading(false);
+                      return;
+                    }
+                  }
+                } catch { /* ignore */ }
                 setError('تعذّر تشغيل البث في المتصفح.');
                 setLoading(false);
               }
@@ -346,7 +356,8 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         }
       }
 
-      // VOD/MP4 through proxy
+      // VOD/MP4 through proxy — try original extension first
+      // If it fails, the onError handler on <video> will try .m3u8 fallback
       video.src = proxied;
       video.load();
       if (saved > 10) {
@@ -810,8 +821,23 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
             ref={videoRef}
             className="w-full h-full"
             playsInline
-            onError={() => {
+            onError={async () => {
               if (hlsRef.current) return;
+              // Try to get detailed error from proxy
+              try {
+                const url = resolveStreamUrl(item!, activeEpisode?.streamUrl);
+                const proxied = proxyUrl(url);
+                const res = await fetch(proxied);
+                if (!res.ok) {
+                  const body = await res.json().catch(() => ({}));
+                  const details = (body as { details?: string[] }).details;
+                  if (details?.length) {
+                    setError(`تعذّر تشغيل البث: ${details.join(' | ')}`);
+                    setLoading(false);
+                    return;
+                  }
+                }
+              } catch { /* ignore */ }
               setError('تعذّر تشغيل البث في المتصفح.');
               setLoading(false);
             }}

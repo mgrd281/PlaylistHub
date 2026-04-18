@@ -4,8 +4,7 @@ import { type NextRequest, NextResponse } from 'next/server';
  * Stream proxy — proxies IPTV content through the server so the browser
  * can play it without CORS / mixed-content issues.
  *
- * Uses Node.js runtime (AWS Lambda) instead of Edge (Cloudflare) because
- * many IPTV providers block Cloudflare IP ranges.
+ * Node.js runtime (AWS Lambda IPs) — separate pool from Edge (Cloudflare).
  */
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -17,35 +16,61 @@ function normalizeUrl(value: string): string {
 }
 
 const HEADERS: Record<string, string> = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   Accept: '*/*',
   'Accept-Language': 'en-US,en;q=0.9',
-  Connection: 'keep-alive',
 };
 
-/** Try fetching a URL with auto-redirect following */
-async function tryFetch(
-  targetUrl: string,
-  timeoutMs = 20000,
-): Promise<Response | null> {
+/** Fetch with manual redirect handling (needed for bare-% URLs in IPTV) */
+async function fetchWithRedirects(
+  inputUrl: string,
+  timeoutMs = 25000,
+  maxRedirects = 8,
+): Promise<{
+  response: Response | null;
+  error: string | null;
+  statusCode?: number;
+}> {
+  let currentUrl = normalizeUrl(inputUrl);
   try {
-    const url = normalizeUrl(targetUrl);
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-      redirect: 'follow',
-      headers: HEADERS,
-    });
-    if (res.ok) return res;
-  } catch { /* blocked, timeout, or network error */ }
-  return null;
+    for (let i = 0; i <= maxRedirects; i++) {
+      const res = await fetch(currentUrl, {
+        signal: AbortSignal.timeout(timeoutMs),
+        redirect: 'manual',
+        headers: HEADERS,
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        if (!location) return { response: res, error: null };
+        currentUrl = normalizeUrl(
+          new URL(normalizeUrl(location), currentUrl).href,
+        );
+        continue;
+      }
+      if (!res.ok) {
+        return {
+          response: null,
+          error: `HTTP ${res.status} ${res.statusText}`,
+          statusCode: res.status,
+        };
+      }
+      return { response: res, error: null };
+    }
+    return { response: null, error: 'Too many redirects' };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { response: null, error: msg };
+  }
 }
 
 /** Try fetching via the Oracle VM scanner proxy */
-async function fetchViaScanner(targetUrl: string): Promise<Response | null> {
+async function fetchViaScanner(
+  targetUrl: string,
+): Promise<Response | null> {
   const scannerUrl = process.env.SCANNER_API_URL?.trim().replace(/\/$/, '');
   const scannerToken = process.env.SCANNER_API_TOKEN;
   if (!scannerUrl) return null;
-
   try {
     const res = await fetch(
       `${scannerUrl}/stream?url=${encodeURIComponent(targetUrl)}`,
@@ -55,7 +80,9 @@ async function fetchViaScanner(targetUrl: string): Promise<Response | null> {
       },
     );
     if (res.ok) return res;
-  } catch { /* scanner unreachable */ }
+  } catch {
+    /* scanner unreachable */
+  }
   return null;
 }
 
@@ -80,22 +107,38 @@ export async function GET(req: NextRequest) {
 
   try {
     let upstream: Response | null = null;
+    const errors: string[] = [];
 
     // Strategy 1: Scanner service (residential IP tunnel)
     upstream = await fetchViaScanner(targetUrl);
+    if (!upstream) errors.push('scanner: unavailable');
 
-    // Strategy 2: HTTPS upgrade (avoids mixed-content and some servers prefer it)
+    // Strategy 2: HTTPS upgrade
     if (!upstream && targetUrl.startsWith('http://')) {
-      upstream = await tryFetch(targetUrl.replace('http://', 'https://'), 12000);
+      const httpsUrl = targetUrl.replace('http://', 'https://');
+      const result = await fetchWithRedirects(httpsUrl, 12000);
+      if (result.response) {
+        upstream = result.response;
+      } else {
+        errors.push('https: ' + result.error);
+      }
     }
 
     // Strategy 3: Direct fetch with original URL
     if (!upstream) {
-      upstream = await tryFetch(targetUrl, 20000);
+      const result = await fetchWithRedirects(targetUrl, 25000);
+      if (result.response) {
+        upstream = result.response;
+      } else {
+        errors.push('direct: ' + result.error);
+      }
     }
 
     if (!upstream) {
-      return NextResponse.json({ error: 'Stream unavailable' }, { status: 502 });
+      return NextResponse.json(
+        { error: 'Stream unavailable', details: errors },
+        { status: 502 },
+      );
     }
 
     const contentType =
@@ -125,7 +168,7 @@ export async function GET(req: NextRequest) {
               : new URL(trimmed, baseUrl).href;
           }
 
-          return `/api/stream?url=${encodeURIComponent(originalUrl)}`;
+          return '/api/stream?url=' + encodeURIComponent(originalUrl);
         })
         .join('\n');
 
@@ -151,4 +194,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: String(err) }, { status: 502 });
   }
 }
-

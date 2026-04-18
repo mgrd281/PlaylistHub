@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
     const apiUrlHttps = baseUrl.startsWith('http://') ? apiUrl.replace('http://', 'https://') : null;
 
     let data: Record<string, unknown> | null = null;
+    const errors: string[] = [];
 
     // Strategy 1: Try scanner service (bypasses IP blocks)
     if (scannerUrl) {
@@ -67,7 +68,10 @@ export async function GET(req: NextRequest) {
           { signal: AbortSignal.timeout(15000) },
         );
         if (res.ok) data = await res.json() as Record<string, unknown>;
-      } catch { /* scanner unavailable */ }
+        else errors.push(`scanner: HTTP ${res.status}`);
+      } catch { errors.push('scanner: unavailable'); }
+    } else {
+      errors.push('scanner: not configured');
     }
 
     // Strategy 2: Direct fetch with HTTPS upgrade
@@ -78,18 +82,31 @@ export async function GET(req: NextRequest) {
           headers: { 'User-Agent': UA },
         });
         if (res.ok) data = await res.json() as Record<string, unknown>;
-      } catch { /* HTTPS not supported by this server */ }
+        else errors.push(`https: HTTP ${res.status}`);
+      } catch (e) { errors.push(`https: ${e instanceof Error ? e.message : String(e)}`); }
     }
 
     // Strategy 3: Direct fetch with original URL
     if (!data) {
-      const res = await fetch(apiUrl, {
-        signal: AbortSignal.timeout(15000),
-        redirect: 'follow',
-        headers: { 'User-Agent': UA },
-      });
-      if (!res.ok) throw new Error(`API returned ${res.status}`);
-      data = await res.json() as Record<string, unknown>;
+      try {
+        const res = await fetch(apiUrl, {
+          signal: AbortSignal.timeout(15000),
+          redirect: 'follow',
+          headers: { 'User-Agent': UA },
+        });
+        if (res.ok) {
+          data = await res.json() as Record<string, unknown>;
+        } else {
+          errors.push(`direct: HTTP ${res.status}`);
+        }
+      } catch (e) { errors.push(`direct: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { error: 'تعذّر تحميل حلقات المسلسل', details: errors },
+        { status: 502 },
+      );
     }
 
     const episodes = data.episodes as Record<string, Array<{
