@@ -273,6 +273,29 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       .slice(0, 20);
   }, [item, channelList]);
 
+  const [liveChannelSearch, setLiveChannelSearch] = useState('');
+  const [liveSupportReady, setLiveSupportReady] = useState(false);
+
+  const filteredLiveChannels = useMemo(() => {
+    if (!liveChannelSearch.trim()) return relatedChannels;
+    const q = liveChannelSearch.toLowerCase();
+    return relatedChannels.filter(ch =>
+      ch.name.toLowerCase().includes(q) || ch.group_title?.toLowerCase().includes(q)
+    );
+  }, [relatedChannels, liveChannelSearch]);
+
+  // Defer non-essential live-page UI so stream startup stays fast.
+  useEffect(() => {
+    const vod = item ? (item.content_type === 'movie' || item.content_type === 'series') : false;
+    if (vod) {
+      setLiveSupportReady(false);
+      return;
+    }
+    setLiveSupportReady(false);
+    const timer = setTimeout(() => setLiveSupportReady(true), 650);
+    return () => clearTimeout(timer);
+  }, [item]);
+
   /* ── VOD recommendations (movies/series) — lazy loaded ── */
   const [vodRecommendations, setVodRecommendations] = useState<PlaylistItem[]>([]);
   const [vodRecsLoading, setVodRecsLoading] = useState(false);
@@ -1071,10 +1094,12 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const sideVisible = hasSideContent && showSidePanel;
 
   const containerClass =
-    fullscreen ? 'w-screen h-screen' :
-    viewMode === 'theater' ? 'w-[calc(100vw-32px)] max-w-[100vw] h-[calc(100vh-60px)]' :
-    viewMode === 'large' ? 'w-full max-w-[1400px] mx-4' :
-    'w-full max-w-[1100px] mx-4';
+    !isVod
+      ? (fullscreen ? 'w-screen h-screen' : 'w-full max-w-[1800px] mx-auto px-4 sm:px-6 py-5')
+      : fullscreen ? 'w-screen h-screen'
+      : viewMode === 'theater' ? 'w-[calc(100vw-32px)] max-w-[100vw] h-[calc(100vh-60px)]'
+      : viewMode === 'large' ? 'w-full max-w-[1400px] mx-4'
+      : 'w-full max-w-[1100px] mx-4';
 
   function cycleViewMode() {
     const modes: ViewMode[] = ['normal', 'large', 'theater'];
@@ -1095,7 +1120,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       className={`fixed inset-0 z-50 ${
         isVodPage
           ? fullscreen ? 'bg-black' : 'bg-background overflow-y-auto'
-          : 'flex items-center justify-center bg-black/95'
+          : fullscreen ? 'bg-black' : 'bg-background overflow-y-auto'
       }`}
       onClick={(e) => { if (e.target === e.currentTarget && !isVodPage) onClose(); }}
     >
@@ -1619,6 +1644,54 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           </div>
         </div>
       ) : (
+      <>
+      {!fullscreen && (
+        <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/40">
+          <div className="max-w-[1800px] mx-auto flex items-center gap-4 px-4 sm:px-6 h-14">
+            <div className="flex items-center gap-3 shrink-0">
+              <button onClick={onClose} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg px-2 py-1.5 hover:bg-foreground/[0.04]">
+                <ChevronLeft className="h-4 w-4" />
+                <span className="text-sm font-medium hidden sm:inline">Back</span>
+              </button>
+              <div className="h-5 w-px bg-border/50" />
+              <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
+                  <Play className="h-3 w-3 text-primary-foreground fill-primary-foreground ml-[1px]" />
+                </div>
+                <span className="text-sm font-bold text-foreground tracking-tight hidden md:inline">PlaylistHub</span>
+              </a>
+            </div>
+
+            <div className="flex-1 max-w-xl mx-auto">
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 group-focus-within:text-foreground/60 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search related channels..."
+                  value={liveChannelSearch}
+                  onChange={(e) => setLiveChannelSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-9 rounded-full bg-muted/50 border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-border focus:bg-muted/80 transition-all"
+                />
+                {liveChannelSearch && (
+                  <button
+                    onClick={() => setLiveChannelSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button onClick={copyUrl} title="Copy stream URL"
+                className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all">
+                <Copy className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </header>
+      )}
       /* ═══ Live TV / Fullscreen: Dark immersive overlay ═══ */
       <div
         ref={containerRef}
@@ -2139,36 +2212,43 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
 
         {/* ═══════ SIDE PANEL — Live channels only (VOD has its own layout) ═══════ */}
         {sideVisible && !isVod && (
-          <div className={`flex flex-col bg-[#0c0c0e] border-l border-white/[0.04] ${
-            viewMode === 'theater' ? 'w-[340px]' : 'w-[300px]'
-          } rounded-r-2xl overflow-hidden`}>
+          <div className={`flex flex-col bg-card/70 border border-border/60 ${
+            viewMode === 'theater' ? 'w-[360px]' : 'w-[330px]'
+          } rounded-2xl overflow-hidden backdrop-blur-sm`}>
             <div className="shrink-0 px-4 pt-4 pb-3">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <Tv className="h-3.5 w-3.5 text-white/30" />
-                  <span className="text-[13px] font-semibold text-white/80">
+                  <Tv className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[13px] font-semibold text-foreground">
                     {item.group_title || 'Related'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-white/25 tabular-nums">
-                    {relatedChannels.length}
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                    {liveSupportReady ? filteredLiveChannels.length : '...'}
                   </span>
                   <button
                     onClick={() => setShowSidePanel(false)}
-                    className="p-1 rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
+                    className="p-1 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
                     title="Close panel"
                   >
                     <X className="h-3 w-3" />
                   </button>
                 </div>
               </div>
-              <div className="h-px bg-white/[0.04] mt-2" />
+              <div className="h-px bg-border/60 mt-2" />
             </div>
 
             <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-3">
+              {!liveSupportReady ? (
+                <div className="space-y-2 p-1">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="h-12 rounded-xl bg-muted animate-pulse" />
+                  ))}
+                </div>
+              ) : (
               <div className="space-y-0.5">
-                {relatedChannels.map((ch) => {
+                {filteredLiveChannels.map((ch) => {
                   const isActive = ch.id === item.id;
                   return (
                     <button
@@ -2176,38 +2256,58 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                       onClick={() => navigateChannel(ch)}
                       className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all ${
                         isActive
-                          ? 'bg-white/[0.08] text-white'
-                          : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
+                          ? 'bg-primary/15 text-foreground border border-primary/30'
+                          : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground border border-transparent'
                       }`}
                     >
                       <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
-                        isActive ? 'bg-white/[0.12] ring-1 ring-white/[0.1]' : 'bg-white/[0.04]'
+                        isActive ? 'bg-primary/20' : 'bg-muted/70'
                       }`}>
                         {ch.tvg_logo ? (
                           <img src={ch.tvg_logo} alt="" className="h-full w-full object-contain p-1"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         ) : (
-                          <Radio className="h-3 w-3 text-white/20" />
+                          <Radio className="h-3 w-3 text-muted-foreground" />
                         )}
                       </div>
-                      <p className={`text-[12px] truncate leading-tight flex-1 ${isActive ? 'font-medium' : ''}`}>
-                        {ch.name}
-                      </p>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[12px] truncate leading-tight ${isActive ? 'font-semibold' : 'font-medium'}`}>
+                          {ch.name}
+                        </p>
+                        {ch.group_title && (
+                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{ch.group_title}</p>
+                        )}
+                      </div>
                       {isActive && (
-                        <div className="flex items-center gap-[2px] shrink-0">
-                          <div className="w-[2px] h-3 bg-white/60 rounded-full animate-pulse" />
-                          <div className="w-[2px] h-2 bg-white/40 rounded-full animate-pulse [animation-delay:150ms]" />
-                          <div className="w-[2px] h-3.5 bg-white/60 rounded-full animate-pulse [animation-delay:300ms]" />
-                        </div>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                          LIVE
+                        </span>
                       )}
                     </button>
                   );
                 })}
               </div>
+              )}
+
+              {liveSupportReady && filteredLiveChannels.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-14 text-center">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                    <Search className="h-5 w-5 text-muted-foreground/40" />
+                  </div>
+                  <p className="text-sm text-muted-foreground/70">No channels match your search</p>
+                  {liveChannelSearch && (
+                    <button onClick={() => setLiveChannelSearch('')} className="text-xs text-primary hover:underline mt-2">
+                      Clear search
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
+      </>
       )}
 
       {/* ── Fixed-position seek preview thumbnail (escapes overflow:hidden) ── */}
