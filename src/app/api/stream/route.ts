@@ -88,19 +88,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
   }
 
-  const scannerUrl = process.env.SCANNER_API_URL?.trim().replace(/\/$/, '');
-
   try {
-    // For non-manifest content (VOD/MP4, segments), redirect directly to scanner
-    // This avoids Vercel Edge timeout for large/long-running downloads
-    const isManifestUrl = /\.m3u8?(?:[?#]|$)/i.test(targetUrl);
-    if (!isManifestUrl && scannerUrl) {
-      return NextResponse.redirect(
-        `${scannerUrl}/stream?url=${encodeURIComponent(targetUrl)}`,
-        302,
-      );
-    }
-
     let upstream: Response | null = null;
 
     // Strategy 1: Scanner service (tunnel to local machine — bypasses IP blocks)
@@ -109,7 +97,7 @@ export async function GET(req: NextRequest) {
     // Strategy 2: Direct fetch (fallback — works locally or for non-blocking providers)
     if (!upstream) {
       try {
-        const attempt = await fetchWithRedirects(targetUrl, HEADERS, 8000);
+        const attempt = await fetchWithRedirects(targetUrl, HEADERS, 15000);
         if (attempt.ok) upstream = attempt;
       } catch { /* blocked or timeout */ }
     }
@@ -128,7 +116,6 @@ export async function GET(req: NextRequest) {
     if (isManifest) {
       const text = await upstream.text();
       const baseUrl = upstream.url || targetUrl;
-      const scannerUrl = process.env.SCANNER_API_URL?.trim().replace(/\/$/, '');
 
       const rewritten = text
         .split('\n')
@@ -147,12 +134,7 @@ export async function GET(req: NextRequest) {
               : new URL(trimmed, baseUrl).href;
           }
 
-          // Sub-manifests (.m3u8) go through /api/stream for rewriting
-          // Segments go DIRECTLY to scanner (skip Vercel middleman — avoids timeout)
-          const isSubManifest = /\.m3u8?(?:[?#]|$)/i.test(originalUrl);
-          if (!isSubManifest && scannerUrl) {
-            return `${scannerUrl}/stream?url=${encodeURIComponent(originalUrl)}`;
-          }
+          // All URLs go through /api/stream for reliable scanner→direct fallback
           return `/api/stream?url=${encodeURIComponent(originalUrl)}`;
         })
         .join('\n');

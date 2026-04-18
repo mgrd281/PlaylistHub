@@ -52,18 +52,21 @@ export async function GET(req: NextRequest) {
     const scannerUrl = process.env.SCANNER_API_URL?.trim().replace(/\/$/, '');
     const apiUrl = `${baseUrl}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&action=get_series_info&series_id=${seriesId}`;
 
-    let data: Record<string, unknown>;
+    let data: Record<string, unknown> | null = null;
 
+    // Strategy 1: Try scanner service (bypasses IP blocks)
     if (scannerUrl) {
-      // Fetch through scanner
-      const res = await fetch(
-        `${scannerUrl}/stream?url=${encodeURIComponent(apiUrl)}`,
-        { signal: AbortSignal.timeout(15000) },
-      );
-      if (!res.ok) throw new Error(`Scanner returned ${res.status}`);
-      data = await res.json() as Record<string, unknown>;
-    } else {
-      // Direct fetch
+      try {
+        const res = await fetch(
+          `${scannerUrl}/stream?url=${encodeURIComponent(apiUrl)}`,
+          { signal: AbortSignal.timeout(15000) },
+        );
+        if (res.ok) data = await res.json() as Record<string, unknown>;
+      } catch { /* scanner unavailable */ }
+    }
+
+    // Strategy 2: Direct fetch (fallback — works locally or when scanner is down)
+    if (!data) {
       const res = await fetch(apiUrl, {
         signal: AbortSignal.timeout(15000),
         headers: { 'User-Agent': 'VLC/3.0.21 LibVLC/3.0.21' },

@@ -52,13 +52,23 @@ function clearPosition(streamUrl: string) {
 
 /* ── Helpers ── */
 
-function resolveStreamUrl(item: PlaylistItem): string {
-  const url = item.stream_url;
+function resolveStreamUrl(item: PlaylistItem, episodeUrl?: string, fallback = false): string {
+  const url = episodeUrl || item.stream_url;
   // Live channels: always use HLS (.m3u8)
   if (item.content_type === 'channel' || url.includes('/live/')) {
     return url.replace(/\.\w+$/, '.m3u8');
   }
+  // Xtream movies/series: prefer HLS for better proxy streaming (unless fallback)
+  if (!fallback && /\/(movie|series)\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url)) {
+    return url.replace(/\.\w+$/, '.m3u8');
+  }
   return url;
+}
+
+/** Check if a direct (non-HLS) fallback URL exists */
+function hasFallbackUrl(item: PlaylistItem, episodeUrl?: string): boolean {
+  const url = episodeUrl || item.stream_url;
+  return /\/(movie|series)\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url) && !url.endsWith('.m3u8');
 }
 
 /** Check if a series URL needs episode resolution (Xtream catalog entry) */
@@ -92,6 +102,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hlsRef = useRef<import('hls.js').default | null>(null);
+  const fallbackTriedRef = useRef(false);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,7 +180,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
   /* ── Save position periodically ── */
   useEffect(() => {
     if (!item || isLive) return;
-    const url = activeEpisode?.streamUrl || resolveStreamUrl(item);
+    const url = resolveStreamUrl(item, activeEpisode?.streamUrl);
     saveTimerRef.current = setInterval(() => {
       const v = videoRef.current;
       if (v && v.currentTime > 5 && v.duration > 60) {
@@ -187,6 +198,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
 
     hlsRef.current?.destroy();
     hlsRef.current = null;
+    fallbackTriedRef.current = false;
     setError(null);
     setLoading(true);
     setPlaying(false);
@@ -200,7 +212,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
     if (!video) return;
 
     // Use episode URL for series, otherwise resolve from item
-    const url = activeEpisode ? activeEpisode.streamUrl : resolveStreamUrl(item);
+    const url = resolveStreamUrl(item, activeEpisode?.streamUrl);
     const proxied = proxyUrl(url);
 
     const isHls =
@@ -273,13 +285,25 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
             try { await video.play(); } catch { /* user presses play */ }
           });
           let mediaErrorRecoveries = 0;
+          let networkRetries = 0;
           hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; details: string; type: string }) => {
             if (data.fatal) {
-              if (data.type === 'networkError') {
+              if (data.type === 'networkError' && networkRetries < 2) {
+                networkRetries++;
                 hls.startLoad();
               } else if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
                 mediaErrorRecoveries++;
                 hls.recoverMediaError();
+              } else if (!fallbackTriedRef.current && item && hasFallbackUrl(item, activeEpisode?.streamUrl)) {
+                // HLS failed — try direct URL (e.g. .mp4) as fallback
+                fallbackTriedRef.current = true;
+                hls.destroy();
+                hlsRef.current = null;
+                const fallbackUrl = resolveStreamUrl(item, activeEpisode?.streamUrl, true);
+                video!.src = proxyUrl(fallbackUrl);
+                video!.load();
+                video!.play().catch(() => {});
+                setLoading(false);
               } else {
                 setError(`Stream unavailable (${data.details})`);
                 setLoading(false);
@@ -335,7 +359,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
     const onEnded = () => {
       setPlaying(false);
       setShowControls(true);
-      if (item && !isLive) clearPosition(resolveStreamUrl(item));
+      if (item && !isLive) clearPosition(resolveStreamUrl(item, activeEpisode?.streamUrl));
     };
     const onWaiting = () => setLoading(true);
     const onCanPlay = () => setLoading(false);
@@ -550,7 +574,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
 
   if (!item) return null;
 
-  const streamUrl = activeEpisode?.streamUrl || resolveStreamUrl(item);
+  const streamUrl = resolveStreamUrl(item, activeEpisode?.streamUrl);
   const vlcUrl = `vlc://${streamUrl}`;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
@@ -757,7 +781,24 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
             ref={videoRef}
             className="w-full h-full"
             playsInline
-            onError={() => { setError('تعذّر تشغيل البث في المتصفح.'); setLoading(false); }}
+            onError={() => {
+              // Let hls.js handle its own errors
+              if (hlsRef.current) return;
+              // Try direct URL fallback before showing error
+              if (!fallbackTriedRef.current && item && hasFallbackUrl(item, activeEpisode?.streamUrl)) {
+                fallbackTriedRef.current = true;
+                const v = videoRef.current;
+                if (!v) return;
+                const fallbackUrl = resolveStreamUrl(item, activeEpisode?.streamUrl, true);
+                v.src = proxyUrl(fallbackUrl);
+                v.load();
+                v.play().catch(() => {});
+                setLoading(false);
+                return;
+              }
+              setError('تعذّر تشغيل البث في المتصفح.');
+              setLoading(false);
+            }}
           />
 
           {/* Custom controls overlay */}
