@@ -2,9 +2,12 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 /**
  * Resolves episodes for a series item using the Xtream Codes API.
- * Extracts credentials from the series stream_url, calls get_series_info,
- * and returns episodes with playable URLs.
+ * Uses Node.js runtime (AWS Lambda) for better IP compatibility.
  */
+export const runtime = 'nodejs';
+export const maxDuration = 30;
+
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 interface Episode {
   id: string;
@@ -72,7 +75,7 @@ export async function GET(req: NextRequest) {
       try {
         const res = await fetch(apiUrlHttps, {
           signal: AbortSignal.timeout(10000),
-          headers: { 'User-Agent': 'VLC/3.0.21 LibVLC/3.0.21' },
+          headers: { 'User-Agent': UA },
         });
         if (res.ok) data = await res.json() as Record<string, unknown>;
       } catch { /* HTTPS not supported by this server */ }
@@ -82,7 +85,8 @@ export async function GET(req: NextRequest) {
     if (!data) {
       const res = await fetch(apiUrl, {
         signal: AbortSignal.timeout(15000),
-        headers: { 'User-Agent': 'VLC/3.0.21 LibVLC/3.0.21' },
+        redirect: 'follow',
+        headers: { 'User-Agent': UA },
       });
       if (!res.ok) throw new Error(`API returned ${res.status}`);
       data = await res.json() as Record<string, unknown>;

@@ -1,12 +1,14 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
 /**
- * HLS stream proxy.
- * When running locally (next dev): direct fetch works (residential IP).
- * On Vercel: tries Oracle VM scanner first, then direct.
- * Handles 302 redirects, bare-% URL normalization, manifest rewriting.
+ * Stream proxy — proxies IPTV content through the server so the browser
+ * can play it without CORS / mixed-content issues.
+ *
+ * Uses Node.js runtime (AWS Lambda) instead of Edge (Cloudflare) because
+ * many IPTV providers block Cloudflare IP ranges.
  */
-export const runtime = 'edge';
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 /* ── helpers ── */
 
@@ -14,44 +16,32 @@ function normalizeUrl(value: string): string {
   return value.replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
 }
 
-async function fetchWithRedirects(
-  inputUrl: string,
-  headers: Record<string, string>,
-  timeoutMs = 20000,
-  maxRedirects = 8,
-): Promise<Response> {
-  let currentUrl = normalizeUrl(inputUrl);
-
-  for (let i = 0; i <= maxRedirects; i++) {
-    const res = await fetch(currentUrl, {
-      signal: AbortSignal.timeout(timeoutMs),
-      redirect: 'manual',
-      headers,
-    });
-
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location');
-      if (!location) return res;
-      const normalized = normalizeUrl(location);
-      currentUrl = normalizeUrl(new URL(normalized, currentUrl).href);
-      continue;
-    }
-
-    return res;
-  }
-
-  throw new Error('Too many redirects');
-}
-
 const HEADERS: Record<string, string> = {
-  'User-Agent': 'VLC/3.0.21 LibVLC/3.0.21',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   Accept: '*/*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  Connection: 'keep-alive',
 };
 
-/** Try fetching via the Oracle VM scanner proxy (Vercel only) */
-async function fetchViaScanner(
+/** Try fetching a URL with auto-redirect following */
+async function tryFetch(
   targetUrl: string,
+  timeoutMs = 20000,
 ): Promise<Response | null> {
+  try {
+    const url = normalizeUrl(targetUrl);
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: 'follow',
+      headers: HEADERS,
+    });
+    if (res.ok) return res;
+  } catch { /* blocked, timeout, or network error */ }
+  return null;
+}
+
+/** Try fetching via the Oracle VM scanner proxy */
+async function fetchViaScanner(targetUrl: string): Promise<Response | null> {
   const scannerUrl = process.env.SCANNER_API_URL?.trim().replace(/\/$/, '');
   const scannerToken = process.env.SCANNER_API_TOKEN;
   if (!scannerUrl) return null;
@@ -91,24 +81,17 @@ export async function GET(req: NextRequest) {
   try {
     let upstream: Response | null = null;
 
-    // Strategy 1: Scanner service (tunnel to local machine — bypasses IP blocks)
+    // Strategy 1: Scanner service (residential IP tunnel)
     upstream = await fetchViaScanner(targetUrl);
 
-    // Strategy 2: Try HTTPS version (many IPTV servers support both HTTP and HTTPS)
+    // Strategy 2: HTTPS upgrade (avoids mixed-content and some servers prefer it)
     if (!upstream && targetUrl.startsWith('http://')) {
-      try {
-        const httpsUrl = targetUrl.replace('http://', 'https://');
-        const attempt = await fetchWithRedirects(httpsUrl, HEADERS, 10000);
-        if (attempt.ok) upstream = attempt;
-      } catch { /* HTTPS not available */ }
+      upstream = await tryFetch(targetUrl.replace('http://', 'https://'), 12000);
     }
 
     // Strategy 3: Direct fetch with original URL
     if (!upstream) {
-      try {
-        const attempt = await fetchWithRedirects(targetUrl, HEADERS, 15000);
-        if (attempt.ok) upstream = attempt;
-      } catch { /* blocked or timeout */ }
+      upstream = await tryFetch(targetUrl, 20000);
     }
 
     if (!upstream) {
@@ -132,7 +115,6 @@ export async function GET(req: NextRequest) {
           const trimmed = line.trim();
           if (!trimmed || trimmed.startsWith('#')) return line;
 
-          // Scanner rewrites lines as /stream?url=<encoded> — extract original URL
           let originalUrl: string;
           const scannerMatch = trimmed.match(/^\/stream\?url=(.+)$/);
           if (scannerMatch) {
@@ -143,7 +125,6 @@ export async function GET(req: NextRequest) {
               : new URL(trimmed, baseUrl).href;
           }
 
-          // All URLs go through /api/stream for reliable scanner→direct fallback
           return `/api/stream?url=${encodeURIComponent(originalUrl)}`;
         })
         .join('\n');
@@ -157,7 +138,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Binary (segments / VOD) — stream through directly
+    // Binary (segments / VOD) — stream through
     return new NextResponse(upstream.body, {
       status: upstream.status,
       headers: {

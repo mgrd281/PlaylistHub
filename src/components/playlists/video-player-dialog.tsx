@@ -58,21 +58,11 @@ function resolveStreamUrl(item: PlaylistItem, episodeUrl?: string): string {
   if (item.content_type === 'channel' || url.includes('/live/')) {
     return url.replace(/\.\w+$/, '.m3u8');
   }
-  return url;
-}
-
-/** Build a list of URLs to try, in priority order */
-function buildUrlChain(url: string): string[] {
-  const urls: string[] = [];
-  // 1. HTTPS direct (upgrade http→https to avoid mixed-content blocks)
-  if (url.startsWith('http://')) {
-    urls.push(url.replace('http://', 'https://'));
+  // Xtream movies: convert to HLS for chunk-based streaming through proxy
+  if (/\/movie\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url)) {
+    return url.replace(/\.\w+$/, '.m3u8');
   }
-  // 2. Original direct URL
-  urls.push(url);
-  // 3. Proxy (server-side fetch with scanner fallback)
-  urls.push(`/api/stream?url=${encodeURIComponent(url)}`);
-  return urls;
+  return url;
 }
 
 /** Extract Xtream credentials from a stream URL */
@@ -115,8 +105,6 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hlsRef = useRef<import('hls.js').default | null>(null);
-  const urlChainRef = useRef<string[]>([]);
-  const urlChainIndexRef = useRef(0);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -255,7 +243,6 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
   /* ── Init player ── */
   useEffect(() => {
     if (!item) return;
-    // For series, wait until an episode is selected
     if (isSeries && !activeEpisode) return;
 
     hlsRef.current?.destroy();
@@ -273,9 +260,8 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
     if (!video) return;
 
     const url = resolveStreamUrl(item, activeEpisode?.streamUrl);
-    const chain = buildUrlChain(url);
-    urlChainRef.current = chain;
-    urlChainIndexRef.current = 0;
+    // Everything goes through proxy to avoid mixed-content (HTTPS site + HTTP IPTV)
+    const proxied = proxyUrl(url);
 
     const isHls =
       url.includes('.m3u8') ||
@@ -285,104 +271,88 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
 
     const saved = isLive ? 0 : getSavedPosition(url);
 
-    /** Try next URL in the fallback chain (for non-HLS) */
-    function tryNextUrl(): boolean {
-      const idx = urlChainIndexRef.current;
-      if (idx >= chain.length || !video) return false;
-      video.src = chain[idx];
-      video.load();
-      urlChainIndexRef.current = idx + 1;
-      return true;
-    }
-
     async function initPlayer() {
       if (!video) return;
       video.playbackRate = 1;
 
-      // ── For VOD (movies/series episodes): cascading fallback chain ──
-      if (!isHls) {
-        tryNextUrl(); // Start with first URL in chain
-        if (saved > 10) {
-          video.addEventListener('loadedmetadata', () => setResumeOffer(saved), { once: true });
-        }
-        // The onError handler on <video> element handles fallback cascade
-        setLoading(false);
-        return;
-      }
-
-      // ── For HLS (live channels) ──
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari native HLS — use chain
-        tryNextUrl();
-        if (saved > 10) setResumeOffer(saved);
-        setLoading(false);
-        return;
-      }
-
-      const Hls = (await import('hls.js')).default;
-      if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: isLive,
-          maxBufferLength: isLive ? 10 : 30,
-          maxMaxBufferLength: isLive ? 30 : 120,
-          fragLoadingTimeOut: 45000,
-          fragLoadingMaxRetry: 6,
-          fragLoadingRetryDelay: 2000,
-          levelLoadingTimeOut: 20000,
-          manifestLoadingTimeOut: 20000,
-          startFragPrefetch: true,
-          testBandwidth: true,
-        });
-        hlsRef.current = hls;
-
-        // HLS.js uses fetch() which enforces CORS, so go through proxy
-        const hlsChain = chain.filter(u => u.startsWith('/api/'));
-        // If no proxy URLs, try direct (might work if IPTV supports CORS)
-        const hlsSource = hlsChain.length > 0 ? hlsChain[0] : chain[0];
-        hls.loadSource(hlsSource);
-        hls.attachMedia(video);
-
-        hls.on(Hls.Events.MANIFEST_PARSED, async (_: unknown, data: { levels: { height: number; width: number; bitrate: number }[] }) => {
-          setLoading(false);
+      if (isHls) {
+        // Safari native HLS
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = proxied;
+          video.load();
           if (saved > 10) setResumeOffer(saved);
-
-          if (data.levels && data.levels.length > 1) {
-            const q = data.levels.map((lvl, i) => ({
-              height: lvl.height,
-              label: lvl.height >= 4320 ? '8K' :
-                     lvl.height >= 2160 ? '4K' :
-                     lvl.height >= 1440 ? '1440p' :
-                     lvl.height >= 1080 ? '1080p' :
-                     lvl.height >= 720 ? '720p' :
-                     lvl.height >= 480 ? '480p' :
-                     lvl.height >= 360 ? '360p' : `${lvl.height}p`,
-              index: i,
-            })).sort((a, b) => b.height - a.height);
-            setQualities(q);
-            hls.currentLevel = q[0].index;
-            setCurrentQuality(q[0].index);
-          }
-
           try { await video.play(); } catch { /* user presses play */ }
-        });
-        let mediaErrorRecoveries = 0;
-        hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; details: string; type: string }) => {
-          if (data.fatal) {
-            if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
-              mediaErrorRecoveries++;
-              hls.recoverMediaError();
-            } else {
-              setError('تعذّر تشغيل البث في المتصفح.');
-              setLoading(false);
+          setLoading(false);
+          return;
+        }
+
+        // Chrome/Firefox — use hls.js
+        const Hls = (await import('hls.js')).default;
+        if (Hls.isSupported()) {
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: isLive,
+            maxBufferLength: isLive ? 10 : 30,
+            maxMaxBufferLength: isLive ? 30 : 120,
+            fragLoadingTimeOut: 45000,
+            fragLoadingMaxRetry: 6,
+            fragLoadingRetryDelay: 2000,
+            levelLoadingTimeOut: 30000,
+            manifestLoadingTimeOut: 30000,
+            startFragPrefetch: true,
+            testBandwidth: true,
+          });
+          hlsRef.current = hls;
+          hls.loadSource(proxied);
+          hls.attachMedia(video);
+
+          hls.on(Hls.Events.MANIFEST_PARSED, async (_: unknown, data: { levels: { height: number; width: number; bitrate: number }[] }) => {
+            setLoading(false);
+            if (saved > 10) setResumeOffer(saved);
+
+            if (data.levels && data.levels.length > 1) {
+              const q = data.levels.map((lvl, i) => ({
+                height: lvl.height,
+                label: lvl.height >= 4320 ? '8K' :
+                       lvl.height >= 2160 ? '4K' :
+                       lvl.height >= 1440 ? '1440p' :
+                       lvl.height >= 1080 ? '1080p' :
+                       lvl.height >= 720 ? '720p' :
+                       lvl.height >= 480 ? '480p' :
+                       lvl.height >= 360 ? '360p' : `${lvl.height}p`,
+                index: i,
+              })).sort((a, b) => b.height - a.height);
+              setQualities(q);
+              hls.currentLevel = q[0].index;
+              setCurrentQuality(q[0].index);
             }
-          }
-        });
-        return;
+
+            try { await video.play(); } catch { /* user presses play */ }
+          });
+
+          let mediaErrorRecoveries = 0;
+          hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; details: string; type: string }) => {
+            if (data.fatal) {
+              if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
+                mediaErrorRecoveries++;
+                hls.recoverMediaError();
+              } else {
+                setError('تعذّر تشغيل البث في المتصفح.');
+                setLoading(false);
+              }
+            }
+          });
+          return;
+        }
       }
 
-      // No HLS support — try direct URL chain
-      tryNextUrl();
+      // VOD/MP4 through proxy
+      video.src = proxied;
+      video.load();
+      if (saved > 10) {
+        video.addEventListener('loadedmetadata', () => setResumeOffer(saved), { once: true });
+      }
+      try { await video.play(); } catch { /* user presses play */ }
       setLoading(false);
     }
 
@@ -841,20 +811,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
             className="w-full h-full"
             playsInline
             onError={() => {
-              // Let hls.js handle its own errors
               if (hlsRef.current) return;
-              // Try next URL in the fallback chain
-              const idx = urlChainIndexRef.current;
-              const chain = urlChainRef.current;
-              if (idx < chain.length) {
-                const v = videoRef.current;
-                if (!v) return;
-                v.src = chain[idx];
-                v.load();
-                v.play().catch(() => {});
-                urlChainIndexRef.current = idx + 1;
-                return;
-              }
               setError('تعذّر تشغيل البث في المتصفح.');
               setLoading(false);
             }}
