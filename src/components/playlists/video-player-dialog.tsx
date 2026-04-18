@@ -83,6 +83,13 @@ function proxyUrl(streamUrl: string): string {
   return `/api/stream?url=${encodeURIComponent(streamUrl)}`;
 }
 
+/** Convert an IPTV URL to its HTTPS equivalent (same host:port) */
+function toHttps(url: string): string | null {
+  if (url.startsWith('https://')) return url;
+  if (url.startsWith('http://')) return url.replace('http://', 'https://');
+  return null;
+}
+
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
   const h = Math.floor(seconds / 3600);
@@ -257,7 +264,6 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
     if (!video) return;
 
     const url = resolveStreamUrl(item, activeEpisode?.streamUrl);
-    // Everything goes through proxy to avoid mixed-content (HTTPS site + HTTP IPTV)
     const proxied = proxyUrl(url);
 
     const isHls =
@@ -273,8 +279,29 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
       video.playbackRate = 1;
 
       if (isHls) {
-        // Safari native HLS
+        // Safari native HLS — try direct HTTPS first (user IP, no CORS needed)
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          const httpsUrl = toHttps(url);
+          if (httpsUrl) {
+            // Try direct HTTPS first, fall back to proxy on error
+            video.src = httpsUrl;
+            video.load();
+            try {
+              await new Promise<void>((resolve, reject) => {
+                const onLoaded = () => { cleanup(); resolve(); };
+                const onError = () => { cleanup(); reject(); };
+                const cleanup = () => { video.removeEventListener('loadeddata', onLoaded); video.removeEventListener('error', onError); };
+                video.addEventListener('loadeddata', onLoaded, { once: true });
+                video.addEventListener('error', onError, { once: true });
+                setTimeout(() => { cleanup(); reject(); }, 8000);
+              });
+              // Direct HTTPS worked for Safari
+              if (saved > 10) setResumeOffer(saved);
+              try { await video.play(); } catch { /* user presses play */ }
+              setLoading(false);
+              return;
+            } catch { /* direct HTTPS failed, fall back to proxy */ }
+          }
           video.src = proxied;
           video.load();
           if (saved > 10) setResumeOffer(saved);
@@ -283,7 +310,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
           return;
         }
 
-        // Chrome/Firefox — use hls.js
+        // Chrome/Firefox — use hls.js (requires proxy for CORS)
         const Hls = (await import('hls.js')).default;
         if (Hls.isSupported()) {
           const hls = new Hls({
@@ -356,8 +383,32 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         }
       }
 
-      // VOD/MP4 through proxy — try original extension first
-      // If it fails, the onError handler on <video> will try .m3u8 fallback
+      // ── VOD/MP4 (movies, series episodes) ──
+      // The <video> element can load cross-origin URLs WITHOUT CORS headers.
+      // Try direct HTTPS first (browser uses user's residential IP = not blocked by IPTV).
+      // Fall back to proxy only if direct fails.
+      const httpsUrl = toHttps(url);
+      if (httpsUrl) {
+        video.src = httpsUrl;
+        video.load();
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const onLoaded = () => { cleanup(); resolve(); };
+            const onError = () => { cleanup(); reject(); };
+            const cleanup = () => { video.removeEventListener('loadeddata', onLoaded); video.removeEventListener('error', onError); };
+            video.addEventListener('loadeddata', onLoaded, { once: true });
+            video.addEventListener('error', onError, { once: true });
+            setTimeout(() => { cleanup(); reject(); }, 10000);
+          });
+          // Direct HTTPS worked!
+          if (saved > 10) setResumeOffer(saved);
+          try { await video.play(); } catch { /* user presses play */ }
+          setLoading(false);
+          return;
+        } catch { /* direct HTTPS failed, try proxy */ }
+      }
+
+      // Fallback: proxy
       video.src = proxied;
       video.load();
       if (saved > 10) {
@@ -823,22 +874,36 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
             playsInline
             onError={async () => {
               if (hlsRef.current) return;
-              // Try to get detailed error from proxy
-              try {
-                const url = resolveStreamUrl(item!, activeEpisode?.streamUrl);
-                const proxied = proxyUrl(url);
-                const res = await fetch(proxied);
-                if (!res.ok) {
-                  const body = await res.json().catch(() => ({}));
-                  const details = (body as { details?: string[] }).details;
-                  if (details?.length) {
-                    setError(`تعذّر تشغيل البث: ${details.join(' | ')}`);
-                    setLoading(false);
-                    return;
-                  }
+              const video = videoRef.current;
+              if (!video || !item) return;
+
+              const url = resolveStreamUrl(item, activeEpisode?.streamUrl);
+              const currentSrc = video.src || '';
+
+              // If we were playing the proxy and it failed, try direct HTTPS
+              if (currentSrc.includes('/api/stream')) {
+                const httpsUrl = toHttps(url);
+                if (httpsUrl && !currentSrc.includes(httpsUrl)) {
+                  video.src = httpsUrl;
+                  video.load();
+                  try { await video.play(); } catch { /* user presses play */ }
+                  return;
                 }
-              } catch { /* ignore */ }
-              setError('تعذّر تشغيل البث في المتصفح.');
+              }
+
+              // If direct HTTPS also failed, try .m3u8 HLS version via proxy (some servers support HLS conversion)
+              if (/\/movie\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url) && !url.endsWith('.m3u8')) {
+                const m3u8Url = url.replace(/\.\w+$/, '.m3u8');
+                const m3u8Proxied = proxyUrl(m3u8Url);
+                if (!currentSrc.includes(m3u8Proxied)) {
+                  video.src = m3u8Proxied;
+                  video.load();
+                  try { await video.play(); } catch { /* user presses play */ }
+                  return;
+                }
+              }
+
+              setError('تعذّر تشغيل الفيديو. جرّب فتحه في VLC.');
               setLoading(false);
             }}
           />
