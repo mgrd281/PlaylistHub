@@ -205,8 +205,9 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         const firstEp = data.seasons[0].episodes[0];
         if (firstEp) setActiveEpisode({ streamUrl: firstEp.streamUrl, title: firstEp.title });
       } else {
+        // Episode fetching failed (both server & client) — play series URL directly
         setSeriesLoading(false);
-        setError('تعذّر تحميل حلقات المسلسل.');
+        setActiveEpisode({ streamUrl: item.stream_url, title: item.name });
       }
     })();
   }, [item, isSeries]);
@@ -862,7 +863,6 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
             ref={videoRef}
             className="w-full h-full"
             playsInline
-            crossOrigin="anonymous"
             onError={() => {
               // Let hls.js handle its own errors
               if (hlsRef.current) return;
