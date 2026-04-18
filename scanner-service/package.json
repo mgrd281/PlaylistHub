@@ -1,0 +1,15 @@
+{
+  "name": "playlisthub-scanner-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "undici": "^7.13.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
