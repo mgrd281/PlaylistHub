@@ -250,48 +250,61 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
     ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
     : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8';
 
+  const SUBTITLE: Record<string, string> = {
+    channel: 'Browse and watch live television channels',
+    movie: 'Browse and stream your movie collection',
+    series: 'Browse and watch your TV series library',
+  };
+
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div>
+      <div className="space-y-1">
         <div className="flex items-center gap-3">
-          <Icon className="h-5 w-5 text-white/40" />
-          <h1 className="text-2xl font-bold text-white">{label}</h1>
-          {total > 0 && !loading && (
-            <span className="text-sm text-white/25">{total.toLocaleString()}</span>
-          )}
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.06]">
+            <Icon className="h-4.5 w-4.5 text-white/60" />
+          </div>
+          <div>
+            <div className="flex items-baseline gap-2.5">
+              <h1 className="text-2xl font-bold text-white tracking-tight">{label}</h1>
+              {total > 0 && !loading && (
+                <span className="text-sm font-medium text-white/40">{total.toLocaleString()} items</span>
+              )}
+            </div>
+            <p className="text-[13px] text-white/35 mt-0.5">{SUBTITLE[contentType]}</p>
+          </div>
         </div>
       </div>
 
       {/* Controls */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/25" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
           <Input
             placeholder={`Search ${label.toLowerCase()}...`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-white/[0.04] border-white/[0.06] text-white placeholder:text-white/25 h-9"
+            className="pl-9 bg-white/[0.05] border-white/[0.08] text-white placeholder:text-white/30 h-9 focus:bg-white/[0.07] focus:border-white/[0.15]"
           />
           {search && (
-            <button type="button" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
+            <button type="button" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70">
               <X className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5">
           <button
             type="button"
             onClick={() => setLayout('poster')}
-            className={`h-8 w-8 rounded flex items-center justify-center transition-colors ${layout === 'poster' ? 'bg-white/[0.08] text-white' : 'text-white/30 hover:text-white/50'}`}
+            className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors ${layout === 'poster' ? 'bg-white/[0.1] text-white' : 'text-white/35 hover:text-white/55'}`}
           >
             <LayoutGrid className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={() => setLayout('wide')}
-            className={`h-8 w-8 rounded flex items-center justify-center transition-colors ${layout === 'wide' ? 'bg-white/[0.08] text-white' : 'text-white/30 hover:text-white/50'}`}
+            className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors ${layout === 'wide' ? 'bg-white/[0.1] text-white' : 'text-white/35 hover:text-white/55'}`}
           >
             <List className="h-4 w-4" />
           </button>
@@ -305,7 +318,7 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
             type="button"
             onClick={() => setActiveGroup('')}
             className={`shrink-0 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${
-              !activeGroup ? 'bg-white/[0.1] text-white' : 'bg-white/[0.03] text-white/40 hover:bg-white/[0.06] hover:text-white/60'
+              !activeGroup ? 'bg-white/[0.12] text-white' : 'bg-white/[0.04] text-white/45 hover:bg-white/[0.07] hover:text-white/65'
             }`}
           >
             All
@@ -316,11 +329,11 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
               type="button"
               onClick={() => setActiveGroup(g.name)}
               className={`shrink-0 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                activeGroup === g.name ? 'bg-white/[0.1] text-white' : 'bg-white/[0.03] text-white/40 hover:bg-white/[0.06] hover:text-white/60'
+                activeGroup === g.name ? 'bg-white/[0.12] text-white' : 'bg-white/[0.04] text-white/45 hover:bg-white/[0.07] hover:text-white/65'
               }`}
             >
               {g.name}
-              <span className="ml-1.5 text-white/20">{g.count}</span>
+              <span className="ml-1.5 text-white/25">{g.count}</span>
             </button>
           ))}
         </div>
@@ -332,7 +345,7 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
           {Array.from({ length: 18 }).map((_, i) => (
             <Skeleton
               key={i}
-              className={`${layout === 'wide' ? 'aspect-video' : 'aspect-[2/3]'} rounded-lg bg-white/[0.04]`}
+              className={`${layout === 'wide' ? 'aspect-video' : 'aspect-[2/3]'} rounded-lg bg-white/[0.06]`}
             />
           ))}
         </div>
@@ -350,8 +363,10 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
       {/* Empty state */}
       {!loading && items.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Icon className="h-10 w-10 text-white/[0.06] mb-3" />
-          <p className="text-sm text-white/40">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.05] mb-4">
+            <Icon className="h-6 w-6 text-white/25" />
+          </div>
+          <p className="text-sm text-white/50 font-medium">
             {debouncedSearch || activeGroup
               ? 'No results found. Try a different search or filter.'
               : `No ${label.toLowerCase()} available. Add a playlist to get started.`}
