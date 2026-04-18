@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { VideoPlayerDialog } from '@/components/playlists/video-player-dialog';
 import { ChannelBrowser } from '@/components/playlists/channel-browser';
 import { MovieBrowser } from '@/components/playlists/movie-browser';
+import { SeriesBrowser } from '@/components/playlists/series-browser';
 import {
   ArrowLeft,
   RefreshCw,
@@ -361,7 +362,7 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
             <TabsTrigger value="uncategorized">Other</TabsTrigger>
           </TabsList>
         </Tabs>
-        {activeTab !== 'channel' && activeTab !== 'movie' && (
+        {activeTab !== 'channel' && activeTab !== 'movie' && activeTab !== 'series' && (
           <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -385,6 +386,12 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
         <MovieBrowser
           playlistId={playlist.id}
           totalMovies={playlist.movies_count}
+          onSelectItem={(item) => setSelectedItem(item)}
+        />
+      ) : activeTab === 'series' ? (
+        <SeriesBrowser
+          playlistId={playlist.id}
+          totalSeries={playlist.series_count}
           onSelectItem={(item) => setSelectedItem(item)}
         />
       ) : loading ? (
@@ -472,7 +479,7 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
       )}
 
       {/* Pagination */}
-      {activeTab !== 'channel' && activeTab !== 'movie' && totalPages > 1 && (
+      {activeTab !== 'channel' && activeTab !== 'movie' && activeTab !== 'series' && totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             Showing {((page - 1) * 50) + 1}–{Math.min(page * 50, total)} of {total.toLocaleString()}
