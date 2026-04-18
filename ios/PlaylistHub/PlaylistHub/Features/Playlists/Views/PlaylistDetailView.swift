@@ -61,12 +61,19 @@ struct PlaylistDetailView: View {
 
             Divider()
 
-            // Content
+            // Content — route to different layouts per tab
             Group {
-                if viewModel.selectedTab == .categories {
+                switch viewModel.selectedTab {
+                case .categories:
                     categoriesList
-                } else {
-                    itemsList
+                case .movie:
+                    mediaLibraryView(contentType: .movie)
+                case .series:
+                    seriesLibraryView
+                case .channel:
+                    channelListView
+                case .all:
+                    allContentView
                 }
             }
         }
@@ -111,56 +118,203 @@ struct PlaylistDetailView: View {
             )
         }
         .task {
-            await viewModel.loadItems()
+            await viewModel.loadContent()
         }
         .onChange(of: viewModel.selectedTab) { _, _ in
-            Task { await viewModel.loadItems() }
+            Task { await viewModel.loadContent() }
         }
         .onChange(of: viewModel.searchText) { _, _ in
             viewModel.debounceSearch()
         }
     }
 
-    // MARK: - Items List
+    // MARK: - Channel List (row-based — live TV style)
 
-    private var itemsList: some View {
+    private var channelListView: some View {
         Group {
             if viewModel.isLoading && viewModel.items.isEmpty {
-                VStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+                VStack { Spacer(); ProgressView(); Spacer() }
+                    .frame(maxWidth: .infinity)
             } else if viewModel.items.isEmpty {
-                EmptyStateView(
-                    icon: "magnifyingglass",
-                    title: "No items found",
-                    subtitle: viewModel.searchText.isEmpty
-                        ? "This playlist may need scanning."
-                        : "Try a different search term."
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyStateView(icon: "tv", title: "No channels", subtitle: "This playlist may need scanning.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(viewModel.items) { item in
-                            Button {
-                                selectedItem = item
-                            } label: {
-                                ItemRow(item: item)
-                            }
-                            .buttonStyle(ItemButtonStyle())
-
+                            Button { selectedItem = item } label: { ChannelRow(item: item) }
+                                .buttonStyle(ItemButtonStyle())
                             if item.id != viewModel.items.last?.id {
                                 Divider().padding(.leading, 60)
                             }
                         }
+                        if viewModel.hasMore {
+                            ProgressView().padding(.vertical, 20).task { await viewModel.loadMore() }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Movie Library (poster grid + category rails)
+
+    private func mediaLibraryView(contentType: ContentType) -> some View {
+        Group {
+            if viewModel.isLoading && viewModel.groupedItems.isEmpty && viewModel.items.isEmpty {
+                VStack { Spacer(); ProgressView(); Spacer() }
+                    .frame(maxWidth: .infinity)
+            } else if viewModel.groupedItems.isEmpty && viewModel.items.isEmpty {
+                EmptyStateView(icon: contentType.iconName, title: "No \(contentType.displayName.lowercased())", subtitle: "This playlist may need scanning.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !viewModel.searchText.isEmpty {
+                // Flat search results as poster grid
+                posterGridView(items: viewModel.items)
+            } else if viewModel.groupedItems.count == 1, let group = viewModel.groupedItems.first {
+                // Single group — show as full grid
+                posterGridView(items: group.items)
+            } else {
+                // Multiple groups — horizontal rails per category
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        ForEach(viewModel.groupedItems) { group in
+                            MediaRail(
+                                title: group.name,
+                                items: group.items,
+                                onTap: { selectedItem = $0 }
+                            )
+                        }
 
                         if viewModel.hasMore {
-                            ProgressView()
-                                .padding(.vertical, 20)
-                                .task { await viewModel.loadMore() }
+                            ProgressView().padding(.vertical, 20).task { await viewModel.loadMore() }
+                        }
+                    }
+                    .padding(.top, 12)
+                    .padding(.bottom, 40)
+                }
+            }
+        }
+    }
+
+    private func posterGridView(items: [PlaylistItem]) -> some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10),
+        ]
+        return ScrollView {
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(items) { item in
+                    Button { selectedItem = item } label: {
+                        PosterCard(item: item)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 40)
+
+            if viewModel.hasMore {
+                ProgressView().padding(.vertical, 20).task { await viewModel.loadMore() }
+            }
+        }
+    }
+
+    // MARK: - Series Library (show-level grouping)
+
+    private var seriesLibraryView: some View {
+        Group {
+            if viewModel.isLoading && viewModel.groupedItems.isEmpty && viewModel.items.isEmpty {
+                VStack { Spacer(); ProgressView(); Spacer() }
+                    .frame(maxWidth: .infinity)
+            } else if viewModel.groupedItems.isEmpty && viewModel.items.isEmpty {
+                EmptyStateView(icon: "rectangle.stack.fill", title: "No series", subtitle: "This playlist may need scanning.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !viewModel.searchText.isEmpty {
+                // Search → flat poster grid
+                posterGridView(items: viewModel.items)
+            } else {
+                // Show-level cards
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        ForEach(viewModel.groupedItems) { group in
+                            SeriesShowRail(
+                                title: group.name,
+                                items: group.items,
+                                onTap: { selectedItem = $0 }
+                            )
+                        }
+
+                        if viewModel.hasMore {
+                            ProgressView().padding(.vertical, 20).task { await viewModel.loadMore() }
+                        }
+                    }
+                    .padding(.top, 12)
+                    .padding(.bottom, 40)
+                }
+            }
+        }
+    }
+
+    // MARK: - All Content (hybrid)
+
+    private var allContentView: some View {
+        Group {
+            if viewModel.isLoading && viewModel.items.isEmpty {
+                VStack { Spacer(); ProgressView(); Spacer() }
+                    .frame(maxWidth: .infinity)
+            } else if viewModel.items.isEmpty {
+                EmptyStateView(icon: "magnifyingglass", title: "No items found", subtitle: viewModel.searchText.isEmpty ? "This playlist may need scanning." : "Try a different search term.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(viewModel.items) { item in
+                            if item.contentType == .channel {
+                                Button { selectedItem = item } label: { ChannelRow(item: item) }
+                                    .buttonStyle(ItemButtonStyle())
+                                Divider().padding(.leading, 60)
+                            } else {
+                                Button { selectedItem = item } label: {
+                                    HStack(spacing: 12) {
+                                        PosterCardSmall(item: item)
+                                            .frame(width: 60, height: 90)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(item.name)
+                                                .font(.subheadline.weight(.medium))
+                                                .lineLimit(2)
+                                            if let group = item.groupTitle {
+                                                Text(group)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            Text(item.contentType.displayName)
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(item.contentType == .movie ? Color.purple.opacity(0.15) : Color.orange.opacity(0.15))
+                                                .foregroundStyle(item.contentType == .movie ? .purple : .orange)
+                                                .clipShape(Capsule())
+                                        }
+                                        Spacer(minLength: 4)
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.red)
+                                            .frame(width: 28, height: 28)
+                                            .background(.red.opacity(0.1))
+                                            .clipShape(Circle())
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                }
+                                .buttonStyle(ItemButtonStyle())
+                                Divider().padding(.leading, 88)
+                            }
+                        }
+                        if viewModel.hasMore {
+                            ProgressView().padding(.vertical, 20).task { await viewModel.loadMore() }
                         }
                     }
                 }
@@ -176,12 +330,8 @@ struct PlaylistDetailView: View {
                 VStack { Spacer(); ProgressView(); Spacer() }
                     .frame(maxWidth: .infinity)
             } else if viewModel.categories.isEmpty {
-                EmptyStateView(
-                    icon: "folder",
-                    title: "No categories",
-                    subtitle: "Categories appear after scanning."
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyStateView(icon: "folder", title: "No categories", subtitle: "Categories appear after scanning.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -217,7 +367,299 @@ struct PlaylistDetailView: View {
     }
 }
 
-// MARK: - Item Button Style (highlight on tap, no delay)
+// MARK: - Poster Card (movie/series artwork)
+
+struct PosterCard: View {
+    let item: PlaylistItem
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let url = item.resolvedLogoURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    default:
+                        posterFallback
+                    }
+                }
+            } else {
+                posterFallback
+            }
+        }
+        .frame(height: 165)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(alignment: .bottomLeading) {
+            // Title overlay
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(2)
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(colors: [.black.opacity(0.75), .clear], startPoint: .bottom, endPoint: .top)
+            )
+            .clipShape(
+                UnevenRoundedRectangle(bottomLeadingRadius: 10, bottomTrailingRadius: 10)
+            )
+        }
+        .overlay(alignment: .topTrailing) {
+            if item.contentType == .series {
+                Image(systemName: "rectangle.stack.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white)
+                    .padding(4)
+                    .background(.black.opacity(0.5), in: Circle())
+                    .padding(6)
+            }
+        }
+    }
+
+    private var posterFallback: some View {
+        ZStack {
+            // Deterministic gradient from title
+            LinearGradient(
+                colors: PosterCard.gradientColors(for: item.name),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            VStack(spacing: 6) {
+                Image(systemName: item.contentType == .movie ? "film.fill" : "rectangle.stack.fill")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text(item.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, 8)
+            }
+        }
+    }
+
+    static func gradientColors(for title: String) -> [Color] {
+        let hash = abs(title.hashValue)
+        let palettes: [[Color]] = [
+            [Color(red: 0.15, green: 0.15, blue: 0.35), Color(red: 0.3, green: 0.1, blue: 0.4)],
+            [Color(red: 0.1, green: 0.2, blue: 0.3), Color(red: 0.05, green: 0.15, blue: 0.25)],
+            [Color(red: 0.25, green: 0.1, blue: 0.15), Color(red: 0.35, green: 0.1, blue: 0.2)],
+            [Color(red: 0.1, green: 0.25, blue: 0.2), Color(red: 0.05, green: 0.2, blue: 0.15)],
+            [Color(red: 0.2, green: 0.15, blue: 0.3), Color(red: 0.15, green: 0.1, blue: 0.35)],
+            [Color(red: 0.3, green: 0.2, blue: 0.1), Color(red: 0.2, green: 0.12, blue: 0.08)],
+        ]
+        return palettes[hash % palettes.count]
+    }
+}
+
+struct PosterCardSmall: View {
+    let item: PlaylistItem
+
+    var body: some View {
+        ZStack {
+            if let url = item.resolvedLogoURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    default:
+                        smallFallback
+                    }
+                }
+            } else {
+                smallFallback
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var smallFallback: some View {
+        ZStack {
+            LinearGradient(
+                colors: PosterCard.gradientColors(for: item.name),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Image(systemName: item.contentType == .movie ? "film.fill" : "rectangle.stack.fill")
+                .font(.system(size: 14, weight: .light))
+                .foregroundStyle(.white.opacity(0.5))
+        }
+    }
+}
+
+// MARK: - Media Rail (horizontal scroll of poster cards)
+
+struct MediaRail: View {
+    let title: String
+    let items: [PlaylistItem]
+    let onTap: (PlaylistItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title.isEmpty ? "Uncategorized" : title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(items.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 10) {
+                    ForEach(items.prefix(30)) { item in
+                        Button { onTap(item) } label: {
+                            PosterCard(item: item)
+                                .frame(width: 115)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if items.count > 30 {
+                        VStack {
+                            Text("+\(items.count - 30)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text("more")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(width: 70, height: 165)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+}
+
+// MARK: - Series Show Rail (grouped at show level)
+
+struct SeriesShowRail: View {
+    let title: String
+    let items: [PlaylistItem]
+    let onTap: (PlaylistItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title.isEmpty ? "Uncategorized" : title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(items.count) episodes")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 10) {
+                    ForEach(items.prefix(30)) { item in
+                        Button { onTap(item) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                PosterCard(item: item)
+                                    .frame(width: 115)
+                                Text(item.name)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .frame(width: 115, alignment: .leading)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if items.count > 30 {
+                        VStack {
+                            Text("+\(items.count - 30)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 70, height: 165)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+}
+
+// MARK: - Channel Row (compact live-TV row)
+
+struct ChannelRow: View {
+    let item: PlaylistItem
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let logoURL = item.resolvedLogoURL {
+                    AsyncImage(url: logoURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        default:
+                            channelFallback
+                        }
+                    }
+                } else {
+                    channelFallback
+                }
+            }
+            .frame(width: 36, height: 36)
+            .background(Color(.systemGray6))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if let group = item.groupTitle {
+                    Text(group)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            if item.isLive {
+                Text("LIVE")
+                    .font(.system(size: 8, weight: .heavy))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.red)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+
+            Image(systemName: "play.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.red)
+                .frame(width: 28, height: 28)
+                .background(.red.opacity(0.1))
+                .clipShape(Circle())
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private var channelFallback: some View {
+        Image(systemName: "tv.fill")
+            .font(.system(size: 14))
+            .foregroundStyle(.secondary)
+            .frame(width: 36, height: 36)
+    }
+}
+
+// MARK: - Shared Components
 
 struct ItemButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -225,8 +667,6 @@ struct ItemButtonStyle: ButtonStyle {
             .background(configuration.isPressed ? Color.white.opacity(0.05) : .clear)
     }
 }
-
-// MARK: - Tab Pill
 
 struct TabPill: View {
     let title: String
@@ -261,74 +701,17 @@ struct TabPill: View {
     }
 }
 
-// MARK: - Item Row
+// MARK: - Grouped items model
 
-struct ItemRow: View {
-    let item: PlaylistItem
+struct GroupedItems: Identifiable {
+    let id: String
+    let name: String
+    var items: [PlaylistItem]
 
-    var body: some View {
-        HStack(spacing: 12) {
-            // Logo
-            Group {
-                if let logoURL = item.resolvedLogoURL {
-                    AsyncImage(url: logoURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            iconFallback
-                        }
-                    }
-                } else {
-                    iconFallback
-                }
-            }
-            .frame(width: 36, height: 36)
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                if let group = item.groupTitle {
-                    Text(group)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer(minLength: 4)
-
-            if item.isLive {
-                Text("LIVE")
-                    .font(.system(size: 8, weight: .heavy))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.red)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-            }
-
-            Image(systemName: "play.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.red)
-                .frame(width: 28, height: 28)
-                .background(.red.opacity(0.1))
-                .clipShape(Circle())
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-
-    private var iconFallback: some View {
-        Image(systemName: item.contentType.iconName)
-            .font(.system(size: 14))
-            .foregroundStyle(.secondary)
-            .frame(width: 36, height: 36)
+    init(name: String, items: [PlaylistItem]) {
+        self.id = name
+        self.name = name
+        self.items = items
     }
 }
 
@@ -364,6 +747,7 @@ final class PlaylistDetailViewModel: ObservableObject {
     @Published var selectedTab: Tab = .all
     @Published var searchText = ""
     @Published var items: [PlaylistItem] = []
+    @Published var groupedItems: [GroupedItems] = []
     @Published var categories: [Category] = []
     @Published var isLoading = false
     @Published var isScanning = false
@@ -386,18 +770,31 @@ final class PlaylistDetailViewModel: ObservableObject {
         }
     }
 
-    func loadItems() async {
+    /// Main entry point — routes to appropriate loading strategy
+    func loadContent() async {
         page = 1
         isLoading = true
+        items = []
+        groupedItems = []
 
-        if selectedTab == .categories {
-            do {
-                categories = try await DataService.shared.fetchCategories(playlistId: playlist.id)
-            } catch {}
-            isLoading = false
-            return
+        switch selectedTab {
+        case .categories:
+            do { categories = try await DataService.shared.fetchCategories(playlistId: playlist.id) } catch {}
+        case .movie, .series:
+            if searchText.isEmpty {
+                await loadGrouped(contentType: selectedTab == .movie ? .movie : .series)
+            } else {
+                await loadFlat()
+            }
+        default:
+            await loadFlat()
         }
 
+        isLoading = false
+    }
+
+    /// Flat item list (channels, all, search results)
+    private func loadFlat() async {
         let contentType: ContentType? = selectedTab == .all ? nil : ContentType(rawValue: selectedTab.rawValue)
         do {
             let response = try await DataService.shared.fetchItems(
@@ -410,7 +807,33 @@ final class PlaylistDetailViewModel: ObservableObject {
             items = response.items
             hasMore = response.page < response.totalPages
         } catch {}
-        isLoading = false
+    }
+
+    /// Grouped loading for movies/series — fetch all items, group by group_title client-side
+    private func loadGrouped(contentType: ContentType) async {
+        do {
+            // Fetch a large batch for grouping (limit 500 for initial view)
+            let response = try await DataService.shared.fetchItems(
+                playlistId: playlist.id,
+                contentType: contentType,
+                page: 1,
+                limit: 500
+            )
+
+            // Group by group_title
+            var groups: [String: [PlaylistItem]] = [:]
+            for item in response.items {
+                let key = item.groupTitle ?? ""
+                groups[key, default: []].append(item)
+            }
+
+            // Sort groups: largest first, items alphabetically within
+            groupedItems = groups
+                .map { GroupedItems(name: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
+                .sorted { $0.items.count > $1.items.count }
+
+            hasMore = response.page < response.totalPages
+        } catch {}
     }
 
     func loadMore() async {
@@ -424,19 +847,34 @@ final class PlaylistDetailViewModel: ObservableObject {
                 contentType: contentType,
                 search: searchText.isEmpty ? nil : searchText,
                 page: page,
-                limit: 50
+                limit: selectedTab == .movie || selectedTab == .series ? 500 : 50
             )
-            items.append(contentsOf: response.items)
+            if selectedTab == .movie || selectedTab == .series, searchText.isEmpty {
+                // Append to groups
+                for item in response.items {
+                    let key = item.groupTitle ?? ""
+                    if let idx = groupedItems.firstIndex(where: { $0.name == key }) {
+                        groupedItems[idx].items.append(item)
+                    } else {
+                        groupedItems.append(GroupedItems(name: key, items: [item]))
+                    }
+                }
+            } else {
+                items.append(contentsOf: response.items)
+            }
             hasMore = response.page < response.totalPages
         } catch {}
     }
+
+    // Legacy name kept for API compat
+    func loadItems() async { await loadContent() }
 
     func debounceSearch() {
         searchTask?.cancel()
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
-            await loadItems()
+            await loadContent()
         }
     }
 
@@ -444,15 +882,13 @@ final class PlaylistDetailViewModel: ObservableObject {
         isScanning = true
         do {
             try await DataService.shared.scanPlaylist(id: playlist.id)
-            await loadItems()
+            await loadContent()
         } catch {}
         isScanning = false
     }
 
-    /// Returns the channel list for navigation context (items from the same group)
     func currentChannelContext(for item: PlaylistItem) -> [PlaylistItem]? {
         guard item.contentType == .channel else { return nil }
-        // If we have items loaded and they're channels, use them as context
         let channels = items.filter { $0.contentType == .channel }
         return channels.count > 1 ? channels : nil
     }
