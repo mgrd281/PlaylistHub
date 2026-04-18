@@ -160,10 +160,10 @@ function VodRecommendationCard({ item, onPlay }: { item: PlaylistItem; onPlay: (
     <button
       type="button"
       onClick={onPlay}
-      className="group flex gap-3 w-full rounded-xl p-1.5 text-left transition-all hover:bg-white/[0.05]"
+      className="group flex gap-3 w-full rounded-xl p-2 text-left transition-all hover:bg-foreground/[0.04]"
     >
       {/* Thumbnail */}
-      <div className="relative w-[110px] aspect-video rounded-lg overflow-hidden shrink-0 bg-white/[0.04]">
+      <div className="relative w-[168px] aspect-video rounded-lg overflow-hidden shrink-0 bg-foreground/[0.06]">
         {hasImage ? (
           <>
             <img
@@ -175,32 +175,35 @@ function VodRecommendationCard({ item, onPlay }: { item: PlaylistItem; onPlay: (
               onLoad={() => setImgLoaded(true)}
               onError={() => setImgError(true)}
             />
-            {!imgLoaded && <div className="absolute inset-0 bg-white/[0.04] animate-pulse" />}
+            {!imgLoaded && <div className="absolute inset-0 bg-foreground/[0.06] animate-pulse" />}
           </>
         ) : (
           <div className={`absolute inset-0 bg-gradient-to-br ${darkTone(item.name)}`}>
             <div className="absolute inset-0 flex items-center justify-center">
               {item.content_type === 'series'
-                ? <Clapperboard className="h-4 w-4 text-white/20" />
-                : <Film className="h-4 w-4 text-white/20" />
+                ? <Clapperboard className="h-5 w-5 text-white/20" />
+                : <Film className="h-5 w-5 text-white/20" />
               }
             </div>
           </div>
         )}
         {/* Hover play overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <Play className="h-5 w-5 text-white fill-white" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow-lg">
+            <Play className="h-4 w-4 text-black fill-black ml-0.5" />
+          </div>
         </div>
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0 py-0.5">
-        <p className="text-[12px] font-medium text-white/80 leading-snug line-clamp-2 group-hover:text-white transition-colors">
+        <p className="text-[13px] font-medium text-foreground leading-snug line-clamp-2 group-hover:text-foreground transition-colors">
           {item.name}
         </p>
         {item.group_title && (
-          <p className="text-[10px] text-white/25 truncate mt-1">{item.group_title}</p>
+          <p className="text-[11px] text-muted-foreground truncate mt-1.5">{item.group_title}</p>
         )}
+        <p className="text-[10px] text-muted-foreground/60 mt-1 capitalize">{item.content_type}</p>
       </div>
     </button>
   );
@@ -868,12 +871,515 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     toast.success('Stream URL copied');
   }
 
+  /* ── VOD full-page layout vs Live dark overlay ── */
+  const isVodPage = isVod && !fullscreen;
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className={`fixed inset-0 z-50 ${
+        isVodPage
+          ? 'bg-background overflow-y-auto'
+          : 'flex items-center justify-center bg-black/95'
+      }`}
+      onClick={(e) => { if (e.target === e.currentTarget && !isVodPage) onClose(); }}
     >
-      {/* Player shell */}
+      {/* ═══ VOD: Full-page premium layout ═══ */}
+      {isVodPage ? (
+        <div className="min-h-screen">
+          {/* ── Top bar ── */}
+          <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/50">
+            <div className="max-w-[1800px] mx-auto flex items-center justify-between px-6 h-14">
+              <div className="flex items-center gap-3 min-w-0">
+                <button onClick={onClose} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg px-2 py-1.5 hover:bg-foreground/[0.04]">
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="text-sm font-medium">Back</span>
+                </button>
+                <div className="h-5 w-px bg-border/60 mx-1" />
+                <div className="min-w-0">
+                  <h1 className="text-sm font-semibold text-foreground truncate max-w-md">
+                    {displayName}
+                  </h1>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={copyUrl} title="Copy stream URL"
+                  className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all">
+                  <Copy className="h-4 w-4" />
+                </button>
+                <a href={vlcUrl} title="Open in VLC"
+                  className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Main content area ── */}
+          <div className="max-w-[1800px] mx-auto px-6 py-6">
+            <div className={`flex gap-6 ${sideVisible ? '' : ''}`}>
+              {/* ── Left: Player + Info ── */}
+              <div className="flex-1 min-w-0">
+                {/* Player container — always dark */}
+                <div
+                  ref={containerRef}
+                  className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-black/20"
+                  onMouseMove={showControlsTemporarily}
+                  onMouseLeave={() => { if (playing) { setShowControls(false); setSettingsPanel(null); } }}
+                >
+                  <div className="relative aspect-video">
+                    {/* Video */}
+                    <video
+                      ref={videoRef}
+                      className="w-full h-full object-contain"
+                      playsInline
+                      autoPlay
+                      preload="auto"
+                      onError={() => {
+                        if (hlsRef.current) return;
+                        setError('Video could not be played. Try opening in VLC.');
+                        setLoading(false);
+                      }}
+                    />
+
+                    {/* Loading */}
+                    {loading && (
+                      <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+                        <div className="w-16 h-16 rounded-full border-2 border-white/10 border-t-white/80 animate-spin" />
+                      </div>
+                    )}
+
+                    {/* Big play button */}
+                    {!playing && !loading && !error && (
+                      <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                        <div className="w-20 h-20 rounded-full bg-white/[0.12] backdrop-blur-sm flex items-center justify-center">
+                          <Play className="h-9 w-9 text-white fill-white ml-1" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Resume offer */}
+                    {resumeOffer !== null && (
+                      <div className="player-overlay absolute top-20 left-1/2 -translate-x-1/2 z-30">
+                        <div className="flex items-center gap-3 bg-black/80 backdrop-blur-xl rounded-xl px-5 py-3 border border-white/[0.08] shadow-2xl">
+                          <RotateCcw className="h-4 w-4 text-blue-400 shrink-0" />
+                          <span className="text-sm text-white/80">Resume from {formatTime(resumeOffer)}?</span>
+                          <button onClick={resumeFromSaved}
+                            className="px-3.5 py-1.5 bg-white text-black text-xs font-semibold rounded-lg hover:bg-white/90 transition-colors">
+                            Resume
+                          </button>
+                          <button onClick={dismissResume}
+                            className="px-3.5 py-1.5 text-white/60 text-xs hover:text-white transition-colors">
+                            Start Over
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error */}
+                    {error && !seriesLoading && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-white/80 p-8 text-center z-20">
+                        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
+                          <AlertCircle className="h-8 w-8 text-red-400" />
+                        </div>
+                        <div>
+                          <p className="text-base font-medium text-white/90 mb-1">Playback Error</p>
+                          <p className="text-sm text-white/50">{error}</p>
+                        </div>
+                        <div className="flex gap-3">
+                          <button onClick={copyUrl}
+                            className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]">
+                            <Copy className="h-4 w-4" /> Copy URL
+                          </button>
+                          <a href={vlcUrl}
+                            className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm text-white hover:bg-blue-500 transition-colors">
+                            <ExternalLink className="h-4 w-4" /> Open in VLC
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Series loading */}
+                    {seriesLoading && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
+                        <div className="w-12 h-12 rounded-full border-2 border-white/10 border-t-white/80 animate-spin mb-4" />
+                        <p className="text-sm text-white/50">Loading episodes...</p>
+                      </div>
+                    )}
+
+                    {/* Series episode selector */}
+                    {isSeries && seriesEpisodes && !seriesLoading && (
+                      <div className="player-overlay absolute top-0 right-0 bottom-0 w-72 z-30 bg-black/90 backdrop-blur-xl border-l border-white/[0.06] overflow-hidden flex flex-col">
+                        <div className="shrink-0 p-4 border-b border-white/[0.06]">
+                          <p className="text-white text-sm font-semibold truncate">{seriesEpisodes.seriesName || item.name}</p>
+                          {seriesEpisodes.seasons.length > 1 && (
+                            <div className="flex gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-none">
+                              {seriesEpisodes.seasons.map((s) => (
+                                <button
+                                  key={s.season}
+                                  onClick={() => setSelectedSeason(s.season)}
+                                  className={`px-3 py-1.5 text-xs rounded-lg whitespace-nowrap transition-all ${
+                                    selectedSeason === s.season
+                                      ? 'bg-white text-black font-semibold'
+                                      : 'bg-white/[0.06] text-white/50 hover:bg-white/[0.1] hover:text-white/70'
+                                  }`}
+                                >
+                                  Season {s.season}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 overflow-y-auto scrollbar-none p-2">
+                          {seriesEpisodes.seasons
+                            .find(s => s.season === selectedSeason)
+                            ?.episodes.map((ep) => (
+                              <button
+                                key={ep.id}
+                                onClick={() => setActiveEpisode({ streamUrl: ep.streamUrl, title: ep.title })}
+                                className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 text-sm transition-all ${
+                                  activeEpisode?.streamUrl === ep.streamUrl
+                                    ? 'bg-white/[0.1] text-white border border-white/[0.1]'
+                                    : 'text-white/60 hover:bg-white/[0.05] hover:text-white/80 border border-transparent'
+                                }`}
+                              >
+                                <span className="text-white/30 text-xs mr-2 tabular-nums">E{ep.episode}</span>
+                                <span className="truncate">{ep.title}</span>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Seek indicator */}
+                    {seekIndicator && (
+                      <div className={`absolute top-1/2 -translate-y-1/2 z-20 pointer-events-none ${
+                        seekIndicator.side === 'left' ? 'left-[15%]' : 'right-[15%]'
+                      }`}>
+                        <div className="flex flex-col items-center animate-pulse">
+                          <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                            {seekIndicator.side === 'left' ? (
+                              <SkipBack className="h-6 w-6 text-white" />
+                            ) : (
+                              <SkipForward className="h-6 w-6 text-white" />
+                            )}
+                          </div>
+                          <span className="text-white text-xs mt-1.5 font-medium">{seekIndicator.seconds}s</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Click to play/pause & double-click fullscreen */}
+                    <div
+                      className="absolute inset-0 z-[5]"
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest('.player-controls, .player-overlay')) return;
+                        togglePlay();
+                        showControlsTemporarily();
+                      }}
+                      onDoubleClick={(e) => {
+                        if ((e.target as HTMLElement).closest('.player-controls, .player-overlay')) return;
+                        toggleFullscreen();
+                      }}
+                    />
+
+                    {/* ── Bottom controls overlay (dark, inside player) ── */}
+                    <div
+                      className={`player-controls absolute bottom-0 left-0 right-0 z-20 transition-all duration-500 ease-out ${
+                        showControls || !playing ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+                      }`}
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none" />
+
+                      <div className="relative px-4 pb-4 pt-16">
+                        {/* Progress bar */}
+                        {!isLive && duration > 0 && (
+                          <div
+                            ref={progressRef}
+                            className="group relative h-[3px] hover:h-[5px] bg-white/[0.15] rounded-full cursor-pointer mb-4 transition-all duration-200"
+                            onClick={handleProgressClick}
+                            onMouseMove={handleProgressHover}
+                            onMouseLeave={() => setSeekPreview(null)}
+                          >
+                            <div
+                              className="absolute inset-y-0 left-0 bg-white/[0.2] rounded-full transition-[width] duration-300"
+                              style={{ width: `${bufferedPct}%` }}
+                            />
+                            <div
+                              className="absolute inset-y-0 left-0 bg-white rounded-full transition-[width] duration-100"
+                              style={{ width: `${progress}%` }}
+                            />
+                            <div
+                              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[13px] h-[13px] bg-white rounded-full scale-0 group-hover:scale-100 transition-transform duration-150 shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                              style={{ left: `${progress}%` }}
+                            />
+                            {seekPreview !== null && (
+                              <div
+                                className="absolute -top-9 -translate-x-1/2 bg-white text-black text-[11px] font-semibold px-2.5 py-1 rounded-md pointer-events-none shadow-lg"
+                                style={{ left: `${(seekPreview / duration) * 100}%` }}
+                              >
+                                {formatTime(seekPreview)}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Controls row */}
+                        <div className="flex items-center gap-1">
+                          <button onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+                            className="p-2 text-white hover:scale-110 transition-transform">
+                            {playing
+                              ? <Pause className="h-5 w-5 fill-white" />
+                              : <Play className="h-5 w-5 fill-white" />
+                            }
+                          </button>
+
+                          <button onClick={(e) => { e.stopPropagation(); seek(-10); }}
+                            title="-10s (J)"
+                            className="p-2 text-white/60 hover:text-white transition-colors">
+                            <SkipBack className="h-4 w-4" />
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); seek(10); }}
+                            title="+10s (L)"
+                            className="p-2 text-white/60 hover:text-white transition-colors">
+                            <SkipForward className="h-4 w-4" />
+                          </button>
+
+                          {/* Volume group */}
+                          <div className="flex items-center group/vol">
+                            <button onClick={(e) => { e.stopPropagation(); toggleMute(); }}
+                              className="p-2 text-white/60 hover:text-white transition-colors">
+                              {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                            </button>
+                            <div className="w-0 overflow-hidden group-hover/vol:w-20 transition-all duration-300">
+                              <input
+                                type="range"
+                                min={0} max={1} step={0.05}
+                                value={muted ? 0 : volume}
+                                onChange={handleVolumeChange}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-20 h-1 accent-white cursor-pointer"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Time */}
+                          <div className="text-white/50 text-xs font-mono ml-1 select-none tabular-nums">
+                            <span className="text-white/80">{formatTime(currentTime)}</span>
+                            {duration > 0 && <span className="text-white/30"> / {formatTime(duration)}</span>}
+                          </div>
+
+                          <div className="flex-1" />
+
+                          {/* Settings */}
+                          <div className="relative">
+                            <button onClick={(e) => { e.stopPropagation(); setSettingsPanel(settingsPanel ? null : 'main'); }}
+                              className={`p-2 transition-all ${
+                                settingsPanel ? 'text-white rotate-45' : speed !== 1 ? 'text-white' : 'text-white/50 hover:text-white'
+                              }`}
+                              title="Settings">
+                              <Settings className="h-4 w-4" />
+                            </button>
+
+                            {settingsPanel && (
+                              <div className="absolute bottom-full right-0 mb-3 w-52 bg-[#1a1a1e]/95 backdrop-blur-xl border border-white/[0.08] rounded-xl overflow-hidden shadow-2xl"
+                                onClick={(e) => e.stopPropagation()}>
+                                {settingsPanel === 'main' && (
+                                  <div className="py-1">
+                                    <button onClick={() => setSettingsPanel('quality')}
+                                      className="flex items-center justify-between w-full px-4 py-3 text-[13px] text-white hover:bg-white/[0.06] transition-colors">
+                                      <span className="flex items-center gap-3">
+                                        <MonitorPlay className="h-4 w-4 text-white/40" />
+                                        Quality
+                                      </span>
+                                      <span className="text-[12px] text-white/40">
+                                        {currentQuality === -1 ? 'Auto' : qualities.find(q => q.index === currentQuality)?.label || 'Auto'}
+                                      </span>
+                                    </button>
+                                    <button onClick={() => setSettingsPanel('speed')}
+                                      className="flex items-center justify-between w-full px-4 py-3 text-[13px] text-white hover:bg-white/[0.06] transition-colors">
+                                      <span className="flex items-center gap-3">
+                                        <Settings className="h-4 w-4 text-white/40" />
+                                        Playback Speed
+                                      </span>
+                                      <span className="text-[12px] text-white/40">{speed === 1 ? 'Normal' : `${speed}x`}</span>
+                                    </button>
+                                  </div>
+                                )}
+                                {settingsPanel === 'quality' && (
+                                  <div>
+                                    <button onClick={() => setSettingsPanel('main')}
+                                      className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-white/50 border-b border-white/[0.06] hover:bg-white/[0.04] transition-colors">
+                                      <ChevronLeft className="h-3 w-3" /> Quality
+                                    </button>
+                                    <div className="py-1">
+                                      <button onClick={() => changeQuality(-1)}
+                                        className={`flex items-center justify-between w-full px-4 py-2.5 text-[13px] hover:bg-white/[0.06] transition-colors ${
+                                          currentQuality === -1 ? 'text-white font-medium' : 'text-white/70'
+                                        }`}>
+                                        Auto
+                                        {currentQuality === -1 && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                      </button>
+                                      {qualities.map((q) => (
+                                        <button key={q.index} onClick={() => changeQuality(q.index)}
+                                          className={`flex items-center justify-between w-full px-4 py-2.5 text-[13px] hover:bg-white/[0.06] transition-colors ${
+                                            currentQuality === q.index ? 'text-white font-medium' : 'text-white/70'
+                                          }`}>
+                                          <span className="flex items-center gap-2">
+                                            {q.label}
+                                            {q.height >= 1080 && <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.5 rounded font-bold">HD</span>}
+                                          </span>
+                                          {currentQuality === q.index && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                        </button>
+                                      ))}
+                                      {qualities.length === 0 && (
+                                        <div className="px-4 py-3 text-xs text-white/30">Single quality stream</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                {settingsPanel === 'speed' && (
+                                  <div>
+                                    <button onClick={() => setSettingsPanel('main')}
+                                      className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-white/50 border-b border-white/[0.06] hover:bg-white/[0.04] transition-colors">
+                                      <ChevronLeft className="h-3 w-3" /> Speed
+                                    </button>
+                                    <div className="py-1">
+                                      {SPEEDS.map((s) => (
+                                        <button key={s} onClick={() => changeSpeed(s)}
+                                          className={`flex items-center justify-between w-full px-4 py-2.5 text-[13px] hover:bg-white/[0.06] transition-colors ${
+                                            speed === s ? 'text-white font-medium' : 'text-white/70'
+                                          }`}>
+                                          {s === 1 ? 'Normal' : `${s}x`}
+                                          {speed === s && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* PiP */}
+                          {typeof document !== 'undefined' && document.pictureInPictureEnabled && (
+                            <button onClick={(e) => { e.stopPropagation(); togglePip(); }}
+                              className={`p-2 transition-all ${pip ? 'text-white' : 'text-white/50 hover:text-white'}`}
+                              title="Picture-in-Picture (P)">
+                              <PictureInPicture2 className="h-4 w-4" />
+                            </button>
+                          )}
+
+                          {/* Fullscreen */}
+                          <button onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
+                            className="p-2 text-white/50 hover:text-white transition-colors"
+                            title="Fullscreen (F)">
+                            <Maximize className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Metadata section (below player, theme-aware) ── */}
+                <div className="mt-5">
+                  <div className="flex items-start gap-4">
+                    {item.tvg_logo && (
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-card border border-border overflow-hidden">
+                        <img src={item.tvg_logo} alt="" className="h-full w-full object-contain p-1.5"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-lg font-semibold text-foreground leading-tight line-clamp-2">
+                        {displayName}
+                      </h2>
+                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                        {item.group_title && (
+                          <span className="text-sm text-muted-foreground">{item.group_title}</span>
+                        )}
+                        <span className="text-xs text-muted-foreground/50 capitalize">{item.content_type}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={copyUrl}
+                        className="flex items-center gap-2 rounded-lg bg-secondary px-3.5 py-2 text-sm text-secondary-foreground hover:bg-secondary/80 transition-colors border border-border/50">
+                        <Copy className="h-3.5 w-3.5" /> Copy URL
+                      </button>
+                      <a href={vlcUrl}
+                        className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm text-primary-foreground hover:opacity-90 transition-opacity">
+                        <ExternalLink className="h-3.5 w-3.5" /> VLC
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Right: Recommendation Column (theme-aware) ── */}
+              {sideVisible && (
+                <div className="w-[380px] shrink-0">
+                  <div className="sticky top-20">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        {item.content_type === 'movie'
+                          ? <Film className="h-4 w-4 text-muted-foreground" />
+                          : <Clapperboard className="h-4 w-4 text-muted-foreground" />
+                        }
+                        <span className="text-sm font-semibold text-foreground">More Like This</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {vodRecommendations.length} titles
+                      </span>
+                    </div>
+
+                    <div className="max-h-[calc(100vh-160px)] overflow-y-auto scrollbar-none space-y-1 -mx-1">
+                      {/* Loading skeletons */}
+                      {vodRecsLoading && vodRecommendations.length === 0 && (
+                        <div className="space-y-3 px-1">
+                          {Array.from({ length: 6 }).map((_, i) => (
+                            <div key={i} className="flex gap-3 animate-pulse">
+                              <div className="w-[168px] aspect-video rounded-lg bg-foreground/[0.06] shrink-0" />
+                              <div className="flex-1 py-1 space-y-2">
+                                <div className="h-3 bg-foreground/[0.06] rounded w-4/5" />
+                                <div className="h-2.5 bg-foreground/[0.04] rounded w-3/5" />
+                                <div className="h-2 bg-foreground/[0.03] rounded w-2/5" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Recommendation cards */}
+                      {vodRecommendations.length > 0 && (
+                        <div className="space-y-0.5 px-1">
+                          {vodRecommendations.map((rec) => (
+                            <VodRecommendationCard
+                              key={rec.id}
+                              item={rec}
+                              onPlay={() => onNavigate ? onNavigate(rec) : undefined}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Empty state */}
+                      {!vodRecsLoading && vodRecommendations.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                          <div className="w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-3">
+                            <Film className="h-5 w-5 text-muted-foreground/40" />
+                          </div>
+                          <p className="text-sm text-muted-foreground/60">No recommendations available</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+      /* ═══ Live TV / Fullscreen: Dark immersive overlay ═══ */
       <div
         ref={containerRef}
         className={`relative flex ${containerClass} transition-all duration-300 ease-out`}
@@ -1426,27 +1932,22 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
         </div>
         </div>
 
-        {/* ═══════ SIDE PANEL — Related Channels / VOD Recommendations ═══════ */}
-        {sideVisible && (
+        {/* ═══════ SIDE PANEL — Live channels only (VOD has its own layout) ═══════ */}
+        {sideVisible && !isVod && (
           <div className={`flex flex-col bg-[#0c0c0e] border-l border-white/[0.04] ${
             viewMode === 'theater' ? 'w-[340px]' : 'w-[300px]'
           } rounded-r-2xl overflow-hidden`}>
             <div className="shrink-0 px-4 pt-4 pb-3">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  {isVod
-                    ? (item.content_type === 'movie'
-                      ? <Film className="h-3.5 w-3.5 text-white/30" />
-                      : <Clapperboard className="h-3.5 w-3.5 text-white/30" />)
-                    : <Tv className="h-3.5 w-3.5 text-white/30" />
-                  }
+                  <Tv className="h-3.5 w-3.5 text-white/30" />
                   <span className="text-[13px] font-semibold text-white/80">
-                    {isVod ? 'More Like This' : (item.group_title || 'Related')}
+                    {item.group_title || 'Related'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-white/25 tabular-nums">
-                    {isVod ? vodRecommendations.length : relatedChannels.length}
+                    {relatedChannels.length}
                   </span>
                   <button
                     onClick={() => setShowSidePanel(false)}
@@ -1457,92 +1958,52 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                   </button>
                 </div>
               </div>
-              {isVod && item.group_title && (
-                <p className="text-[11px] text-white/25 truncate mt-0.5">{item.group_title}</p>
-              )}
               <div className="h-px bg-white/[0.04] mt-2" />
             </div>
 
             <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-3">
-              {/* ── Live channel list ── */}
-              {!isVod && (
-                <div className="space-y-0.5">
-                  {relatedChannels.map((ch) => {
-                    const isActive = ch.id === item.id;
-                    return (
-                      <button
-                        key={ch.id}
-                        onClick={() => navigateChannel(ch)}
-                        className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all ${
-                          isActive
-                            ? 'bg-white/[0.08] text-white'
-                            : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
-                        }`}
-                      >
-                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
-                          isActive ? 'bg-white/[0.12] ring-1 ring-white/[0.1]' : 'bg-white/[0.04]'
-                        }`}>
-                          {ch.tvg_logo ? (
-                            <img src={ch.tvg_logo} alt="" className="h-full w-full object-contain p-1"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                          ) : (
-                            <Radio className="h-3 w-3 text-white/20" />
-                          )}
-                        </div>
-                        <p className={`text-[12px] truncate leading-tight flex-1 ${isActive ? 'font-medium' : ''}`}>
-                          {ch.name}
-                        </p>
-                        {isActive && (
-                          <div className="flex items-center gap-[2px] shrink-0">
-                            <div className="w-[2px] h-3 bg-white/60 rounded-full animate-pulse" />
-                            <div className="w-[2px] h-2 bg-white/40 rounded-full animate-pulse [animation-delay:150ms]" />
-                            <div className="w-[2px] h-3.5 bg-white/60 rounded-full animate-pulse [animation-delay:300ms]" />
-                          </div>
+              <div className="space-y-0.5">
+                {relatedChannels.map((ch) => {
+                  const isActive = ch.id === item.id;
+                  return (
+                    <button
+                      key={ch.id}
+                      onClick={() => navigateChannel(ch)}
+                      className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all ${
+                        isActive
+                          ? 'bg-white/[0.08] text-white'
+                          : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
+                      }`}
+                    >
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
+                        isActive ? 'bg-white/[0.12] ring-1 ring-white/[0.1]' : 'bg-white/[0.04]'
+                      }`}>
+                        {ch.tvg_logo ? (
+                          <img src={ch.tvg_logo} alt="" className="h-full w-full object-contain p-1"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          <Radio className="h-3 w-3 text-white/20" />
                         )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* ── VOD recommendation cards ── */}
-              {isVod && vodRecsLoading && vodRecommendations.length === 0 && (
-                <div className="space-y-2 px-1 pt-1">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="flex gap-3 animate-pulse">
-                      <div className="w-[100px] aspect-video rounded-lg bg-white/[0.06] shrink-0" />
-                      <div className="flex-1 py-1 space-y-2">
-                        <div className="h-3 bg-white/[0.06] rounded w-4/5" />
-                        <div className="h-2.5 bg-white/[0.04] rounded w-2/5" />
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {isVod && vodRecommendations.length > 0 && (
-                <div className="space-y-1.5 px-1 pt-1">
-                  {vodRecommendations.map((rec) => (
-                    <VodRecommendationCard
-                      key={rec.id}
-                      item={rec}
-                      onPlay={() => onNavigate ? onNavigate(rec) : (() => {
-                        // If no onNavigate, close and re-open isn't ideal,
-                        // but we need to switch the item
-                      })()}
-                    />
-                  ))}
-                </div>
-              )}
-              {isVod && !vodRecsLoading && vodRecommendations.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <Film className="h-5 w-5 text-white/15 mb-2" />
-                  <p className="text-[11px] text-white/25">No recommendations available</p>
-                </div>
-              )}
+                      <p className={`text-[12px] truncate leading-tight flex-1 ${isActive ? 'font-medium' : ''}`}>
+                        {ch.name}
+                      </p>
+                      {isActive && (
+                        <div className="flex items-center gap-[2px] shrink-0">
+                          <div className="w-[2px] h-3 bg-white/60 rounded-full animate-pulse" />
+                          <div className="w-[2px] h-2 bg-white/40 rounded-full animate-pulse [animation-delay:150ms]" />
+                          <div className="w-[2px] h-3.5 bg-white/60 rounded-full animate-pulse [animation-delay:300ms]" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
