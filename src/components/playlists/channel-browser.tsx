@@ -282,7 +282,7 @@ export function ChannelBrowser({
   const [searchItems, setSearchItems] = useState<PlaylistItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchTotal, setSearchTotal] = useState(0);
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Show more groups
   const [showAllGroups, setShowAllGroups] = useState(false);
