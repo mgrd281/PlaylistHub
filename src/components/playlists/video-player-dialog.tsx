@@ -317,15 +317,20 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
           const hls = new Hls({
             enableWorker: true,
             lowLatencyMode: isLive,
-            maxBufferLength: isLive ? 10 : 30,
-            maxMaxBufferLength: isLive ? 30 : 120,
-            fragLoadingTimeOut: 30000,
-            fragLoadingMaxRetry: 5,
-            fragLoadingRetryDelay: 2000,
-            levelLoadingTimeOut: 20000,
-            manifestLoadingTimeOut: 20000,
+            maxBufferLength: isLive ? 8 : 30,
+            maxMaxBufferLength: isLive ? 20 : 120,
+            backBufferLength: isLive ? 0 : 30,
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 6,
+            fragLoadingTimeOut: 25000,
+            fragLoadingMaxRetry: 6,
+            fragLoadingRetryDelay: 1000,
+            levelLoadingTimeOut: 15000,
+            manifestLoadingTimeOut: 15000,
+            manifestLoadingMaxRetry: 4,
+            manifestLoadingRetryDelay: 1000,
             startFragPrefetch: true,
-            testBandwidth: true,
+            testBandwidth: !isLive,
           });
           hlsRef.current = hls;
           hls.loadSource(proxied);
@@ -354,15 +359,26 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
           });
 
           let mediaErrorRecoveries = 0;
-          hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; type: string }) => {
+          let networkErrorRecoveries = 0;
+          hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; type: string; details: string }) => {
             if (data.fatal) {
               if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
                 mediaErrorRecoveries++;
                 hls.recoverMediaError();
+              } else if (data.type === 'networkError' && networkErrorRecoveries < 3) {
+                networkErrorRecoveries++;
+                setTimeout(() => {
+                  hls.startLoad();
+                }, 1000 * networkErrorRecoveries);
               } else {
                 setError('تعذّر تشغيل البث.');
                 setLoading(false);
               }
+            }
+            // Non-fatal buffer stall — try to nudge playback
+            if (!data.fatal && data.details === 'bufferStalledError' && video) {
+              const ct = video.currentTime;
+              if (ct > 0) video.currentTime = ct + 0.1;
             }
           });
           return;

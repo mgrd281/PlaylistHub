@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { VideoPlayerDialog } from '@/components/playlists/video-player-dialog';
+import { ChannelBrowser } from '@/components/playlists/channel-browser';
 import {
   ArrowLeft,
   RefreshCw,
@@ -31,8 +32,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  Radio,
-  Play,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -355,32 +354,32 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
             <TabsTrigger value="uncategorized">Other</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search items..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        {activeTab !== 'channel' && (
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search items..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        )}
       </div>
 
       {/* Items Display */}
-      {loading ? (
-        activeTab === 'channel' ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-[72px] w-full rounded-xl" />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-lg border bg-card p-6 space-y-3">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        )
+      {activeTab === 'channel' ? (
+        <ChannelBrowser
+          playlistId={playlist.id}
+          totalChannels={playlist.channels_count}
+          onSelectItem={setSelectedItem}
+        />
+      ) : loading ? (
+        <div className="rounded-lg border bg-card p-6 space-y-3">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20">
           <div className="rounded-full bg-muted p-3 mb-3">
@@ -391,63 +390,7 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
             <p className="text-xs text-muted-foreground mt-1">Try a different search term</p>
           )}
         </div>
-      ) : activeTab === 'channel' ? (
-        /* ── Channel Grid ── */
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground px-1">
-            {total.toLocaleString()} channels {search ? `matching "${search}"` : ''}
-          </p>
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {items.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedItem(item)}
-                className="group flex items-center gap-3 rounded-xl border bg-card p-3 text-left transition-all hover:bg-accent/50 hover:border-accent-foreground/20 hover:shadow-sm active:scale-[0.99]"
-              >
-                {/* Channel Logo */}
-                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-muted/70 overflow-hidden ring-1 ring-foreground/5">
-                  {item.tvg_logo ? (
-                    <img
-                      src={item.tvg_logo}
-                      alt=""
-                      className="h-full w-full object-contain p-1"
-                      onError={(e) => {
-                        const el = e.target as HTMLImageElement;
-                        el.style.display = 'none';
-                        el.nextElementSibling?.classList.remove('hidden');
-                      }}
-                    />
-                  ) : null}
-                  <div className={`flex items-center justify-center ${item.tvg_logo ? 'hidden' : ''}`}>
-                    <Radio className="h-4.5 w-4.5 text-muted-foreground/60" />
-                  </div>
-                </div>
-
-                {/* Channel Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="truncate text-sm font-medium leading-tight group-hover:text-foreground">
-                    {item.name}
-                  </p>
-                  {item.group_title ? (
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {item.group_title}
-                    </p>
-                  ) : null}
-                </div>
-
-                {/* Play indicator */}
-                <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <Play className="h-3.5 w-3.5 fill-current" />
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
       ) : (
-        /* ── Table for Movies / Series / All / Other ── */
         <div className="rounded-lg border bg-card">
           <Table>
             <TableHeader>
@@ -471,6 +414,7 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
                         <img
                           src={item.tvg_logo}
                           alt=""
+                          loading="lazy"
                           className="h-8 w-8 rounded object-contain bg-muted"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = 'none';
@@ -515,7 +459,7 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {activeTab !== 'channel' && totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             Showing {((page - 1) * 50) + 1}–{Math.min(page * 50, total)} of {total.toLocaleString()}
