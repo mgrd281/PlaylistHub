@@ -19,54 +19,41 @@ const VLC_HEADERS: Record<string, string> = {
   Accept: '*/*',
 };
 
-/** Try fetching through the Scanner Service (primary — runs on non-blocked IP) */
-async function fetchViaScanner(
+/** Try fetching through a Scanner Service endpoint */
+async function fetchViaScannerUrl(
+  base: string,
   targetUrl: string,
   rangeHeader?: string | null,
 ): Promise<Response | null> {
-  // Try SCANNER_API_URL first (dedicated scanner), then SCANNER_STREAM_URL (tunnel)
-  const urls = [
-    process.env.SCANNER_API_URL?.trim().replace(/\/$/, ''),
-    process.env.SCANNER_STREAM_URL?.trim().replace(/\/$/, ''),
-  ].filter(Boolean) as string[];
-
   const token = process.env.SCANNER_API_TOKEN ?? '';
-
-  for (const base of urls) {
-    try {
-      const url = `${base}/stream?url=${encodeURIComponent(targetUrl)}`;
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (rangeHeader) headers['Range'] = rangeHeader;
-
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(8000),
-        headers,
-      });
-      if (res.ok || res.status === 206) return res;
-    } catch { /* unreachable */ }
-  }
+  try {
+    const url = `${base}/stream?url=${encodeURIComponent(targetUrl)}`;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (rangeHeader) headers['Range'] = rangeHeader;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000), headers });
+    if (res.ok || res.status === 206) return res;
+  } catch { /* timeout or network error */ }
   return null;
 }
 
-/** Try fetching through CF Worker (fallback) */
+/** Try fetching through CF Worker */
 async function fetchViaCfWorker(targetUrl: string): Promise<Response | null> {
   const proxyUrl = process.env.STREAM_PROXY_URL?.trim().replace(/\/$/, '');
   if (!proxyUrl) return null;
-
   try {
     const separator = proxyUrl.includes('?') ? '&' : '?';
     const url = `${proxyUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
     if (res.ok || res.status === 206) return res;
-  } catch { /* unreachable */ }
+  } catch { /* timeout or network error */ }
   return null;
 }
 
 /** Direct fetch with VLC UA (works only if Vercel IP isn't blocked) */
 async function directFetch(
   url: string,
-  timeoutMs = 6000,
+  timeoutMs = 5000,
 ): Promise<Response | null> {
   try {
     const res = await fetch(normalizeUrl(url), {
@@ -77,6 +64,43 @@ async function directFetch(
     if (res.ok || res.status === 206) return res;
   } catch { /* failed */ }
   return null;
+}
+
+/**
+ * Race multiple fetch strategies in parallel — first successful response wins.
+ * Losers are silently discarded (edge runtime doesn't support AbortController on inflight fetches,
+ * but the responses will be GC'd).
+ */
+async function raceStrategies(
+  targetUrl: string,
+  rangeHeader?: string | null,
+): Promise<Response | null> {
+  const strategies: Promise<Response | null>[] = [];
+
+  // Scanner endpoints (run in parallel with each other + CF worker)
+  const scannerUrls = [
+    process.env.SCANNER_API_URL?.trim().replace(/\/$/, ''),
+    process.env.SCANNER_STREAM_URL?.trim().replace(/\/$/, ''),
+  ].filter(Boolean) as string[];
+  for (const base of scannerUrls) {
+    strategies.push(fetchViaScannerUrl(base, targetUrl, rangeHeader));
+  }
+
+  // CF Worker
+  strategies.push(fetchViaCfWorker(targetUrl));
+
+  // Direct fetch (usually blocked but sometimes works — cheap to try in parallel)
+  strategies.push(directFetch(targetUrl));
+
+  // Race: first non-null result wins
+  try {
+    return await Promise.any(
+      strategies.map(p => p.then(r => { if (!r) throw new Error('skip'); return r; }))
+    );
+  } catch {
+    // All strategies returned null
+    return null;
+  }
 }
 
 async function streamResponse(upstream: Response, targetUrl: string): Promise<NextResponse> {
@@ -165,32 +189,19 @@ export async function GET(req: NextRequest) {
   }
 
   const rangeHeader = req.headers.get('range');
-  const errors: string[] = [];
 
-  // 1. Scanner Service (primary — non-blocked IP with VLC UA)
-  const scanner = await fetchViaScanner(targetUrl, rangeHeader);
-  if (scanner) return await streamResponse(scanner, targetUrl);
-  errors.push('scanner: unavailable');
+  // Race all proxy strategies in parallel — first successful response wins
+  const winner = await raceStrategies(targetUrl, rangeHeader);
+  if (winner) return await streamResponse(winner, targetUrl);
 
-  // 2. CF Worker (fallback)
-  const cf = await fetchViaCfWorker(targetUrl);
-  if (cf) return await streamResponse(cf, targetUrl);
-  errors.push('cf-worker: unavailable');
-
-  // 3. Direct fetch (last resort — usually blocked)
-  const direct = await directFetch(targetUrl);
-  if (direct) return await streamResponse(direct, targetUrl);
-  errors.push('direct: blocked');
-
-  // 4. HTTPS upgrade + direct
+  // All strategies exhausted — try HTTPS upgrade as last resort
   if (targetUrl.startsWith('http://')) {
-    const https = await directFetch(targetUrl.replace('http://', 'https://'), 10000);
+    const https = await directFetch(targetUrl.replace('http://', 'https://'), 8000);
     if (https) return await streamResponse(https, targetUrl);
-    errors.push('https: blocked');
   }
 
   return NextResponse.json(
-    { error: 'Stream unavailable', details: errors },
+    { error: 'Stream unavailable' },
     { status: 502 },
   );
 }

@@ -14,6 +14,15 @@ type ViewMode = 'normal' | 'large' | 'theater';
 import { PlaylistItem } from '@/types/database';
 import { toast } from 'sonner';
 
+/* ── Pre-load HLS.js module to eliminate dynamic import delay ── */
+let _hlsModuleCache: Promise<typeof import('hls.js')> | null = null;
+function getHlsModule() {
+  if (!_hlsModuleCache) _hlsModuleCache = import('hls.js');
+  return _hlsModuleCache;
+}
+// Kick off preload immediately on module evaluation (client-side only)
+if (typeof window !== 'undefined') getHlsModule();
+
 interface VideoPlayerDialogProps {
   item: PlaylistItem | null;
   channelList?: PlaylistItem[];
@@ -305,7 +314,8 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
     setDuration(0);
     setBuffered(0);
     setResumeOffer(null);
-    setSpeed(1);
+    // Don't reset speed on channel switch — preserve user's choice
+    // setSpeed(1) only on initial mount is handled by useState default
 
     const video = videoRef.current;
     if (!video) return;
@@ -341,31 +351,35 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
         }
 
         // Chrome/Firefox — use hls.js
-        const Hls = (await import('hls.js')).default;
+        const Hls = (await getHlsModule()).default;
         if (Hls.isSupported()) {
           const hls = new Hls({
             enableWorker: true,
             lowLatencyMode: isLive,
-            maxBufferLength: isLive ? 10 : 60,
-            maxMaxBufferLength: isLive ? 30 : 240,
+            // Fast-start: begin with lowest quality, buffer just enough to play
+            startLevel: isLive ? 0 : -1,
+            maxBufferLength: isLive ? 4 : 60,
+            maxMaxBufferLength: isLive ? 15 : 240,
             backBufferLength: isLive ? 0 : 60,
-            liveSyncDurationCount: 3,
-            liveMaxLatencyDurationCount: 6,
-            fragLoadingTimeOut: 25000,
-            fragLoadingMaxRetry: 6,
-            fragLoadingRetryDelay: 1000,
-            levelLoadingTimeOut: 15000,
-            manifestLoadingTimeOut: 15000,
-            manifestLoadingMaxRetry: 4,
-            manifestLoadingRetryDelay: 1000,
+            liveSyncDurationCount: 2,
+            liveMaxLatencyDurationCount: 4,
+            liveDurationInfinity: isLive,
+            // Aggressive timeouts — fail fast, let parallel proxy retry
+            fragLoadingTimeOut: 8000,
+            fragLoadingMaxRetry: 3,
+            fragLoadingRetryDelay: 500,
+            levelLoadingTimeOut: 6000,
+            manifestLoadingTimeOut: 6000,
+            manifestLoadingMaxRetry: 2,
+            manifestLoadingRetryDelay: 500,
             startFragPrefetch: true,
             testBandwidth: !isLive,
             capLevelToPlayerSize: false,
-            maxBufferHole: 0.5,
+            maxBufferHole: 1.0,
             nudgeMaxRetry: 5,
             abrEwmaDefaultEstimate: 5000000,
             progressive: true,
-            highBufferWatchdogPeriod: 3,
+            highBufferWatchdogPeriod: 2,
           });
           hlsRef.current = hls;
           hls.loadSource(proxied);
@@ -387,8 +401,14 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
                 index: i,
               })).sort((a, b) => b.height - a.height);
               setQualities(q);
-              hls.currentLevel = q[0].index;
-              setCurrentQuality(q[0].index);
+              if (isLive) {
+                // Live: let ABR ramp up from low startLevel — don't force highest
+                hls.currentLevel = -1;
+                setCurrentQuality(-1);
+              } else {
+                hls.currentLevel = q[0].index;
+                setCurrentQuality(q[0].index);
+              }
             }
             try { await video.play(); } catch { /* user presses play */ }
           });
@@ -1000,6 +1020,8 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
             ref={videoRef}
             className="w-full h-full object-contain"
             playsInline
+            autoPlay
+            preload="auto"
             onError={() => {
               if (hlsRef.current) return;
               setError('Video could not be played. Try opening in VLC.');

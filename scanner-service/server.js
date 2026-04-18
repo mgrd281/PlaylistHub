@@ -139,7 +139,7 @@ function normalizeUrlForFetch(value) {
   return String(value).replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
 }
 
-async function fetchWithManualRedirects(inputUrl, headers, timeoutMs = 30000, maxRedirects = 8) {
+async function fetchWithManualRedirects(inputUrl, headers, timeoutMs = 10000, maxRedirects = 8) {
   let currentUrl = normalizeUrlForFetch(inputUrl);
 
   for (let i = 0; i <= maxRedirects; i += 1) {
@@ -226,13 +226,18 @@ const server = http.createServer(async (req, res) => {
       let upstream = null;
       let lastStatus = 0;
 
-      for (const headers of headerProfiles) {
-        const attempt = await fetchWithManualRedirects(targetUrl, headers, 30000);
-
-        lastStatus = attempt.status;
-        if (attempt.ok || attempt.status === 206) {
-          upstream = attempt;
-          break;
+      // Race both UA profiles in parallel — first success wins
+      const results = await Promise.allSettled(
+        headerProfiles.map(headers => fetchWithManualRedirects(targetUrl, headers, 10000))
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          const attempt = result.value;
+          lastStatus = attempt.status;
+          if (attempt.ok || attempt.status === 206) {
+            upstream = attempt;
+            break;
+          }
         }
       }
 
