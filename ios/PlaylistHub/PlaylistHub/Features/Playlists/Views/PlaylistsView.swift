@@ -8,8 +8,7 @@ struct PlaylistsView: View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.playlists.isEmpty {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack { Spacer(); ProgressView(); Spacer() }
                 } else if viewModel.playlists.isEmpty {
                     EmptyStateView(
                         icon: "list.bullet.rectangle.portrait",
@@ -18,43 +17,43 @@ struct PlaylistsView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List {
-                        ForEach(viewModel.playlists) { playlist in
-                            NavigationLink {
-                                PlaylistDetailView(playlist: playlist)
-                            } label: {
-                                PlaylistRow(playlist: playlist)
-                                    .listRowInsets(EdgeInsets())
-                                    .listRowBackground(Color.clear)
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    viewModel.deleteTarget = playlist
-                                    viewModel.showDeleteConfirm = true
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(viewModel.playlists) { playlist in
+                                NavigationLink {
+                                    PlaylistDetailView(playlist: playlist)
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    PlaylistRow(playlist: playlist)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        viewModel.deleteTarget = playlist
+                                        viewModel.showDeleteConfirm = true
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                             }
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
                     }
-                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Playlists")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showAddSheet = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.red)
+                    Button { showAddSheet = true } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(.red, in: Circle())
                     }
                 }
             }
-            .refreshable {
-                await viewModel.load()
-            }
+            .refreshable { await viewModel.load() }
             .sheet(isPresented: $showAddSheet) {
                 AddPlaylistSheet(onAdded: { playlist in
                     viewModel.playlists.insert(playlist, at: 0)

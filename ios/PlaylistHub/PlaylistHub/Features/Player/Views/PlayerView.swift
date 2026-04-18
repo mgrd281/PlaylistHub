@@ -1,400 +1,434 @@
 import SwiftUI
 import AVKit
+import Combine
+
+// MARK: - PlayerView — Instant playback, seamless channel switching
 
 struct PlayerView: View {
-    let item: PlaylistItem
-    let channelList: [PlaylistItem]?
-    let onNavigate: (PlaylistItem) -> Void
-
+    @StateObject var vm: PlayerViewModel
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var viewModel: PlayerViewModel
 
-    init(item: PlaylistItem, channelList: [PlaylistItem]?, onNavigate: @escaping (PlaylistItem) -> Void) {
-        self.item = item
-        self.channelList = channelList
-        self.onNavigate = onNavigate
-        _viewModel = StateObject(wrappedValue: PlayerViewModel(item: item, channelList: channelList))
+    /// Secondary UI appears after playback starts
+    @State private var showSecondaryUI = false
+    /// Controls overlay visibility (auto-hide)
+    @State private var showControls = true
+    @State private var controlsTimer: Timer?
+
+    init(item: PlaylistItem, channelList: [PlaylistItem]?) {
+        _vm = StateObject(wrappedValue: PlayerViewModel(item: item, channelList: channelList))
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color.black.ignoresSafeArea()
+        ZStack {
+            // 1) Black canvas — renders immediately
+            Color.black.ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    // Header
-                    playerHeader
-                        .padding(.top, geo.safeAreaInsets.top > 0 ? 0 : 8)
-
-                    // Video
-                    ZStack {
-                        VideoPlayerRepresentable(player: viewModel.player)
-                            .ignoresSafeArea(edges: .horizontal)
-
-                        // Loading
-                        if viewModel.isBuffering {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                                .tint(.white)
-                        }
-
-                        // Error
-                        if let error = viewModel.error {
-                            VStack(spacing: 12) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.title)
-                                    .foregroundStyle(.red)
-                                Text(error)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.8))
-                                    .multilineTextAlignment(.center)
-                                Button("Retry") {
-                                    viewModel.retry()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.red)
+            // 2) Video layer — full screen behind everything
+            VideoSurface(player: vm.player)
+                .ignoresSafeArea()
+                .onTapGesture { toggleControlsVisibility() }
+                .gesture(
+                    DragGesture(minimumDistance: 50)
+                        .onEnded { value in
+                            let horizontal = value.translation.width
+                            if abs(horizontal) > abs(value.translation.height) {
+                                if horizontal < -50 { vm.goNext() }
+                                else if horizontal > 50 { vm.goPrev() }
                             }
-                            .padding()
                         }
+                )
+
+            // 3) Buffering spinner — centered, minimal
+            if vm.isBuffering && vm.error == nil {
+                ProgressView()
+                    .scaleEffect(1.3)
+                    .tint(.white)
+                    .transition(.opacity)
+            }
+
+            // 4) Error overlay
+            if let error = vm.error {
+                VStack(spacing: 14) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .font(.system(size: 32, weight: .light))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                    Button { vm.retry() } label: {
+                        Text("Retry")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 10)
+                            .background(.red)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
                     }
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .background(.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 0))
-
-                    // Controls below video
-                    playerControls
-
-                    // Channel navigation strip
-                    if let channelList, channelList.count > 1 {
-                        relatedChannelsStrip(channelList: channelList)
-                    }
-
-                    // Series episodes
-                    if item.contentType == .series {
-                        seriesEpisodesList
-                    }
-
-                    Spacer(minLength: 0)
                 }
+                .padding(32)
+            }
+
+            // 5) Controls overlay — fades in/out
+            if showControls {
+                VStack(spacing: 0) {
+                    headerBar
+                    Spacer()
+                    if !vm.currentItem.isLive && vm.duration > 0 {
+                        progressBar
+                    }
+                    controlsBar
+                }
+                .transition(.opacity)
+            }
+
+            // 6) Channel name flash on switch
+            if vm.showChannelFlash {
+                channelFlashOverlay
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
-        .statusBarHidden(false)
+        .animation(.easeOut(duration: 0.2), value: showControls)
+        .animation(.easeOut(duration: 0.2), value: vm.isBuffering)
+        .animation(.easeOut(duration: 0.25), value: vm.showChannelFlash)
+        .statusBarHidden(showControls ? false : true)
         .preferredColorScheme(.dark)
-        .onAppear { viewModel.play() }
-        .onDisappear { viewModel.stop() }
+        .onAppear {
+            vm.startPlayback()
+            scheduleControlsHide()
+        }
+        .onDisappear { vm.teardown() }
+        .onChange(of: vm.hasFirstFrame) { _, ready in
+            if ready {
+                withAnimation(.easeIn(duration: 0.3)) { showSecondaryUI = true }
+            }
+        }
+        // Secondary panel slides up after playback starts
+        .safeAreaInset(edge: .bottom) {
+            if showSecondaryUI {
+                secondaryPanel
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
     }
 
     // MARK: - Header
 
-    private var playerHeader: some View {
-        HStack(spacing: 12) {
-            // Close
+    private var headerBar: some View {
+        HStack(spacing: 10) {
             Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 32, height: 32)
-                    .background(.white.opacity(0.1))
-                    .clipShape(Circle())
-            }
-
-            // Logo + info
-            if let logoURL = item.resolvedLogoURL {
-                AsyncImage(url: logoURL) { phase in
-                    if case .success(let image) = phase {
-                        image.resizable().aspectRatio(contentMode: .fit)
-                    } else {
-                        Image(systemName: "tv.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(width: 30, height: 30)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
             }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(viewModel.displayName)
+                Text(vm.displayName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                HStack(spacing: 6) {
-                    if let group = item.groupTitle {
-                        Text(group)
-                            .lineLimit(1)
-                    }
-                    if let pos = viewModel.positionText {
-                        Text("•")
-                        Text(pos)
-                            .monospacedDigit()
-                    }
+                if let group = vm.currentItem.groupTitle {
+                    Text(group)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .lineLimit(1)
                 }
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.4))
             }
 
             Spacer()
 
-            if item.isLive {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(.red)
-                        .frame(width: 6, height: 6)
-                    Text("LIVE")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundStyle(.red)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.red.opacity(0.15))
-                .clipShape(Capsule())
+            if vm.currentItem.isLive {
+                liveBadge
             }
 
-            // Channel nav
-            if viewModel.hasNavigation {
-                HStack(spacing: 2) {
-                    Button {
-                        if let prev = viewModel.prevChannel {
-                            onNavigate(prev)
-                        }
-                    } label: {
-                        Image(systemName: "backward.fill")
-                            .font(.caption)
-                            .foregroundStyle(viewModel.prevChannel != nil ? .white : .white.opacity(0.2))
-                            .frame(width: 32, height: 32)
-                    }
-                    .disabled(viewModel.prevChannel == nil)
-
-                    Button {
-                        if let next = viewModel.nextChannel {
-                            onNavigate(next)
-                        }
-                    } label: {
-                        Image(systemName: "forward.fill")
-                            .font(.caption)
-                            .foregroundStyle(viewModel.nextChannel != nil ? .white : .white.opacity(0.2))
-                            .frame(width: 32, height: 32)
-                    }
-                    .disabled(viewModel.nextChannel == nil)
-                }
-                .background(.white.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            if vm.hasNavigation {
+                channelNavButtons
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(
+            LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .top)
+        )
+    }
+
+    private var liveBadge: some View {
+        HStack(spacing: 4) {
+            Circle().fill(.red).frame(width: 5, height: 5)
+            Text("LIVE")
+                .font(.system(size: 9, weight: .heavy))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.red.opacity(0.85), in: Capsule())
+    }
+
+    private var channelNavButtons: some View {
+        HStack(spacing: 0) {
+            Button { vm.goPrev() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 36, height: 36)
+                    .foregroundStyle(vm.prevChannel != nil ? .white : .white.opacity(0.2))
+            }
+            .disabled(vm.prevChannel == nil)
+
+            if let pos = vm.positionText {
+                Text(pos)
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            Button { vm.goNext() } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 36, height: 36)
+                    .foregroundStyle(vm.nextChannel != nil ? .white : .white.opacity(0.2))
+            }
+            .disabled(vm.nextChannel == nil)
+        }
+        .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    // MARK: - Progress (VOD)
+
+    private var progressBar: some View {
+        VStack(spacing: 4) {
+            Slider(
+                value: Binding(get: { vm.currentTime }, set: { vm.seek(to: $0) }),
+                in: 0...max(vm.duration, 1)
+            )
+            .tint(.red)
+
+            HStack {
+                Text(vm.currentTimeFormatted).monospacedDigit()
+                Spacer()
+                Text(vm.durationFormatted).monospacedDigit()
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(.white.opacity(0.4))
+        }
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Controls
 
-    private var playerControls: some View {
-        VStack(spacing: 8) {
-            // Progress bar (VOD only)
-            if !item.isLive, viewModel.duration > 0 {
-                VStack(spacing: 4) {
-                    Slider(
-                        value: Binding(
-                            get: { viewModel.currentTime },
-                            set: { viewModel.seek(to: $0) }
-                        ),
-                        in: 0...max(viewModel.duration, 1)
-                    )
-                    .tint(.red)
-
-                    HStack {
-                        Text(viewModel.currentTimeFormatted)
-                            .monospacedDigit()
-                        Spacer()
-                        Text(viewModel.durationFormatted)
-                            .monospacedDigit()
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.4))
+    private var controlsBar: some View {
+        HStack(spacing: 0) {
+            if !vm.currentItem.isLive {
+                Button { vm.seekRelative(-10) } label: {
+                    Image(systemName: "gobackward.10")
+                        .font(.title3)
+                        .frame(width: 48, height: 48)
                 }
             }
 
-            // Buttons row
-            HStack(spacing: 24) {
-                if !item.isLive {
-                    Button { viewModel.seekRelative(-10) } label: {
-                        Image(systemName: "gobackward.10")
-                            .font(.title3)
-                    }
-                }
+            Spacer()
 
-                Button { viewModel.togglePlayPause() } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title)
-                }
+            Button { vm.togglePlayPause() } label: {
+                Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 32))
+                    .frame(width: 64, height: 64)
+            }
 
-                if !item.isLive {
-                    Button { viewModel.seekRelative(10) } label: {
-                        Image(systemName: "goforward.10")
-                            .font(.title3)
-                    }
-                }
+            Spacer()
 
-                Spacer()
-
-                // PiP
-                Button { viewModel.togglePiP() } label: {
-                    Image(systemName: "pip.enter")
-                        .font(.body)
+            if !vm.currentItem.isLive {
+                Button { vm.seekRelative(10) } label: {
+                    Image(systemName: "goforward.10")
+                        .font(.title3)
+                        .frame(width: 48, height: 48)
                 }
             }
-            .foregroundStyle(.white)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 12)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 8)
+        .background(
+            LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 
-    // MARK: - Related Channels
+    // MARK: - Channel Flash
 
-    private func relatedChannelsStrip(channelList: [PlaylistItem]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("SAME GROUP")
-                .font(.system(size: 10, weight: .semibold))
+    private var channelFlashOverlay: some View {
+        VStack(spacing: 6) {
+            Text(vm.displayName)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.white)
+            if let group = vm.currentItem.groupTitle {
+                Text(group)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    // MARK: - Secondary Panel (after playback)
+
+    @ViewBuilder
+    private var secondaryPanel: some View {
+        if let list = vm.channelList, list.count > 1 {
+            channelStrip(list)
+        } else if vm.currentItem.contentType == .series {
+            seriesPanel
+        }
+    }
+
+    private func channelStrip(_ list: [PlaylistItem]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("CHANNELS")
+                .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.white.opacity(0.3))
-                .tracking(1)
-                .padding(.horizontal)
+                .tracking(1.2)
+                .padding(.horizontal, 16)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(channelList.filter { $0.id != item.id && $0.groupTitle == item.groupTitle }.prefix(20)) { ch in
-                        Button {
-                            onNavigate(ch)
-                        } label: {
-                            HStack(spacing: 8) {
-                                if let logoURL = ch.resolvedLogoURL {
-                                    AsyncImage(url: logoURL) { phase in
-                                        if case .success(let image) = phase {
-                                            image.resizable().aspectRatio(contentMode: .fit)
-                                        } else {
-                                            Image(systemName: "tv.fill").foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .frame(width: 24, height: 24)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                                } else {
-                                    Image(systemName: "tv.fill")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 24, height: 24)
-                                }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 6) {
+                        ForEach(list) { ch in
+                            Button {
+                                vm.switchTo(ch)
+                                scheduleControlsHide()
+                            } label: {
                                 Text(ch.name)
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.7))
+                                    .font(.caption2.weight(ch.id == vm.currentItem.id ? .bold : .regular))
                                     .lineLimit(1)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .background(ch.id == vm.currentItem.id ? .red : .white.opacity(0.08))
+                                    .foregroundStyle(ch.id == vm.currentItem.id ? .white : .white.opacity(0.6))
+                                    .clipShape(Capsule())
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(.white.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .id(ch.id)
                         }
                     }
+                    .padding(.horizontal, 16)
                 }
-                .padding(.horizontal)
+                .onAppear {
+                    proxy.scrollTo(vm.currentItem.id, anchor: .center)
+                }
+                .onChange(of: vm.currentItem.id) { _, newId in
+                    withAnimation { proxy.scrollTo(newId, anchor: .center) }
+                }
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
+        .background(.black.opacity(0.85))
     }
 
-    // MARK: - Series Episodes
-
-    private var seriesEpisodesList: some View {
-        Group {
-            if viewModel.isLoadingEpisodes {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-                .padding()
-            } else if let episodes = viewModel.seriesEpisodes {
-                VStack(alignment: .leading, spacing: 8) {
-                    // Season picker
-                    if episodes.seasons.count > 1 {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(episodes.seasons, id: \.season) { season in
-                                    Button {
-                                        viewModel.selectedSeason = season.season
-                                    } label: {
-                                        Text("S\(season.season)")
-                                            .font(.caption.weight(.semibold))
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 6)
-                                            .background(viewModel.selectedSeason == season.season ? .red : .white.opacity(0.08))
-                                            .foregroundStyle(viewModel.selectedSeason == season.season ? .white : .white.opacity(0.6))
-                                            .clipShape(Capsule())
-                                    }
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                    }
-
-                    // Episodes
-                    let currentEpisodes = episodes.seasons.first { $0.season == viewModel.selectedSeason }?.episodes ?? []
-                    ScrollView {
-                        LazyVStack(spacing: 4) {
-                            ForEach(currentEpisodes) { ep in
+    @ViewBuilder
+    private var seriesPanel: some View {
+        if vm.isLoadingEpisodes {
+            ProgressView().tint(.white).padding()
+        } else if let eps = vm.seriesEpisodes {
+            VStack(alignment: .leading, spacing: 6) {
+                if eps.seasons.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(eps.seasons, id: \.season) { s in
                                 Button {
-                                    viewModel.playEpisode(ep)
+                                    vm.selectedSeason = s.season
                                 } label: {
-                                    HStack {
-                                        Text("E\(ep.episode)")
-                                            .font(.caption.weight(.bold))
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 30)
-                                        Text(ep.title)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.white)
-                                            .lineLimit(1)
-                                        Spacer()
-                                        if viewModel.activeEpisodeId == ep.id {
-                                            Image(systemName: "speaker.wave.2.fill")
-                                                .font(.caption)
-                                                .foregroundStyle(.red)
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                    .padding(.vertical, 10)
-                                    .background(viewModel.activeEpisodeId == ep.id ? .red.opacity(0.1) : .clear)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    Text("S\(s.season)")
+                                        .font(.caption2.weight(.semibold))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(vm.selectedSeason == s.season ? .red : .white.opacity(0.08))
+                                        .foregroundStyle(.white)
+                                        .clipShape(Capsule())
                                 }
                             }
                         }
+                        .padding(.horizontal, 16)
                     }
                 }
+
+                let episodes = eps.seasons.first { $0.season == vm.selectedSeason }?.episodes ?? []
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 6) {
+                        ForEach(episodes) { ep in
+                            Button { vm.playEpisode(ep) } label: {
+                                VStack(spacing: 2) {
+                                    Text("E\(ep.episode)")
+                                        .font(.caption2.weight(.bold))
+                                    Text(ep.title)
+                                        .font(.system(size: 9))
+                                        .lineLimit(1)
+                                }
+                                .frame(width: 60)
+                                .padding(.vertical, 8)
+                                .background(vm.activeEpisodeId == ep.id ? .red.opacity(0.2) : .white.opacity(0.06))
+                                .foregroundStyle(vm.activeEpisodeId == ep.id ? .red : .white.opacity(0.7))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.85))
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func toggleControlsVisibility() {
+        showControls.toggle()
+        if showControls { scheduleControlsHide() }
+    }
+
+    private func scheduleControlsHide() {
+        controlsTimer?.invalidate()
+        controlsTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { _ in
+            Task { @MainActor in
+                withAnimation { showControls = false }
             }
         }
     }
 }
 
-// MARK: - AVPlayer SwiftUI wrapper
+// MARK: - Lightweight AVPlayer UIView (not UIViewController — faster)
 
-struct VideoPlayerRepresentable: UIViewControllerRepresentable {
+struct VideoSurface: UIViewRepresentable {
     let player: AVPlayer
 
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let vc = AVPlayerViewController()
-        vc.player = player
-        vc.showsPlaybackControls = false
-        vc.allowsPictureInPicturePlayback = true
-        vc.videoGravity = .resizeAspect
-        return vc
+    func makeUIView(context: Context) -> PlayerUIView {
+        let view = PlayerUIView()
+        view.playerLayer.player = player
+        view.playerLayer.videoGravity = .resizeAspect
+        view.backgroundColor = .black
+        return view
     }
 
-    func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
-        vc.player = player
+    func updateUIView(_ uiView: PlayerUIView, context: Context) {
+        if uiView.playerLayer.player !== player {
+            uiView.playerLayer.player = player
+        }
     }
 }
 
-// MARK: - ViewModel
+final class PlayerUIView: UIView {
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
+    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+}
+
+// MARK: - ViewModel — Persistent player, instant switching
 
 @MainActor
 final class PlayerViewModel: ObservableObject {
-    let item: PlaylistItem
+    // Current item (mutates on channel switch — no view rebuild)
+    @Published var currentItem: PlaylistItem
     let channelList: [PlaylistItem]?
 
     @Published var isPlaying = false
@@ -403,16 +437,26 @@ final class PlayerViewModel: ObservableObject {
     @Published var currentTime: Double = 0
     @Published var duration: Double = 0
     @Published var displayName: String
+    @Published var hasFirstFrame = false
+    @Published var showChannelFlash = false
+
+    // Series
     @Published var seriesEpisodes: SeriesEpisodesResponse?
     @Published var isLoadingEpisodes = false
     @Published var selectedSeason = 1
     @Published var activeEpisodeId: String?
 
-    let player = AVPlayer()
-    private var timeObserver: Any?
+    /// Single persistent AVPlayer — reused across channel switches
+    let player: AVPlayer = {
+        let p = AVPlayer()
+        p.automaticallyWaitsToMinimizeStalling = false
+        return p
+    }()
 
-    // Navigation
-    private let currentIndex: Int
+    private var timeObserver: Any?
+    private var statusObserver: NSKeyValueObservation?
+    private var currentIndex: Int
+
     var prevChannel: PlaylistItem? {
         guard currentIndex > 0 else { return nil }
         return channelList?[currentIndex - 1]
@@ -433,20 +477,82 @@ final class PlayerViewModel: ObservableObject {
     var durationFormatted: String { Self.formatTime(duration) }
 
     init(item: PlaylistItem, channelList: [PlaylistItem]?) {
-        self.item = item
+        self.currentItem = item
         self.channelList = channelList
         self.displayName = item.name
         self.currentIndex = channelList?.firstIndex(where: { $0.id == item.id }) ?? -1
     }
 
-    func play() {
+    // MARK: - Playback
+
+    func startPlayback() {
+        loadStream(for: currentItem)
+        setupTimeObserver()
+        if currentItem.contentType == .series { loadEpisodes() }
+    }
+
+    /// Hot-swap channel — no view dismiss, no animation delay
+    func switchTo(_ item: PlaylistItem) {
+        guard item.id != currentItem.id else { return }
+        currentItem = item
+        displayName = item.name
+        currentIndex = channelList?.firstIndex(where: { $0.id == item.id }) ?? currentIndex
+        isBuffering = true
+        error = nil
+        hasFirstFrame = false
+
+        // Flash channel name
+        showChannelFlash = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            showChannelFlash = false
+        }
+
+        loadStream(for: item)
+    }
+
+    func goNext() {
+        guard let next = nextChannel else { return }
+        switchTo(next)
+    }
+
+    func goPrev() {
+        guard let prev = prevChannel else { return }
+        switchTo(prev)
+    }
+
+    private func loadStream(for item: PlaylistItem) {
         let url = item.proxiedStreamURL
-        let playerItem = AVPlayerItem(url: url)
+        let asset = AVURLAsset(url: url, options: [
+            "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": "PlaylistHub/1.0"],
+            AVURLAssetPreferPreciseDurationAndTimingKey: false
+        ])
+        // Minimal buffer for fast start
+        let playerItem = AVPlayerItem(asset: asset)
+        playerItem.preferredForwardBufferDuration = 2
+
+        // Observe when first frame is ready
+        statusObserver?.invalidate()
+        statusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.hasFirstFrame = true
+                case .failed:
+                    self.error = item.error?.localizedDescription ?? "Playback failed"
+                    self.isBuffering = false
+                default: break
+                }
+            }
+        }
+
         player.replaceCurrentItem(with: playerItem)
         player.play()
         isPlaying = true
+    }
 
-        // Observe time
+    private func setupTimeObserver() {
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
             queue: .main
@@ -457,35 +563,27 @@ final class PlayerViewModel: ObservableObject {
                 if let dur = self.player.currentItem?.duration.seconds, dur.isFinite {
                     self.duration = dur
                 }
-                self.isBuffering = self.player.timeControlStatus == .waitingToPlayAtSpecifiedRate
-                self.isPlaying = self.player.timeControlStatus == .playing
+                let status = self.player.timeControlStatus
+                self.isBuffering = status == .waitingToPlayAtSpecifiedRate
+                self.isPlaying = status == .playing
             }
-        }
-
-        // Load series episodes if needed
-        if item.contentType == .series {
-            loadEpisodes()
         }
     }
 
-    func stop() {
+    func teardown() {
         player.pause()
-        if let obs = timeObserver {
-            player.removeTimeObserver(obs)
-        }
+        player.replaceCurrentItem(with: nil)
+        if let obs = timeObserver { player.removeTimeObserver(obs) }
+        statusObserver?.invalidate()
     }
 
     func togglePlayPause() {
-        if isPlaying {
-            player.pause()
-        } else {
-            player.play()
-        }
-        isPlaying = !isPlaying
+        if isPlaying { player.pause() } else { player.play() }
+        isPlaying.toggle()
     }
 
     func seek(to time: Double) {
-        player.seek(to: CMTime(seconds: time, preferredTimescale: 600))
+        player.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     func seekRelative(_ delta: Double) {
@@ -493,20 +591,18 @@ final class PlayerViewModel: ObservableObject {
         seek(to: target)
     }
 
-    func togglePiP() {
-        // PiP is handled by AVPlayerViewController automatically
-    }
-
     func retry() {
         error = nil
         isBuffering = true
-        play()
+        loadStream(for: currentItem)
     }
 
     func playEpisode(_ episode: EpisodeData) {
         let url = AppConfig.streamProxyURL(for: episode.streamUrl)
-        let playerItem = AVPlayerItem(url: url)
-        player.replaceCurrentItem(with: playerItem)
+        let asset = AVURLAsset(url: url)
+        let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = 2
+        player.replaceCurrentItem(with: item)
         player.play()
         isPlaying = true
         activeEpisodeId = episode.id
@@ -517,11 +613,9 @@ final class PlayerViewModel: ObservableObject {
         isLoadingEpisodes = true
         Task {
             do {
-                let episodes = try await DataService.shared.fetchSeriesEpisodes(streamUrl: item.streamUrl)
+                let episodes = try await DataService.shared.fetchSeriesEpisodes(streamUrl: currentItem.streamUrl)
                 self.seriesEpisodes = episodes
-                if let first = episodes.seasons.first {
-                    self.selectedSeason = first.season
-                }
+                if let first = episodes.seasons.first { self.selectedSeason = first.season }
             } catch {}
             isLoadingEpisodes = false
         }
@@ -535,16 +629,4 @@ final class PlayerViewModel: ObservableObject {
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%d:%02d", m, s)
     }
-}
-
-#Preview {
-    PlayerView(
-        item: PlaylistItem(
-            id: UUID(), playlistId: UUID(), name: "Test Channel",
-            streamUrl: "https://example.com/live/test/test/123.m3u8",
-            groupTitle: "News", contentType: .channel, createdAt: .now
-        ),
-        channelList: nil,
-        onNavigate: { _ in }
-    )
 }

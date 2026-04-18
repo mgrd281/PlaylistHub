@@ -7,66 +7,69 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
-                    // Welcome
-                    HStack {
+                VStack(spacing: 24) {
+                    // Welcome header
+                    HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Welcome back")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Text(authManager.currentUser?.displayName ?? authManager.currentUser?.email ?? "User")
+                            Text(authManager.currentUser?.displayName ?? authManager.currentUser?.email.components(separatedBy: "@").first ?? "User")
                                 .font(.title2.bold())
                         }
                         Spacer()
-                        Image(systemName: "play.rectangle.fill")
-                            .font(.title)
-                            .foregroundStyle(.red)
+                        ZStack {
+                            Circle()
+                                .fill(.red.opacity(0.12))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: "play.rectangle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.red)
+                        }
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 4)
 
-                    // Stats cards
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                    ], spacing: 12) {
+                    // Stats
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                         StatCard(title: "Playlists", value: "\(viewModel.playlists.count)", icon: "list.bullet.rectangle.portrait.fill", color: .red)
                         StatCard(title: "Channels", value: viewModel.totalChannels.abbreviated, icon: "tv.fill", color: .blue)
                         StatCard(title: "Movies", value: viewModel.totalMovies.abbreviated, icon: "film.fill", color: .purple)
                         StatCard(title: "Series", value: viewModel.totalSeries.abbreviated, icon: "rectangle.stack.fill", color: .orange)
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
 
-                    // Recent Playlists
+                    // Recent playlists
                     if !viewModel.playlists.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 Text("Recent Playlists")
-                                    .font(.headline)
+                                    .font(.subheadline.weight(.semibold))
                                 Spacer()
                                 NavigationLink {
                                     PlaylistsView()
                                 } label: {
                                     Text("View All")
-                                        .font(.subheadline)
+                                        .font(.caption.weight(.medium))
                                         .foregroundStyle(.red)
                                 }
                             }
-                            .padding(.horizontal)
+                            .padding(.horizontal, 20)
 
-                            ForEach(viewModel.playlists.prefix(3)) { playlist in
-                                NavigationLink {
-                                    PlaylistDetailView(playlist: playlist)
-                                } label: {
-                                    PlaylistRow(playlist: playlist)
+                            VStack(spacing: 8) {
+                                ForEach(viewModel.playlists.prefix(3)) { playlist in
+                                    NavigationLink {
+                                        PlaylistDetailView(playlist: playlist)
+                                    } label: {
+                                        PlaylistRow(playlist: playlist)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal)
                             }
+                            .padding(.horizontal, 20)
                         }
                     }
 
-                    // Empty state
                     if viewModel.playlists.isEmpty && !viewModel.isLoading {
                         EmptyStateView(
                             icon: "list.bullet.rectangle.portrait",
@@ -80,18 +83,14 @@ struct DashboardView: View {
             }
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.large)
-            .refreshable {
-                await viewModel.load()
-            }
+            .refreshable { await viewModel.load() }
             .overlay {
                 if viewModel.isLoading && viewModel.playlists.isEmpty {
                     ProgressView()
                 }
             }
         }
-        .task {
-            await viewModel.load()
-        }
+        .task { await viewModel.load() }
     }
 }
 
@@ -108,11 +107,7 @@ final class DashboardViewModel: ObservableObject {
 
     func load() async {
         isLoading = true
-        do {
-            playlists = try await DataService.shared.fetchPlaylists()
-        } catch {
-            // Silent failure — pull-to-refresh to retry
-        }
+        do { playlists = try await DataService.shared.fetchPlaylists() } catch {}
         isLoading = false
     }
 }
@@ -129,21 +124,20 @@ struct StatCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: icon)
-                    .font(.title3)
+                    .font(.system(size: 16))
                     .foregroundStyle(color)
                 Spacer()
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .font(.title.bold())
-                    .monospacedDigit()
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(value)
+                .font(.title2.bold())
+                .monospacedDigit()
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .padding()
-        .premiumCard()
+        .padding(14)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -153,40 +147,40 @@ struct PlaylistRow: View {
     let playlist: Playlist
 
     var body: some View {
-        HStack(spacing: 14) {
-            // Status icon
+        HStack(spacing: 12) {
             ZStack {
-                Circle()
-                    .fill(statusColor.opacity(0.15))
-                    .frame(width: 42, height: 42)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(statusColor.opacity(0.12))
+                    .frame(width: 40, height: 40)
                 Image(systemName: statusIcon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(statusColor)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(playlist.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.medium))
                     .lineLimit(1)
-                HStack(spacing: 8) {
-                    Label("\(playlist.totalItems)", systemImage: "number")
+                HStack(spacing: 6) {
+                    Text("\(playlist.totalItems) items")
                     if playlist.lastScanAt != nil {
-                        Text("•")
+                        Text("·")
                         Text(playlist.lastScanAt!.relativeString)
                     }
                 }
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
             }
 
-            Spacer()
+            Spacer(minLength: 4)
 
             Image(systemName: "chevron.right")
-                .font(.caption)
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.quaternary)
         }
-        .padding(14)
-        .premiumCard()
+        .padding(12)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var statusColor: Color {
@@ -210,7 +204,7 @@ struct PlaylistRow: View {
     }
 }
 
-// MARK: - Empty state
+// MARK: - Empty State
 
 struct EmptyStateView: View {
     let icon: String
@@ -220,15 +214,15 @@ struct EmptyStateView: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary.opacity(0.6))
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.secondary.opacity(0.5))
             Text(title)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
             Text(subtitle)
-                .font(.subheadline)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 48)
         }
     }
 }

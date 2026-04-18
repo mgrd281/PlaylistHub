@@ -13,9 +13,9 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Content type tabs
+            // Tab pills
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     ForEach(PlaylistDetailViewModel.Tab.allCases, id: \.self) { tab in
                         TabPill(
                             title: tab.title,
@@ -27,19 +27,18 @@ struct PlaylistDetailView: View {
                         }
                     }
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             }
-            .background(Color(.systemBackground))
-
-            Divider()
 
             // Search
             if viewModel.selectedTab != .categories {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
                         .foregroundStyle(.secondary)
                     TextField("Search...", text: $viewModel.searchText)
+                        .font(.subheadline)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     if !viewModel.searchText.isEmpty {
@@ -47,16 +46,20 @@ struct PlaylistDetailView: View {
                             viewModel.searchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 14))
+                                .foregroundStyle(.tertiary)
                         }
                     }
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
                 .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
             }
+
+            Divider()
 
             // Content
             Group {
@@ -104,8 +107,7 @@ struct PlaylistDetailView: View {
         .fullScreenCover(item: $selectedItem) { item in
             PlayerView(
                 item: item,
-                channelList: viewModel.currentChannelContext(for: item),
-                onNavigate: { newItem in selectedItem = newItem }
+                channelList: viewModel.currentChannelContext(for: item)
             )
         }
         .task {
@@ -124,8 +126,12 @@ struct PlaylistDetailView: View {
     private var itemsList: some View {
         Group {
             if viewModel.isLoading && viewModel.items.isEmpty {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
             } else if viewModel.items.isEmpty {
                 EmptyStateView(
                     icon: "magnifyingglass",
@@ -136,30 +142,28 @@ struct PlaylistDetailView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(viewModel.items) { item in
-                        Button {
-                            selectedItem = item
-                        } label: {
-                            ItemRow(item: item)
-                        }
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    }
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(viewModel.items) { item in
+                            Button {
+                                selectedItem = item
+                            } label: {
+                                ItemRow(item: item)
+                            }
+                            .buttonStyle(ItemButtonStyle())
 
-                    // Pagination
-                    if viewModel.hasMore {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .task {
-                                    await viewModel.loadMore()
-                                }
-                            Spacer()
+                            if item.id != viewModel.items.last?.id {
+                                Divider().padding(.leading, 60)
+                            }
                         }
-                        .listRowSeparator(.hidden)
+
+                        if viewModel.hasMore {
+                            ProgressView()
+                                .padding(.vertical, 20)
+                                .task { await viewModel.loadMore() }
+                        }
                     }
                 }
-                .listStyle(.plain)
             }
         }
     }
@@ -169,8 +173,8 @@ struct PlaylistDetailView: View {
     private var categoriesList: some View {
         Group {
             if viewModel.isLoading && viewModel.categories.isEmpty {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack { Spacer(); ProgressView(); Spacer() }
+                    .frame(maxWidth: .infinity)
             } else if viewModel.categories.isEmpty {
                 EmptyStateView(
                     icon: "folder",
@@ -179,26 +183,46 @@ struct PlaylistDetailView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(viewModel.categories) { category in
-                        HStack {
-                            Image(systemName: "folder.fill")
-                                .foregroundStyle(.orange)
-                            VStack(alignment: .leading) {
-                                Text(category.name)
-                                    .font(.subheadline.weight(.medium))
-                                Text("\(category.itemCount) items")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(viewModel.categories) { category in
+                            HStack(spacing: 12) {
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(.orange)
+                                    .frame(width: 36)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(category.name)
+                                        .font(.subheadline.weight(.medium))
+                                    Text("\(category.itemCount) items")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.quaternary)
                             }
-                            Spacer()
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+
+                            if category.id != viewModel.categories.last?.id {
+                                Divider().padding(.leading, 64)
+                            }
                         }
-                        .padding(.vertical, 4)
                     }
                 }
-                .listStyle(.plain)
             }
         }
+    }
+}
+
+// MARK: - Item Button Style (highlight on tap, no delay)
+
+struct ItemButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Color.white.opacity(0.05) : .clear)
     }
 }
 
@@ -213,26 +237,27 @@ struct TabPill: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.caption2.weight(.semibold))
+                    .font(.system(size: 10, weight: .semibold))
                 Text(title)
                     .font(.caption.weight(.medium))
                 if count > 0 {
                     Text(count.abbreviated)
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
                         .background(isSelected ? .white.opacity(0.2) : Color(.systemGray5))
                         .clipShape(Capsule())
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
             .background(isSelected ? .red : Color(.systemGray6))
             .foregroundStyle(isSelected ? .white : .primary)
             .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -249,9 +274,7 @@ struct ItemRow: View {
                     AsyncImage(url: logoURL) { phase in
                         switch phase {
                         case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
+                            image.resizable().aspectRatio(contentMode: .fill)
                         default:
                             iconFallback
                         }
@@ -260,51 +283,52 @@ struct ItemRow: View {
                     iconFallback
                 }
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 36, height: 36)
             .background(Color(.systemGray6))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
-                    .font(.subheadline.weight(.medium))
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                HStack(spacing: 6) {
-                    Image(systemName: item.contentType.iconName)
+                if let group = item.groupTitle {
+                    Text(group)
                         .font(.caption2)
-                    if let group = item.groupTitle {
-                        Text(group)
-                            .lineLimit(1)
-                    }
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
-            Spacer()
+            Spacer(minLength: 4)
 
             if item.isLive {
                 Text("LIVE")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 8, weight: .heavy))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(.red)
                     .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
             }
 
-            Image(systemName: "play.circle.fill")
-                .font(.title2)
+            Image(systemName: "play.fill")
+                .font(.system(size: 11))
                 .foregroundStyle(.red)
+                .frame(width: 28, height: 28)
+                .background(.red.opacity(0.1))
+                .clipShape(Circle())
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     private var iconFallback: some View {
         Image(systemName: item.contentType.iconName)
-            .font(.system(size: 16))
+            .font(.system(size: 14))
             .foregroundStyle(.secondary)
-            .frame(width: 40, height: 40)
+            .frame(width: 36, height: 36)
     }
 }
 

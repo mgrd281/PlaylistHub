@@ -6,78 +6,83 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                // Profile section
-                Section {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Profile card
                     HStack(spacing: 14) {
                         ZStack {
                             Circle()
-                                .fill(Color.red.opacity(0.15))
-                                .frame(width: 56, height: 56)
+                                .fill(.red.opacity(0.12))
+                                .frame(width: 52, height: 52)
                             Text(initials)
-                                .font(.title2.weight(.semibold))
+                                .font(.title3.weight(.semibold))
                                 .foregroundStyle(.red)
                         }
 
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 2) {
                             if let name = authManager.currentUser?.displayName, !name.isEmpty {
                                 Text(name)
-                                    .font(.headline)
+                                    .font(.subheadline.weight(.semibold))
                             }
                             Text(authManager.currentUser?.email ?? "")
-                                .font(.subheadline)
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                // App section
-                Section("App") {
-                    HStack {
-                        Label("Version", systemImage: "info.circle")
                         Spacer()
-                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
-                            .foregroundStyle(.secondary)
                     }
+                    .padding(16)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
 
-                    HStack {
-                        Label("Backend", systemImage: "server.rack")
-                        Spacer()
-                        Text("Supabase")
-                            .foregroundStyle(.secondary)
+                    // Info section
+                    VStack(spacing: 0) {
+                        settingsRow(icon: "info.circle", title: "Version", trailing: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
+                        Divider().padding(.leading, 44)
+                        settingsRow(icon: "server.rack", title: "Backend", trailing: "Supabase")
+                        Divider().padding(.leading, 44)
+                        settingsRow(icon: "play.rectangle", title: "Playback", trailing: "HLS / MP4")
+                        Divider().padding(.leading, 44)
+                        HStack(spacing: 10) {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 24)
+                            Text("Stream Proxy")
+                                .font(.subheadline)
+                            Spacer()
+                            Text("Active")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(.green.opacity(0.15))
+                                .foregroundStyle(.green)
+                                .clipShape(Capsule())
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 13)
                     }
-                }
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.horizontal, 20)
 
-                // Streaming section
-                Section("Streaming") {
-                    HStack {
-                        Label("Stream Proxy", systemImage: "arrow.triangle.branch")
-                        Spacer()
-                        Text("Active")
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(.green.opacity(0.15))
-                            .foregroundStyle(.green)
-                            .clipShape(Capsule())
-                    }
-
-                    HStack {
-                        Label("Playback", systemImage: "play.rectangle")
-                        Spacer()
-                        Text("HLS / MP4")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                // Account section
-                Section {
+                    // Sign out
                     Button(role: .destructive) {
                         showSignOutConfirm = true
                     } label: {
-                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        HStack {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .font(.system(size: 14))
+                            Text("Sign Out")
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
+                    .padding(.horizontal, 20)
                 }
             }
             .navigationTitle("Settings")
@@ -90,6 +95,23 @@ struct SettingsView: View {
                 Text("You'll need to sign in again to access your playlists.")
             }
         }
+    }
+
+    private func settingsRow(icon: String, title: String, trailing: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+            Text(title)
+                .font(.subheadline)
+            Spacer()
+            Text(trailing)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
     }
 
     private var initials: String {

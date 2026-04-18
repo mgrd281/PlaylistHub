@@ -31,18 +31,7 @@ extension Int {
 // MARK: - View modifiers
 
 extension View {
-    func cardStyle() -> some View {
-        self
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
-    }
-
-    func premiumCard() -> some View {
-        self
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
+    // Removed unused cardStyle() and premiumCard() — inline styles used instead
 }
 
 // MARK: - Color theme
