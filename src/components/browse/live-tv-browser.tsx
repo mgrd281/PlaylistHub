@@ -94,7 +94,7 @@ function ChannelCard({
     <button
       type="button"
       onClick={onPlay}
-      className="group flex items-center gap-3 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.04] hover:border-white/[0.1] px-3 py-2.5 transition-all duration-150 w-full text-left"
+      className="group flex items-center gap-3 rounded-lg bg-foreground/[0.03] hover:bg-foreground/[0.07] border border-foreground/[0.04] hover:border-foreground/[0.1] px-3 py-2.5 transition-all duration-150 w-full text-left"
     >
       {/* Logo */}
       <div className="relative flex-shrink-0 h-10 w-10 rounded-lg overflow-hidden">
@@ -105,24 +105,24 @@ function ChannelCard({
               alt=""
               loading="lazy"
               decoding="async"
-              className={`h-full w-full object-contain bg-white/[0.05] p-0.5 transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+              className={`h-full w-full object-contain bg-foreground/[0.05] p-0.5 transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
               onLoad={() => setLoaded(true)}
               onError={() => setError(true)}
             />
-            {!loaded && <div className="absolute inset-0 bg-white/[0.05] animate-pulse rounded-lg" />}
+            {!loaded && <div className="absolute inset-0 bg-foreground/[0.05] animate-pulse rounded-lg" />}
           </>
         ) : (
           <div className={`h-full w-full flex items-center justify-center bg-gradient-to-br ${darkTone(item.name)} rounded-lg`}>
-            <Tv className="h-4 w-4 text-white/25" />
+            <Tv className="h-4 w-4 text-foreground/25" />
           </div>
         )}
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium text-white/85 truncate leading-tight">{item.name}</p>
+        <p className="text-[13px] font-medium text-foreground/85 truncate leading-tight">{item.name}</p>
         {item.group_title && (
-          <p className="text-[11px] text-white/30 truncate mt-0.5">{item.group_title}</p>
+          <p className="text-[11px] text-muted-foreground truncate mt-0.5">{item.group_title}</p>
         )}
       </div>
 
@@ -173,11 +173,11 @@ function CategorySection({
         className="flex items-center gap-2.5 w-full group/header"
       >
         <span className="text-lg select-none">{category.emoji}</span>
-        <h2 className="text-[15px] font-semibold text-white/90 tracking-tight">{category.label}</h2>
-        <span className="text-xs text-white/30 font-medium">{category.totalCount}</span>
+        <h2 className="text-[15px] font-semibold text-foreground/90 tracking-tight">{category.label}</h2>
+        <span className="text-xs text-muted-foreground font-medium">{category.totalCount}</span>
         <div className="flex-1" />
         <ChevronDown
-          className={`h-4 w-4 text-white/25 group-hover/header:text-white/50 transition-all duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+          className={`h-4 w-4 text-foreground/25 group-hover/header:text-foreground/50 transition-all duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
         />
       </button>
 
@@ -189,25 +189,25 @@ function CategorySection({
               key={item.id}
               type="button"
               onClick={() => onPlay(item)}
-              className="group flex-shrink-0 flex items-center gap-2 rounded-md bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.04] hover:border-white/[0.08] px-2.5 py-1.5 transition-colors"
+              className="group flex-shrink-0 flex items-center gap-2 rounded-md bg-foreground/[0.03] hover:bg-foreground/[0.07] border border-foreground/[0.04] hover:border-foreground/[0.08] px-2.5 py-1.5 transition-colors"
             >
               <div className="h-6 w-6 rounded overflow-hidden flex-shrink-0">
                 {item.tvg_logo ? (
-                  <img src={item.tvg_logo} alt="" loading="lazy" className="h-full w-full object-contain bg-white/[0.05] p-0.5" />
+                  <img src={item.tvg_logo} alt="" loading="lazy" className="h-full w-full object-contain bg-foreground/[0.05] p-0.5" />
                 ) : (
                   <div className={`h-full w-full flex items-center justify-center bg-gradient-to-br ${darkTone(item.name)}`}>
                     <Tv className="h-3 w-3 text-white/20" />
                   </div>
                 )}
               </div>
-              <span className="text-[11px] text-white/60 truncate max-w-[100px]">{item.name}</span>
+              <span className="text-[11px] text-foreground/60 truncate max-w-[100px]">{item.name}</span>
             </button>
           ))}
           {displayItems.length > 6 && (
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-[11px] text-white/35 hover:text-white/60 transition-colors"
+              className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-[11px] text-foreground/35 hover:text-foreground/60 transition-colors"
             >
               +{displayItems.length - 6} more
               <ChevronRight className="h-3 w-3" />
@@ -225,7 +225,7 @@ function CategorySection({
                 type="button"
                 onClick={() => setActiveSubGroup(null)}
                 className={`shrink-0 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                  !activeSubGroup ? 'bg-white/[0.12] text-white' : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.07] hover:text-white/60'
+                  !activeSubGroup ? 'bg-foreground/[0.12] text-foreground' : 'bg-foreground/[0.04] text-foreground/40 hover:bg-foreground/[0.07] hover:text-foreground/60'
                 }`}
               >
                 All ({category.totalCount})
@@ -236,10 +236,10 @@ function CategorySection({
                   type="button"
                   onClick={() => setActiveSubGroup(g.name)}
                   className={`shrink-0 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                    activeSubGroup === g.name ? 'bg-white/[0.12] text-white' : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.07] hover:text-white/60'
+                    activeSubGroup === g.name ? 'bg-foreground/[0.12] text-foreground' : 'bg-foreground/[0.04] text-foreground/40 hover:bg-foreground/[0.07] hover:text-foreground/60'
                   }`}
                 >
-                  {g.name} <span className="text-white/20 ml-1">{g.items.length}</span>
+                  {g.name} <span className="text-foreground/20 ml-1">{g.items.length}</span>
                 </button>
               ))}
             </div>
@@ -352,35 +352,35 @@ export function LiveTVBrowser() {
       {/* ── Header ── */}
       <div className="space-y-1">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.06]">
-            <Tv className="h-4.5 w-4.5 text-white/60" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground/[0.06]">
+            <Tv className="h-4.5 w-4.5 text-foreground/60" />
           </div>
           <div>
             <div className="flex items-baseline gap-2.5">
-              <h1 className="text-2xl font-bold text-white tracking-tight">Live TV</h1>
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">Live TV</h1>
               {!loading && totalChannels > 0 && (
-                <span className="text-sm font-medium text-white/40">{totalChannels.toLocaleString()} channels</span>
+                <span className="text-sm font-medium text-muted-foreground">{totalChannels.toLocaleString()} channels</span>
               )}
             </div>
-            <p className="text-[13px] text-white/35 mt-0.5">Browse channels by category and network</p>
+            <p className="text-[13px] text-muted-foreground mt-0.5">Browse channels by category and network</p>
           </div>
         </div>
       </div>
 
       {/* ── Search ── */}
       <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Search channels, groups, networks..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9 bg-white/[0.05] border-white/[0.08] text-white placeholder:text-white/30 h-9 focus:bg-white/[0.07] focus:border-white/[0.15]"
+          className="pl-9 bg-foreground/[0.05] border-foreground/[0.08] text-foreground placeholder:text-muted-foreground h-9 focus:bg-foreground/[0.07] focus:border-foreground/[0.15]"
         />
         {search && (
           <button
             type="button"
             onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground/70"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -394,7 +394,7 @@ export function LiveTVBrowser() {
             type="button"
             onClick={() => setActiveCategoryKey(null)}
             className={`shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
-              !activeCategoryKey ? 'bg-white/[0.12] text-white' : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.07] hover:text-white/60'
+              !activeCategoryKey ? 'bg-foreground/[0.12] text-foreground' : 'bg-foreground/[0.04] text-foreground/40 hover:bg-foreground/[0.07] hover:text-foreground/60'
             }`}
           >
             <Zap className="h-3 w-3" />
@@ -407,13 +407,13 @@ export function LiveTVBrowser() {
               onClick={() => scrollToCategory(cat.key)}
               className={`shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
                 activeCategoryKey === cat.key
-                  ? 'bg-white/[0.12] text-white'
-                  : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.07] hover:text-white/60'
+                  ? 'bg-foreground/[0.12] text-foreground'
+                  : 'bg-foreground/[0.04] text-foreground/40 hover:bg-foreground/[0.07] hover:text-foreground/60'
               }`}
             >
               <span className="text-[11px]">{cat.emoji}</span>
               {cat.label}
-              <span className="text-white/20">{cat.totalCount}</span>
+              <span className="text-foreground/20">{cat.totalCount}</span>
             </button>
           ))}
         </div>
@@ -424,10 +424,10 @@ export function LiveTVBrowser() {
         <div className="space-y-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="space-y-2">
-              <Skeleton className="h-5 w-32 bg-white/[0.06] rounded" />
+              <Skeleton className="h-5 w-32 bg-foreground/[0.06] rounded" />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5">
                 {Array.from({ length: 8 }).map((_, j) => (
-                  <Skeleton key={j} className="h-[52px] rounded-lg bg-white/[0.04]" />
+                  <Skeleton key={j} className="h-[52px] rounded-lg bg-foreground/[0.04]" />
                 ))}
               </div>
             </div>

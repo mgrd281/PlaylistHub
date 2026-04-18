@@ -2,35 +2,28 @@
 
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
+import { useTheme } from 'next-themes';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Header() {
   const [email, setEmail] = useState<string>('');
-  const [isDark, setIsDark] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setEmail(user.email || '');
     });
-
-    // Check initial theme
-    setIsDark(document.documentElement.classList.contains('dark'));
   }, []);
 
+  const isDark = mounted ? theme === 'dark' : true;
+
   function toggleTheme() {
-    const html = document.documentElement;
-    if (html.classList.contains('dark')) {
-      html.classList.remove('dark');
-      setIsDark(false);
-      localStorage.setItem('theme', 'light');
-    } else {
-      html.classList.add('dark');
-      setIsDark(true);
-      localStorage.setItem('theme', 'dark');
-    }
+    setTheme(isDark ? 'light' : 'dark');
   }
 
   const initials = email

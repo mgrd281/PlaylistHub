@@ -225,11 +225,11 @@ function QuickStats({ playlists }: { playlists: Playlist[] }) {
           key={item.type}
           type="button"
           onClick={() => router.push(TYPE_ROUTES[item.type] || '/playlists')}
-          className="group flex items-center gap-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] px-4 py-2.5 transition-colors duration-150"
+          className="group flex items-center gap-2.5 rounded-lg bg-foreground/[0.04] hover:bg-foreground/[0.07] px-4 py-2.5 transition-colors duration-150"
         >
-          <item.icon className="h-4 w-4 text-white/30" />
-          <span className="text-sm font-bold text-white/80">{item.count.toLocaleString()}</span>
-          <span className="text-xs text-white/30">{item.label}</span>
+          <item.icon className="h-4 w-4 text-foreground/30" />
+          <span className="text-sm font-bold text-foreground/80">{item.count.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">{item.label}</span>
         </button>
       ))}
     </div>
@@ -269,7 +269,7 @@ function ContentCard({
     return (
       <button
         type="button" onClick={onSelect}
-        className="group relative flex-shrink-0 rounded-lg overflow-hidden aspect-video min-w-[220px] max-w-[220px] sm:min-w-[270px] sm:max-w-[270px] transition-all duration-200 hover:ring-1 hover:ring-white/15 hover:z-10"
+        className="group relative flex-shrink-0 rounded-lg overflow-hidden aspect-video min-w-[220px] max-w-[220px] sm:min-w-[270px] sm:max-w-[270px] transition-all duration-200 hover:ring-1 hover:ring-foreground/15 hover:z-10"
       >
         {/* Image or rich fallback */}
         {hasImage ? (
@@ -327,7 +327,7 @@ function ContentCard({
   return (
     <button
       type="button" onClick={onSelect}
-      className="group relative flex-shrink-0 rounded-lg overflow-hidden aspect-[2/3] min-w-[115px] max-w-[115px] sm:min-w-[140px] sm:max-w-[140px] transition-all duration-200 hover:ring-1 hover:ring-white/15 hover:z-10"
+      className="group relative flex-shrink-0 rounded-lg overflow-hidden aspect-[2/3] min-w-[115px] max-w-[115px] sm:min-w-[140px] sm:max-w-[140px] transition-all duration-200 hover:ring-1 hover:ring-foreground/15 hover:z-10"
     >
       {hasImage ? (
         <>
@@ -423,21 +423,21 @@ function ContentRail({
   return (
     <div className="group/rail space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white/70 flex items-center gap-2">
-          {RailIcon && <RailIcon className="h-3.5 w-3.5 text-white/25" />}
+        <h3 className="text-sm font-semibold text-foreground/70 flex items-center gap-2">
+          {RailIcon && <RailIcon className="h-3.5 w-3.5 text-foreground/25" />}
           {title}
         </h3>
         <div className="flex items-center gap-1">
           {onViewAll && (
-            <button type="button" onClick={onViewAll} className="text-[11px] text-white/30 hover:text-white/60 transition-colors flex items-center gap-1">
+            <button type="button" onClick={onViewAll} className="text-[11px] text-foreground/30 hover:text-foreground/60 transition-colors flex items-center gap-1">
               View All <ArrowRight className="h-3 w-3" />
             </button>
           )}
           <div className="flex gap-0.5 opacity-0 group-hover/rail:opacity-100 transition-opacity ml-1">
-            <button type="button" onClick={() => scroll('left')} disabled={!canLeft} className="h-6 w-6 rounded flex items-center justify-center text-white/30 hover:text-white/60 disabled:opacity-20 transition-colors">
+            <button type="button" onClick={() => scroll('left')} disabled={!canLeft} className="h-6 w-6 rounded flex items-center justify-center text-foreground/30 hover:text-foreground/60 disabled:opacity-20 transition-colors">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button type="button" onClick={() => scroll('right')} disabled={!canRight} className="h-6 w-6 rounded flex items-center justify-center text-white/30 hover:text-white/60 disabled:opacity-20 transition-colors">
+            <button type="button" onClick={() => scroll('right')} disabled={!canRight} className="h-6 w-6 rounded flex items-center justify-center text-foreground/30 hover:text-foreground/60 disabled:opacity-20 transition-colors">
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
@@ -463,11 +463,11 @@ function PlaylistShowcase({ playlists }: { playlists: Playlist[] }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white/70 flex items-center gap-2">
-          <Library className="h-3.5 w-3.5 text-white/25" />
+        <h3 className="text-sm font-semibold text-foreground/70 flex items-center gap-2">
+          <Library className="h-3.5 w-3.5 text-foreground/25" />
           Your Libraries
         </h3>
-        <button type="button" onClick={() => router.push('/playlists')} className="text-[11px] text-white/30 hover:text-white/60 transition-colors flex items-center gap-1">
+        <button type="button" onClick={() => router.push('/playlists')} className="text-[11px] text-foreground/30 hover:text-foreground/60 transition-colors flex items-center gap-1">
           Manage <ArrowRight className="h-3 w-3" />
         </button>
       </div>
@@ -478,10 +478,10 @@ function PlaylistShowcase({ playlists }: { playlists: Playlist[] }) {
             <button
               key={pl.id}
               onClick={() => router.push(`/playlists/${pl.id}`)}
-              className="group rounded-lg bg-white/[0.03] hover:bg-white/[0.06] p-4 text-left transition-colors duration-150"
+              className="group rounded-lg bg-foreground/[0.03] hover:bg-foreground/[0.06] p-4 text-left transition-colors duration-150"
             >
-              <p className="text-sm font-semibold text-white/80 line-clamp-1">{pl.name}</p>
-              <div className="flex items-center gap-3 mt-2 text-white/25 text-[11px]">
+              <p className="text-sm font-semibold text-foreground/80 line-clamp-1">{pl.name}</p>
+              <div className="flex items-center gap-3 mt-2 text-muted-foreground text-[11px]">
                 <span>{total.toLocaleString()} items</span>
                 {pl.channels_count > 0 && <span className="flex items-center gap-1"><Tv className="h-3 w-3" />{pl.channels_count}</span>}
                 {pl.movies_count > 0 && <span className="flex items-center gap-1"><Film className="h-3 w-3" />{pl.movies_count}</span>}
@@ -516,15 +516,15 @@ function CategoryGrid({ items, onSelectItem }: { items: PlaylistItem[]; onSelect
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-semibold text-white/70 flex items-center gap-2">
-        <LayoutGrid className="h-3.5 w-3.5 text-white/25" />
+      <h3 className="text-sm font-semibold text-foreground/70 flex items-center gap-2">
+        <LayoutGrid className="h-3.5 w-3.5 text-foreground/25" />
         Categories
       </h3>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
         {categories.map(([name, { items: catItems, sample }]) => (
           <button
             key={name} type="button" onClick={() => onSelectItem(catItems[0])}
-            className="group relative rounded-md overflow-hidden h-[60px] transition-all duration-150 hover:ring-1 hover:ring-white/10"
+            className="group relative rounded-md overflow-hidden h-[60px] transition-all duration-150 hover:ring-1 hover:ring-foreground/10"
           >
             {sample.tvg_logo ? (
               <img src={sample.tvg_logo} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
@@ -612,10 +612,10 @@ export function MediaHome({ playlists }: { playlists: Playlist[] }) {
         <div className="space-y-6">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="space-y-2">
-              <Skeleton className="h-4 w-28 bg-white/[0.04]" />
+              <Skeleton className="h-4 w-28 bg-foreground/[0.04]" />
               <div className="flex gap-2">
                 {Array.from({ length: 7 }).map((_, j) => (
-                  <Skeleton key={j} className="aspect-[2/3] w-[115px] rounded-lg shrink-0 bg-white/[0.04]" />
+                  <Skeleton key={j} className="aspect-[2/3] w-[115px] rounded-lg shrink-0 bg-foreground/[0.04]" />
                 ))}
               </div>
             </div>

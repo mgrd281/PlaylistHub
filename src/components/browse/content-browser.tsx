@@ -71,7 +71,7 @@ function BrowseCard({
       <button
         type="button"
         onClick={onPlay}
-        className="group relative rounded-lg overflow-hidden aspect-video bg-neutral-800 transition-all duration-150 hover:ring-1 hover:ring-white/15"
+        className="group relative rounded-lg overflow-hidden aspect-video bg-neutral-800 transition-all duration-150 hover:ring-1 hover:ring-foreground/15"
       >
         {hasImage ? (
           <>
@@ -131,7 +131,7 @@ function BrowseCard({
     <button
       type="button"
       onClick={onPlay}
-      className="group relative rounded-lg overflow-hidden aspect-[2/3] bg-neutral-800 transition-all duration-150 hover:ring-1 hover:ring-white/15"
+      className="group relative rounded-lg overflow-hidden aspect-[2/3] bg-neutral-800 transition-all duration-150 hover:ring-1 hover:ring-foreground/15"
     >
       {hasImage ? (
         <>
@@ -261,17 +261,17 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
       {/* Header */}
       <div className="space-y-1">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.06]">
-            <Icon className="h-4.5 w-4.5 text-white/60" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground/[0.06]">
+            <Icon className="h-4.5 w-4.5 text-foreground/60" />
           </div>
           <div>
             <div className="flex items-baseline gap-2.5">
-              <h1 className="text-2xl font-bold text-white tracking-tight">{label}</h1>
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">{label}</h1>
               {total > 0 && !loading && (
-                <span className="text-sm font-medium text-white/40">{total.toLocaleString()} items</span>
+                <span className="text-sm font-medium text-muted-foreground">{total.toLocaleString()} items</span>
               )}
             </div>
-            <p className="text-[13px] text-white/35 mt-0.5">{SUBTITLE[contentType]}</p>
+            <p className="text-[13px] text-muted-foreground mt-0.5">{SUBTITLE[contentType]}</p>
           </div>
         </div>
       </div>
@@ -279,32 +279,32 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
       {/* Controls */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={`Search ${label.toLowerCase()}...`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-white/[0.05] border-white/[0.08] text-white placeholder:text-white/30 h-9 focus:bg-white/[0.07] focus:border-white/[0.15]"
+            className="pl-9 bg-foreground/[0.05] border-foreground/[0.08] text-foreground placeholder:text-muted-foreground h-9 focus:bg-foreground/[0.07] focus:border-foreground/[0.15]"
           />
           {search && (
-            <button type="button" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70">
+            <button type="button" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground/70">
               <X className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5">
+        <div className="flex items-center gap-1 rounded-lg bg-foreground/[0.04] p-0.5">
           <button
             type="button"
             onClick={() => setLayout('poster')}
-            className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors ${layout === 'poster' ? 'bg-white/[0.1] text-white' : 'text-white/35 hover:text-white/55'}`}
+            className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors ${layout === 'poster' ? 'bg-foreground/[0.1] text-foreground' : 'text-foreground/35 hover:text-foreground/55'}`}
           >
             <LayoutGrid className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={() => setLayout('wide')}
-            className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors ${layout === 'wide' ? 'bg-white/[0.1] text-white' : 'text-white/35 hover:text-white/55'}`}
+            className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors ${layout === 'wide' ? 'bg-foreground/[0.1] text-foreground' : 'text-foreground/35 hover:text-foreground/55'}`}
           >
             <List className="h-4 w-4" />
           </button>
@@ -318,7 +318,7 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
             type="button"
             onClick={() => setActiveGroup('')}
             className={`shrink-0 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${
-              !activeGroup ? 'bg-white/[0.12] text-white' : 'bg-white/[0.04] text-white/45 hover:bg-white/[0.07] hover:text-white/65'
+              !activeGroup ? 'bg-foreground/[0.12] text-foreground' : 'bg-foreground/[0.04] text-foreground/45 hover:bg-foreground/[0.07] hover:text-foreground/65'
             }`}
           >
             All
@@ -329,11 +329,11 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
               type="button"
               onClick={() => setActiveGroup(g.name)}
               className={`shrink-0 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                activeGroup === g.name ? 'bg-white/[0.12] text-white' : 'bg-white/[0.04] text-white/45 hover:bg-white/[0.07] hover:text-white/65'
+                activeGroup === g.name ? 'bg-foreground/[0.12] text-foreground' : 'bg-foreground/[0.04] text-foreground/45 hover:bg-foreground/[0.07] hover:text-foreground/65'
               }`}
             >
               {g.name}
-              <span className="ml-1.5 text-white/25">{g.count}</span>
+              <span className="ml-1.5 text-foreground/25">{g.count}</span>
             </button>
           ))}
         </div>
@@ -345,7 +345,7 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
           {Array.from({ length: 18 }).map((_, i) => (
             <Skeleton
               key={i}
-              className={`${layout === 'wide' ? 'aspect-video' : 'aspect-[2/3]'} rounded-lg bg-white/[0.06]`}
+              className={`${layout === 'wide' ? 'aspect-video' : 'aspect-[2/3]'} rounded-lg bg-foreground/[0.06]`}
             />
           ))}
         </div>

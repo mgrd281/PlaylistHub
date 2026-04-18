@@ -13,6 +13,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
+import { useTheme } from 'next-themes';
 import { createClient } from '@/lib/supabase/client';
 
 /* ─── Navigation structure ─── */
@@ -78,10 +79,10 @@ function checkActive(href: string, pathname: string, matchExact?: boolean, short
 function BrandMark({ compact }: { compact?: boolean }) {
   return (
     <div className={cn('flex items-center gap-2.5', compact ? '' : 'px-5 py-5')}>
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white">
-        <Play className="h-3.5 w-3.5 text-black fill-black ml-0.5" />
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
+        <Play className="h-3.5 w-3.5 text-sidebar-primary-foreground fill-sidebar-primary-foreground ml-0.5" />
       </div>
-      <span className="text-sm font-bold tracking-tight">PlaylistHub</span>
+      <span className="text-sm font-bold tracking-tight text-sidebar-foreground">PlaylistHub</span>
     </div>
   );
 }
@@ -110,25 +111,25 @@ function NavLink({
       className={cn(
         'group relative flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium transition-all duration-150',
         active
-          ? 'bg-white/[0.08] text-white'
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : disabled
-          ? 'text-white/25 cursor-default'
-          : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
+          ? 'text-sidebar-foreground/25 cursor-default'
+          : 'text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80'
       )}
     >
       {active && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-full bg-white" />
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-full bg-sidebar-primary" />
       )}
 
       <item.icon className={cn(
         'h-[16px] w-[16px] shrink-0',
-        active ? 'text-white' : disabled ? 'text-white/20' : 'text-white/40 group-hover:text-white/60'
+        active ? 'text-sidebar-accent-foreground' : disabled ? 'text-sidebar-foreground/20' : 'text-sidebar-foreground/40 group-hover:text-sidebar-foreground/60'
       )} />
 
       <span className="flex-1 truncate">{item.name}</span>
 
       {item.badge && (
-        <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/[0.05] text-white/25">
+        <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-sidebar-accent/60 text-sidebar-foreground/25">
           {item.badge}
         </span>
       )}
@@ -141,7 +142,7 @@ function NavLink({
 function SectionLabel({ label }: { label: string }) {
   return (
     <div className="px-3 pt-6 pb-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/20">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/20">
         {label}
       </span>
     </div>
@@ -152,27 +153,21 @@ function SectionLabel({ label }: { label: string }) {
 
 function UserFooter({ onLogout }: { onLogout: () => void }) {
   const [email, setEmail] = useState('');
-  const [isDark, setIsDark] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setEmail(user.email || '');
     });
-    setIsDark(document.documentElement.classList.contains('dark'));
   }, []);
 
+  const isDark = mounted ? theme === 'dark' : true;
+
   function toggleTheme() {
-    const html = document.documentElement;
-    if (html.classList.contains('dark')) {
-      html.classList.remove('dark');
-      setIsDark(false);
-      localStorage.setItem('theme', 'light');
-    } else {
-      html.classList.add('dark');
-      setIsDark(true);
-      localStorage.setItem('theme', 'dark');
-    }
+    setTheme(isDark ? 'light' : 'dark');
   }
 
   const username = email ? email.split('@')[0] : 'User';
@@ -185,25 +180,25 @@ function UserFooter({ onLogout }: { onLogout: () => void }) {
       <button
         type="button"
         onClick={toggleTheme}
-        className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium text-white/50 hover:bg-white/[0.04] hover:text-white/80 transition-all duration-150"
+        className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 transition-all duration-150"
       >
-        {isDark ? <Sun className="h-4 w-4 text-white/40" /> : <Moon className="h-4 w-4 text-white/40" />}
+        {isDark ? <Sun className="h-4 w-4 text-sidebar-foreground/40" /> : <Moon className="h-4 w-4 text-sidebar-foreground/40" />}
         <span className="flex-1 text-left">{isDark ? 'Light Mode' : 'Dark Mode'}</span>
       </button>
 
-      <div className="flex items-center gap-3 rounded-lg bg-white/[0.03] p-2.5 mt-1">
+      <div className="flex items-center gap-3 rounded-lg bg-sidebar-accent/40 p-2.5 mt-1">
         <Avatar className="h-7 w-7">
-          <AvatarFallback className="text-[10px] font-bold bg-white/[0.08] text-white/60">
+          <AvatarFallback className="text-[10px] font-bold bg-sidebar-accent text-sidebar-foreground/60">
             {initials}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-white/70 truncate">{username}</p>
+          <p className="text-xs font-medium text-sidebar-foreground/70 truncate">{username}</p>
         </div>
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 shrink-0 text-white/30 hover:text-white/60 hover:bg-white/[0.05]"
+          className="h-6 w-6 shrink-0 text-sidebar-foreground/30 hover:text-sidebar-foreground/60 hover:bg-sidebar-accent/50"
           onClick={onLogout}
         >
           <LogOut className="h-3 w-3" />
@@ -256,20 +251,20 @@ export function Sidebar() {
     <>
       {/* Desktop sidebar */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-[240px] lg:flex-col">
-        <div className="flex grow flex-col overflow-y-auto border-r border-white/[0.06] bg-[#0a0a0a]">
+        <div className="flex grow flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar">
           {sidebarContent}
         </div>
       </aside>
 
       {/* Mobile top bar + sheet */}
-      <div className="sticky top-0 z-40 flex h-12 items-center gap-3 border-b border-white/[0.06] bg-[#0a0a0a]/95 backdrop-blur-xl px-4 lg:hidden">
+      <div className="sticky top-0 z-40 flex h-12 items-center gap-3 border-b border-sidebar-border bg-sidebar/95 backdrop-blur-xl px-4 lg:hidden">
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger>
             <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1">
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-[240px] p-0 border-r border-white/[0.06] bg-[#0a0a0a]">
+          <SheetContent side="left" className="w-[240px] p-0 border-r border-sidebar-border bg-sidebar">
             {sidebarContent}
           </SheetContent>
         </Sheet>
