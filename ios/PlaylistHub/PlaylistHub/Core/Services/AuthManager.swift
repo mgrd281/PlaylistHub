@@ -23,6 +23,8 @@ final class AuthManager: ObservableObject {
             let session = try await supabase.auth.session
             isAuthenticated = true
             await fetchProfile(userId: session.user.id)
+            // Register/restore device on session restore
+            await DeviceManager.shared.registerOrRestore()
         } catch {
             isAuthenticated = false
             currentUser = nil
@@ -42,6 +44,8 @@ final class AuthManager: ObservableObject {
             let session = try await supabase.auth.signIn(email: email, password: password)
             isAuthenticated = true
             await fetchProfile(userId: session.user.id)
+            // Register device after successful login
+            await DeviceManager.shared.registerOrRestore()
         } catch {
             self.error = error.localizedDescription
         }
@@ -83,6 +87,7 @@ final class AuthManager: ObservableObject {
         } catch {
             // Best-effort sign out
         }
+        DeviceManager.shared.stopHeartbeat()
         isAuthenticated = false
         currentUser = nil
     }

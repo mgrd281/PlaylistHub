@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, ListMusic, LogOut, Menu } from 'lucide-react';
+import { LayoutDashboard, ListMusic, LogOut, Menu, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -11,6 +11,7 @@ import { useState } from 'react';
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Playlists', href: '/playlists', icon: ListMusic },
+  { name: 'Devices', href: '/devices', icon: Smartphone },
 ];
 
 function NavItems({ onNavigate }: { onNavigate?: () => void }) {

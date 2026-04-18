@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var authManager: AuthManager
+    @EnvironmentObject private var deviceManager: DeviceManager
     @State private var showSignOutConfirm = false
 
     var body: some View {
@@ -35,6 +36,61 @@ struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
+
+                    // Device card — prominent
+                    NavigationLink(destination: DeviceInfoView().environmentObject(deviceManager)) {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(.red.opacity(0.12))
+                                    .frame(width: 44, height: 44)
+                                Image(systemName: "tv.and.mediabox")
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(.red)
+                            }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Device Info")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                if let code = deviceManager.activationCode {
+                                    Text("Code: \(code)")
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Not registered")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            Spacer()
+
+                            if let device = deviceManager.device {
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(device.status == "active" ? .green : .orange)
+                                        .frame(width: 6, height: 6)
+                                    Text(device.status.capitalized)
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(device.status == "active" ? .green : .orange)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background((device.status == "active" ? Color.green : Color.orange).opacity(0.12))
+                                .clipShape(Capsule())
+                            }
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(16)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
 
                     // Info section
                     VStack(spacing: 0) {

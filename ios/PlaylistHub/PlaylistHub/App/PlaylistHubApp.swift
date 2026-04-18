@@ -4,12 +4,14 @@ import SwiftUI
 struct PlaylistHubApp: App {
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var appState = AppState()
+    @StateObject private var deviceManager = DeviceManager.shared
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(authManager)
                 .environmentObject(appState)
+                .environmentObject(deviceManager)
                 .preferredColorScheme(.dark)
         }
     }

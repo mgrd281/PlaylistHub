@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		068136FA7853A2251574FF31 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00FC575C15D1FC08C386E3E /* RootView.swift */; };
+		2F61DD8BE07BC732C3C1A39B /* DeviceInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23AD53101C88C3935A572D80 /* DeviceInfoView.swift */; };
+		3265A6DF09766AF47A4634A5 /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02424ED07E2345E8FEE76928 /* DeviceManager.swift */; };
 		384CF2625095CDA17466588F /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E54D16CFBEA2671A756307 /* Extensions.swift */; };
 		4070AE18279C2693AAE32266 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44CD09BBC1D508CF1F26967D /* AuthManager.swift */; };
 		4C83593F06AEC0A781D5352B /* PlaylistHubApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBD14A7EF24BBA3499A6C92 /* PlaylistHubApp.swift */; };
@@ -16,6 +18,7 @@
 		5115F334B1C32441F1B2184F /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E46E374DE46C6DD0B85877 /* DashboardView.swift */; };
 		B7C169D965E864F99B184B92 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B03BB81AD4CB797EB55479 /* PlayerView.swift */; };
 		BC19BFF44FADABAF25BC6741 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678583869343B62DE3381494 /* LoginView.swift */; };
+		C80E1B55970AC4382CBC18C7 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDA21138AB82340B51337E1 /* KeychainHelper.swift */; };
 		C882769DD3F87B30A6D00579 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 865F83E4119C43ECCCD7E9FD /* Supabase */; };
 		C924E28DAF04FC3EFB6A2D4A /* PlaylistsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4595B55B474ADFEEF0A7BB75 /* PlaylistsView.swift */; };
 		DBE559C25971769129324AEE /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16A13EF96F0187ACFC70B2A /* SplashView.swift */; };
@@ -27,16 +30,19 @@
 
 /* Begin PBXFileReference section */
 		01E46E374DE46C6DD0B85877 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		02424ED07E2345E8FEE76928 /* DeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceManager.swift; sourceTree = "<group>"; };
 		03B03BB81AD4CB797EB55479 /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
 		0893EB466EF18043F0149485 /* PlaylistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailView.swift; sourceTree = "<group>"; };
 		0DBD14A7EF24BBA3499A6C92 /* PlaylistHubApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistHubApp.swift; sourceTree = "<group>"; };
 		19EF0021CCCFE128DD6232AB /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		30DAEBF3548C6795AF53D58B /* PlaylistHub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PlaylistHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		23AD53101C88C3935A572D80 /* DeviceInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceInfoView.swift; sourceTree = "<group>"; };
+		30DAEBF3548C6795AF53D58B /* PlaylistHub.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PlaylistHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		33E54D16CFBEA2671A756307 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		44CD09BBC1D508CF1F26967D /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		4595B55B474ADFEEF0A7BB75 /* PlaylistsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistsView.swift; sourceTree = "<group>"; };
 		678583869343B62DE3381494 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		79D87095ABF15472C7518312 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		8CDA21138AB82340B51337E1 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		A16A13EF96F0187ACFC70B2A /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		B00FC575C15D1FC08C386E3E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		BB231FECDEB482DBE4A39EEB /* SupabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseManager.swift; sourceTree = "<group>"; };
@@ -94,6 +100,7 @@
 		24C8E0B9CB81EAC65B7337F2 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				23AD53101C88C3935A572D80 /* DeviceInfoView.swift */,
 				D5A218A5C63769BD1CFFAB98 /* SettingsView.swift */,
 			);
 			path = Views;
@@ -182,6 +189,8 @@
 			children = (
 				44CD09BBC1D508CF1F26967D /* AuthManager.swift */,
 				EF388B01C376C5E4B72CF928 /* DataService.swift */,
+				02424ED07E2345E8FEE76928 /* DeviceManager.swift */,
+				8CDA21138AB82340B51337E1 /* KeychainHelper.swift */,
 				BB231FECDEB482DBE4A39EEB /* SupabaseManager.swift */,
 			);
 			path = Services;
@@ -270,6 +279,7 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					D64152630130ED79400E7374 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -305,7 +315,10 @@
 				4070AE18279C2693AAE32266 /* AuthManager.swift in Sources */,
 				5115F334B1C32441F1B2184F /* DashboardView.swift in Sources */,
 				ED3CE299AB2013DD8821CEF8 /* DataService.swift in Sources */,
+				2F61DD8BE07BC732C3C1A39B /* DeviceInfoView.swift in Sources */,
+				3265A6DF09766AF47A4634A5 /* DeviceManager.swift in Sources */,
 				384CF2625095CDA17466588F /* Extensions.swift in Sources */,
+				C80E1B55970AC4382CBC18C7 /* KeychainHelper.swift in Sources */,
 				BC19BFF44FADABAF25BC6741 /* LoginView.swift in Sources */,
 				EAB7DE81375B4DB6185C79C7 /* Models.swift in Sources */,
 				B7C169D965E864F99B184B92 /* PlayerView.swift in Sources */,
@@ -330,7 +343,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 3227J7CBXY;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_KEY_CFBundleDisplayName = PlaylistHub;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
@@ -359,7 +372,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 3227J7CBXY;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_KEY_CFBundleDisplayName = PlaylistHub;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
