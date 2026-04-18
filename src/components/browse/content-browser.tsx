@@ -22,6 +22,21 @@ const TYPE_LABEL: Record<string, string> = {
   series: 'Series',
 };
 
+const DARK_TONES = [
+  'from-neutral-800 to-neutral-900',
+  'from-zinc-800 to-zinc-900',
+  'from-stone-800 to-stone-900',
+  'from-gray-800 to-gray-900',
+  'from-neutral-700 to-neutral-900',
+  'from-zinc-700 to-zinc-900',
+];
+
+function darkTone(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return DARK_TONES[Math.abs(h) % DARK_TONES.length];
+}
+
 interface GroupInfo {
   name: string;
   count: number;
@@ -41,71 +56,118 @@ function BrowseCard({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const Icon = TYPE_ICON[item.content_type] || Layers;
+  const hasImage = item.tvg_logo && !error;
+
+  const initials = item.name
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase() || '?';
 
   if (layout === 'wide') {
     return (
       <button
         type="button"
         onClick={onPlay}
-        className="group relative rounded-lg overflow-hidden aspect-video bg-neutral-800 transition-all duration-150 hover:ring-1 hover:ring-white/10"
+        className="group relative rounded-lg overflow-hidden aspect-video bg-neutral-800 transition-all duration-150 hover:ring-1 hover:ring-white/15"
       >
-        {item.tvg_logo && !error ? (
+        {hasImage ? (
           <>
             <img
-              src={item.tvg_logo} alt="" loading="lazy" decoding="async"
+              src={item.tvg_logo!} alt="" loading="lazy" decoding="async"
               className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
               onLoad={() => setLoaded(true)} onError={() => setError(true)}
             />
             {!loaded && <div className="absolute inset-0 bg-neutral-800 animate-pulse" />}
           </>
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Icon className="h-8 w-8 text-white/[0.06]" />
+          <div className={`absolute inset-0 bg-gradient-to-br ${darkTone(item.name)}`}>
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(255,255,255,0.04),transparent_70%)]" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.08] ring-1 ring-white/[0.06]">
+                <Icon className="h-5 w-5 text-white/30" />
+              </div>
+              <p className="text-[11px] font-semibold text-white/60 text-center leading-tight line-clamp-2 max-w-[85%]">{item.name}</p>
+              {item.group_title && (
+                <span className="text-[9px] text-white/25 truncate max-w-[80%]">{item.group_title}</span>
+              )}
+            </div>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+
+        {/* Bottom gradient */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+        {/* Hover play */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90">
             <Play className="h-4 w-4 text-black fill-black ml-0.5" />
           </div>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 p-2.5">
-          <p className="text-[11px] font-medium text-white leading-tight line-clamp-2">{item.name}</p>
-          {item.group_title && <p className="text-[9px] text-white/20 truncate mt-0.5">{item.group_title}</p>}
+
+        {/* Type badge */}
+        <div className="absolute top-2 left-2">
+          <div className="flex items-center gap-1 rounded bg-black/50 backdrop-blur-sm px-1.5 py-0.5">
+            <Icon className="h-2.5 w-2.5 text-white/50" />
+            <span className="text-[9px] text-white/50 font-medium capitalize">{item.content_type}</span>
+          </div>
         </div>
+
+        {/* Bottom info — always visible */}
+        {hasImage && (
+          <div className="absolute bottom-0 left-0 right-0 p-2.5">
+            <p className="text-[11px] font-semibold text-white leading-tight line-clamp-2 drop-shadow-lg">{item.name}</p>
+            {item.group_title && <p className="text-[9px] text-white/35 truncate mt-0.5">{item.group_title}</p>}
+          </div>
+        )}
       </button>
     );
   }
 
+  // Poster layout
   return (
     <button
       type="button"
       onClick={onPlay}
-      className="group relative rounded-lg overflow-hidden aspect-[2/3] bg-neutral-800 transition-all duration-150 hover:ring-1 hover:ring-white/10"
+      className="group relative rounded-lg overflow-hidden aspect-[2/3] bg-neutral-800 transition-all duration-150 hover:ring-1 hover:ring-white/15"
     >
-      {item.tvg_logo && !error ? (
+      {hasImage ? (
         <>
           <img
-            src={item.tvg_logo} alt="" loading="lazy" decoding="async"
+            src={item.tvg_logo!} alt="" loading="lazy" decoding="async"
             className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setLoaded(true)} onError={() => setError(true)}
           />
           {!loaded && <div className="absolute inset-0 bg-neutral-800 animate-pulse" />}
         </>
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Icon className="h-7 w-7 text-white/[0.06]" />
+        <div className={`absolute inset-0 bg-gradient-to-br ${darkTone(item.name)}`}>
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(255,255,255,0.04),transparent_70%)]" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.08] ring-1 ring-white/[0.06]">
+              <Icon className="h-5 w-5 text-white/30" />
+            </div>
+            <span className="text-[10px] font-bold text-white/40 tracking-wide">{initials}</span>
+          </div>
         </div>
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+
+      {/* Bottom gradient */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+
+      {/* Hover play */}
       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90">
           <Play className="h-4 w-4 text-black fill-black ml-0.5" />
         </div>
       </div>
+
+      {/* Bottom info — always visible */}
       <div className="absolute bottom-0 left-0 right-0 p-2">
-        <p className="text-[10px] font-medium text-white/80 leading-tight line-clamp-2">{item.name}</p>
-        {item.group_title && <p className="text-[9px] text-white/20 truncate mt-0.5">{item.group_title}</p>}
+        <p className="text-[10px] font-semibold text-white leading-tight line-clamp-2 drop-shadow-lg">{item.name}</p>
+        {item.group_title && <p className="text-[9px] text-white/30 truncate mt-0.5">{item.group_title}</p>}
       </div>
     </button>
   );
