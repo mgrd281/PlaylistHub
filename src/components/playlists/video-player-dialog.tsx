@@ -6,8 +6,11 @@ import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, RotateCcw,
   PictureInPicture2, MonitorPlay, ChevronLeft,
-  Radio,
+  Radio, PanelRightOpen, PanelRightClose, Tv,
+  RectangleHorizontal, Square, Expand,
 } from 'lucide-react';
+
+type ViewMode = 'normal' | 'large' | 'theater';
 import { PlaylistItem } from '@/types/database';
 import { toast } from 'sonner';
 
@@ -150,6 +153,8 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
   const [settingsPanel, setSettingsPanel] = useState<'main' | 'speed' | 'quality' | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; seconds: number } | null>(null);
   const seekIndicatorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('normal');
+  const [showSidePanel, setShowSidePanel] = useState(true);
 
   /* ── Channel navigation ── */
   const currentIndex = useMemo(() => {
@@ -341,9 +346,9 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
           const hls = new Hls({
             enableWorker: true,
             lowLatencyMode: isLive,
-            maxBufferLength: isLive ? 8 : 30,
-            maxMaxBufferLength: isLive ? 20 : 120,
-            backBufferLength: isLive ? 0 : 30,
+            maxBufferLength: isLive ? 10 : 60,
+            maxMaxBufferLength: isLive ? 30 : 240,
+            backBufferLength: isLive ? 0 : 60,
             liveSyncDurationCount: 3,
             liveMaxLatencyDurationCount: 6,
             fragLoadingTimeOut: 25000,
@@ -355,6 +360,12 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
             manifestLoadingRetryDelay: 1000,
             startFragPrefetch: true,
             testBandwidth: !isLive,
+            capLevelToPlayerSize: false,
+            maxBufferHole: 0.5,
+            nudgeMaxRetry: 5,
+            abrEwmaDefaultEstimate: 5000000,
+            progressive: true,
+            highBufferWatchdogPeriod: 3,
           });
           hlsRef.current = hls;
           hls.loadSource(proxied);
@@ -558,6 +569,10 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
           e.preventDefault();
           togglePip();
           break;
+        case 't':
+          e.preventDefault();
+          cycleViewMode();
+          break;
         case 'n':
         case ']':
           e.preventDefault();
@@ -610,7 +625,7 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, duration, showControlsTemporarily, toggleFullscreen, togglePip, prevChannel, nextChannel, navigateChannel]);
+  }, [onClose, duration, showControlsTemporarily, toggleFullscreen, togglePip, prevChannel, nextChannel, navigateChannel, cycleViewMode]);
 
   /* ── Seek on progress bar ── */
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -693,7 +708,20 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
   const displayName = activeEpisode?.title || item.name;
-  const showRelated = !fullscreen && hasNavigation && relatedChannels.length > 0;
+  const hasSideContent = !fullscreen && hasNavigation && relatedChannels.length > 0;
+  const sideVisible = hasSideContent && showSidePanel;
+
+  const containerWidth =
+    fullscreen ? 'w-screen h-screen' :
+    viewMode === 'theater' ? 'w-full max-w-[100vw] mx-0' :
+    viewMode === 'large' ? 'w-full max-w-7xl mx-4' :
+    'w-full max-w-5xl mx-4';
+
+  function cycleViewMode() {
+    const modes: ViewMode[] = ['normal', 'large', 'theater'];
+    const idx = modes.indexOf(viewMode);
+    setViewMode(modes[(idx + 1) % modes.length]);
+  }
 
   function copyUrl() {
     void navigator.clipboard.writeText(streamUrl);
@@ -707,13 +735,15 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
     >
       <div
         ref={containerRef}
-        className={`relative ${fullscreen ? 'w-screen h-screen' : 'w-full max-w-5xl mx-4'}`}
+        className={`relative flex ${containerWidth} ${viewMode === 'theater' ? 'h-[calc(100vh-40px)]' : ''}`}
         onMouseMove={showControlsTemporarily}
         onMouseLeave={() => { if (playing) setShowControls(false); }}
       >
+        {/* Main player column */}
+        <div className={`flex-1 min-w-0 flex flex-col ${sideVisible ? 'mr-0' : ''}`}>
         {/* Header — only when not fullscreen */}
         {!fullscreen && (
-          <div className="flex items-center justify-between bg-zinc-950 px-4 py-3 rounded-t-xl border-b border-white/[0.06]">
+          <div className={`flex items-center justify-between bg-zinc-950 px-4 py-3 ${sideVisible ? 'rounded-tl-xl' : 'rounded-t-xl'} border-b border-white/[0.06]`}>
             <div className="flex items-center gap-3 min-w-0">
               <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-800/80 overflow-hidden ring-1 ring-white/[0.06]">
                 {item.tvg_logo ? (
@@ -750,6 +780,24 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
               </div>
             </div>
             <div className="flex items-center gap-0.5 ml-3 shrink-0">
+              {/* View mode toggle */}
+              <button onClick={cycleViewMode}
+                title={`View: ${viewMode} (click to cycle)`}
+                className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors">
+                {viewMode === 'normal' ? <Square className="h-3.5 w-3.5" /> :
+                 viewMode === 'large' ? <RectangleHorizontal className="h-3.5 w-3.5" /> :
+                 <Expand className="h-3.5 w-3.5" />}
+              </button>
+
+              {/* Side panel toggle */}
+              {hasSideContent && (
+                <button onClick={() => setShowSidePanel(!showSidePanel)}
+                  title={showSidePanel ? 'Hide channels panel' : 'Show channels panel'}
+                  className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors">
+                  {showSidePanel ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
+                </button>
+              )}
+
               {hasNavigation && (
                 <div className="flex items-center gap-0.5 mr-1 border-r border-white/[0.06] pr-1.5">
                   <button
@@ -788,7 +836,7 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
 
         {/* Video area */}
         <div
-          className={`relative bg-black overflow-hidden ${fullscreen ? 'w-full h-full' : `${showRelated ? '' : 'rounded-b-xl'} aspect-video`}`}
+          className={`relative bg-black overflow-hidden ${fullscreen ? 'w-full h-full' : `${sideVisible ? 'rounded-bl-xl' : 'rounded-b-xl'} ${viewMode === 'theater' ? 'flex-1' : 'aspect-video'}`}`}
           onClick={(e) => {
             if ((e.target as HTMLElement).closest('.player-controls')) return;
             togglePlay();
@@ -933,8 +981,9 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
           {/* Video element — no native controls */}
           <video
             ref={videoRef}
-            className="w-full h-full"
+            className="w-full h-full object-contain"
             playsInline
+            style={{ imageRendering: 'auto', WebkitFontSmoothing: 'antialiased' }}
             onError={() => {
               if (hlsRef.current) return;
               // initPlayer already tried all fallbacks; this fires if the final src fails
@@ -1170,6 +1219,24 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
                   </div>
                 )}
 
+                {/* View mode (not fullscreen) */}
+                {!fullscreen && (
+                  <button onClick={(e) => { e.stopPropagation(); cycleViewMode(); }}
+                    className="p-1.5 text-white/70 hover:text-white transition-colors"
+                    title={`View mode: ${viewMode}`}>
+                    <Tv className="h-4 w-4" />
+                  </button>
+                )}
+
+                {/* Side panel toggle */}
+                {!fullscreen && hasSideContent && (
+                  <button onClick={(e) => { e.stopPropagation(); setShowSidePanel(!showSidePanel); }}
+                    className={`p-1.5 transition-colors ${showSidePanel ? 'text-blue-400' : 'text-white/70 hover:text-white'}`}
+                    title={showSidePanel ? 'Hide channels' : 'Show channels'}>
+                    {showSidePanel ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+                  </button>
+                )}
+
                 {/* PiP */}
                 {typeof document !== 'undefined' && document.pictureInPictureEnabled && (
                   <button onClick={(e) => { e.stopPropagation(); togglePip(); }}
@@ -1198,48 +1265,84 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
             </div>
           </div>
         </div>
+        </div>
+        {/* ── end main player column ── */}
 
-        {/* ═══════════ Related Channels Strip ═══════════ */}
-        {showRelated && (
-          <div className="bg-zinc-950 border-t border-white/[0.04] px-3 py-2.5 rounded-b-xl">
-            <p className="text-[10px] text-zinc-600 uppercase tracking-wider font-medium mb-2">Same group</p>
-            <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
-              {relatedChannels.map(ch => (
-                <button
-                  key={ch.id}
-                  onClick={() => navigateChannel(ch)}
-                  className="flex items-center gap-2 shrink-0 rounded-lg bg-zinc-900/80 border border-white/[0.04] px-2.5 py-1.5 hover:bg-zinc-800 hover:border-white/[0.08] transition-all group"
-                >
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-zinc-800 overflow-hidden">
-                    {ch.tvg_logo ? (
-                      <img
-                        src={ch.tvg_logo}
-                        alt=""
-                        className="h-full w-full object-contain p-0.5"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    ) : (
-                      <Radio className="h-3 w-3 text-zinc-600" />
+        {/* ═══════════ Collapsible Side Panel ═══════════ */}
+        {sideVisible && (
+          <div className={`bg-zinc-950 border-l border-white/[0.06] flex flex-col ${
+            viewMode === 'theater' ? 'w-80' : 'w-72'
+          } rounded-r-xl overflow-hidden transition-all duration-300`}>
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06] shrink-0">
+              <div className="flex items-center gap-2">
+                <Radio className="h-3.5 w-3.5 text-zinc-500" />
+                <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                  {item.group_title || 'Related'}
+                </span>
+                <span className="text-[10px] text-zinc-600 tabular-nums">
+                  {relatedChannels.length}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowSidePanel(false)}
+                className="p-1 rounded-md text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+                title="Close panel"
+              >
+                <PanelRightClose className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto scrollbar-none p-1.5 space-y-0.5">
+              {relatedChannels.map((ch) => {
+                const isActive = ch.id === item.id;
+                return (
+                  <button
+                    key={ch.id}
+                    onClick={() => navigateChannel(ch)}
+                    className={`flex items-center gap-2.5 w-full rounded-lg px-2.5 py-2 text-left transition-all group ${
+                      isActive
+                        ? 'bg-red-600/10 border border-red-500/20 text-white'
+                        : 'border border-transparent hover:bg-white/[0.04] hover:border-white/[0.06] text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden ${
+                      isActive ? 'bg-red-600/20 ring-1 ring-red-500/30' : 'bg-zinc-800/80 ring-1 ring-white/[0.06]'
+                    }`}>
+                      {ch.tvg_logo ? (
+                        <img
+                          src={ch.tvg_logo}
+                          alt=""
+                          className="h-full w-full object-contain p-1"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <Radio className="h-3 w-3 text-zinc-600" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-xs truncate leading-tight ${isActive ? 'font-medium text-white' : ''}`}>
+                        {ch.name}
+                      </p>
+                    </div>
+                    {isActive && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />
                     )}
-                  </div>
-                  <span className="text-[11px] text-zinc-400 group-hover:text-zinc-200 truncate max-w-[120px] transition-colors">
-                    {ch.name}
-                  </span>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* Keyboard shortcuts hint — below player, not fullscreen */}
         {!fullscreen && (
-          <div className="flex justify-center flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] text-zinc-600 select-none">
+          <div className={`flex justify-center flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] text-zinc-600 select-none ${sideVisible ? 'pr-72' : ''}`}>
             <span>Space: Play/Pause</span>
             {!isLive && <span>←→: Seek 10s</span>}
             <span>↑↓: Volume</span>
             <span>F: Fullscreen</span>
             <span>M: Mute</span>
             <span>P: PiP</span>
+            <span>T: View Mode</span>
             {!isLive && <span>0-9: Jump</span>}
             {hasNavigation && <span>N: Next</span>}
             {hasNavigation && <span>B: Prev</span>}
