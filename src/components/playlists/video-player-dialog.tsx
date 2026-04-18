@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
-  X, AlertCircle, Loader2, Copy, ExternalLink,
+  X, AlertCircle, Loader2, Copy,
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, Search, Share2,
   PictureInPicture2, MonitorPlay, ChevronLeft,
@@ -891,7 +891,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   if (!item) return null;
 
   const streamUrl = resolveStreamUrl(item, activeEpisode?.streamUrl);
-  const vlcUrl = `vlc://${streamUrl}`;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
   const displayName = activeEpisode?.title || item.name;
@@ -942,12 +941,12 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                   <span className="text-sm font-medium hidden sm:inline">Back</span>
                 </button>
                 <div className="h-5 w-px bg-border/50" />
-                <div className="flex items-center gap-2">
+                <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
                     <Play className="h-3 w-3 text-primary-foreground fill-primary-foreground ml-[1px]" />
                   </div>
                   <span className="text-sm font-bold text-foreground tracking-tight hidden md:inline">PlaylistHub</span>
-                </div>
+                </a>
               </div>
 
               {/* Center: Search Bar */}
@@ -985,10 +984,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                   className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all">
                   <Copy className="h-4 w-4" />
                 </button>
-                <a href={vlcUrl} title="Open in VLC"
-                  className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all">
-                  <ExternalLink className="h-4 w-4" />
-                </a>
               </div>
             </div>
           </header>
@@ -1046,16 +1041,10 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                           <p className="text-base font-medium text-white/90 mb-1">Playback Error</p>
                           <p className="text-sm text-white/50">{error}</p>
                         </div>
-                        <div className="flex gap-3">
-                          <button onClick={copyUrl}
-                            className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]">
-                            <Copy className="h-4 w-4" /> Copy URL
-                          </button>
-                          <a href={vlcUrl}
-                            className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm text-white hover:bg-blue-500 transition-colors">
-                            <ExternalLink className="h-4 w-4" /> Open in VLC
-                          </a>
-                        </div>
+                        <button onClick={copyUrl}
+                          className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]">
+                          <Copy className="h-4 w-4" /> Copy URL
+                        </button>
                       </div>
                     )}
 
@@ -1364,13 +1353,9 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                   {/* Action bar */}
                   <div className="flex items-center gap-2 pb-1">
                     <button onClick={copyUrl}
-                      className="flex items-center gap-2 rounded-full bg-secondary hover:bg-secondary/80 px-4 py-2 text-sm font-medium text-secondary-foreground transition-colors">
+                      className="flex items-center gap-2 rounded-full bg-primary hover:opacity-90 px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity">
                       <Copy className="h-3.5 w-3.5" /> Copy URL
                     </button>
-                    <a href={vlcUrl}
-                      className="flex items-center gap-2 rounded-full bg-primary hover:opacity-90 px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity">
-                      <ExternalLink className="h-3.5 w-3.5" /> Open in VLC
-                    </a>
                     <button onClick={() => {
                       void navigator.clipboard.writeText(window.location.origin);
                       toast.success('Link copied');
@@ -1545,10 +1530,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                     className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white transition-all">
                     <Copy className="h-3.5 w-3.5" />
                   </button>
-                  <a href={vlcUrl} title="Open in VLC"
-                    className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white transition-all">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
 
                   {hasSideContent && (
                     <button
@@ -1601,16 +1582,10 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                 <p className="text-base font-medium text-white/90 mb-1">Playback Error</p>
                 <p className="text-sm text-white/50">{error}</p>
               </div>
-              <div className="flex gap-3">
-                <button onClick={copyUrl}
-                  className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]">
-                  <Copy className="h-4 w-4" /> Copy URL
-                </button>
-                <a href={vlcUrl}
-                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm text-white hover:bg-blue-500 transition-colors">
-                  <ExternalLink className="h-4 w-4" /> Open in VLC
-                </a>
-              </div>
+              <button onClick={copyUrl}
+                className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]">
+                <Copy className="h-4 w-4" /> Copy URL
+              </button>
             </div>
           )}
 
