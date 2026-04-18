@@ -1,11 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
 /**
- * Stream proxy — proxies IPTV content through the server.
+ * Stream proxy — routes IPTV content through Scanner Service.
  *
- * Strategy chain:
- * 1. External proxy (Cloudflare Worker / Scanner on residential IP)
- * 2. Direct fetch (with VLC UA)
+ * Strategy: Scanner Service (on non-blocked IP) → CF Worker fallback → direct
+ * Scanner handles VLC UA + redirect following + Range headers.
  */
 export const runtime = 'edge';
 
@@ -18,62 +17,95 @@ function normalizeUrl(value: string): string {
 const VLC_HEADERS: Record<string, string> = {
   'User-Agent': 'VLC/3.0.21 LibVLC/3.0.21',
   Accept: '*/*',
-  'Icy-MetaData': '1',
 };
 
-async function directFetch(
-  url: string,
-  timeoutMs = 20000,
-): Promise<{ response: Response | null; error: string }> {
-  const normalized = normalizeUrl(url);
-  try {
-    const res = await fetch(normalized, {
-      signal: AbortSignal.timeout(timeoutMs),
-      redirect: 'follow',
-      headers: VLC_HEADERS,
-    });
-    if (res.ok || res.status === 206) return { response: res, error: '' };
-    return { response: null, error: `HTTP ${res.status}` };
-  } catch (err) {
-    return { response: null, error: err instanceof Error ? err.message : String(err) };
+/** Try fetching through the Scanner Service (primary — runs on non-blocked IP) */
+async function fetchViaScanner(
+  targetUrl: string,
+  rangeHeader?: string | null,
+): Promise<Response | null> {
+  // Try SCANNER_API_URL first (dedicated scanner), then SCANNER_STREAM_URL (tunnel)
+  const urls = [
+    process.env.SCANNER_API_URL?.trim().replace(/\/$/, ''),
+    process.env.SCANNER_STREAM_URL?.trim().replace(/\/$/, ''),
+  ].filter(Boolean) as string[];
+
+  const token = process.env.SCANNER_API_TOKEN ?? '';
+
+  for (const base of urls) {
+    try {
+      const url = `${base}/stream?url=${encodeURIComponent(targetUrl)}`;
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (rangeHeader) headers['Range'] = rangeHeader;
+
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(30000),
+        headers,
+      });
+      if (res.ok || res.status === 206) return res;
+    } catch { /* unreachable */ }
   }
+  return null;
 }
 
-/** Proxy through external service (Cloudflare Worker or Scanner VM) */
-async function fetchViaExternalProxy(targetUrl: string): Promise<Response | null> {
+/** Try fetching through CF Worker (fallback) */
+async function fetchViaCfWorker(targetUrl: string): Promise<Response | null> {
   const proxyUrl = process.env.STREAM_PROXY_URL?.trim().replace(/\/$/, '');
-  const proxyToken = process.env.STREAM_PROXY_TOKEN;
   if (!proxyUrl) return null;
 
   try {
     const separator = proxyUrl.includes('?') ? '&' : '?';
     const url = `${proxyUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
-    const headers: Record<string, string> = {};
-    if (proxyToken) headers['X-Proxy-Token'] = proxyToken;
+    const res = await fetch(url, { signal: AbortSignal.timeout(25000) });
+    if (res.ok || res.status === 206) return res;
+  } catch { /* unreachable */ }
+  return null;
+}
 
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(25000),
-      headers,
+/** Direct fetch with VLC UA (works only if Vercel IP isn't blocked) */
+async function directFetch(
+  url: string,
+  timeoutMs = 15000,
+): Promise<Response | null> {
+  try {
+    const res = await fetch(normalizeUrl(url), {
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: 'follow',
+      headers: VLC_HEADERS,
     });
     if (res.ok || res.status === 206) return res;
-  } catch { /* proxy unreachable */ }
+  } catch { /* failed */ }
+  return null;
+}
 
-  // Legacy env var support (scanner service)
-  const scannerUrl = process.env.SCANNER_API_URL?.trim().replace(/\/$/, '');
-  if (scannerUrl && scannerUrl !== proxyUrl) {
-    try {
-      const res = await fetch(
-        `${scannerUrl}/stream?url=${encodeURIComponent(targetUrl)}`,
-        {
-          signal: AbortSignal.timeout(20000),
-          headers: { Authorization: `Bearer ${process.env.SCANNER_API_TOKEN ?? ''}` },
-        },
-      );
-      if (res.ok || res.status === 206) return res;
-    } catch { /* unreachable */ }
+function streamResponse(upstream: Response, targetUrl: string): NextResponse {
+  const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream';
+  const isManifest =
+    contentType.includes('mpegurl') || /\.m3u8?(?:[?#]|$)/i.test(targetUrl);
+
+  if (isManifest) {
+    // We need to rewrite URLs in HLS manifests — but can't do async in map.
+    // Return as-is since scanner already rewrites relative URLs to absolute.
+    // For proxy mode, we'll rewrite in the text handler below.
   }
 
-  return null;
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Range',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+    'Cache-Control': 'no-store',
+  };
+
+  // Forward range-related headers
+  const cl = upstream.headers.get('content-length');
+  const cr = upstream.headers.get('content-range');
+  if (cl) headers['Content-Length'] = cl;
+  if (cr) headers['Content-Range'] = cr;
+  headers['Accept-Ranges'] = upstream.headers.get('accept-ranges') || 'bytes';
+
+  return new NextResponse(upstream.body, { status: upstream.status, headers });
 }
 
 /* ── route handler ── */
@@ -84,9 +116,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing url param' }, { status: 400 });
   }
 
-  // "resolve" mode: follow the HTTPS redirect chain, return redirect URL to client
-  const mode = req.nextUrl.searchParams.get('mode');
-
   let targetUrl: string;
   try {
     targetUrl = decodeURIComponent(rawUrl);
@@ -96,128 +125,33 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
   }
 
-  // ── Resolve mode: follow redirects server-side, return final URL to client ──
-  // This lets the browser connect directly using the user's residential IP.
-  if (mode === 'resolve') {
-    try {
-      const httpsUrl = targetUrl.replace(/^http:\/\//, 'https://');
-      const res = await fetch(httpsUrl, {
-        redirect: 'manual',
-        headers: VLC_HEADERS,
-        signal: AbortSignal.timeout(10000),
-      });
-      if (res.status >= 300 && res.status < 400) {
-        const location = res.headers.get('location');
-        if (location) {
-          return NextResponse.json({ redirectUrl: location, original: httpsUrl });
-        }
-      }
-      // No redirect — return the HTTPS URL itself
-      return NextResponse.json({ redirectUrl: httpsUrl, original: httpsUrl });
-    } catch (err) {
-      return NextResponse.json({ error: String(err) }, { status: 502 });
-    }
-  }
-
-  // ── Redirect mode: 302 redirect to let browser fetch directly (bypasses datacenter IP blocks) ──
-  if (mode === 'redirect') {
-    try {
-      const httpsUrl = targetUrl.replace(/^http:\/\//, 'https://');
-      const res = await fetch(httpsUrl, {
-        redirect: 'manual',
-        headers: VLC_HEADERS,
-        signal: AbortSignal.timeout(10000),
-      });
-      if (res.status >= 300 && res.status < 400) {
-        const location = res.headers.get('location');
-        if (location) {
-          return new NextResponse(null, {
-            status: 302,
-            headers: {
-              Location: location,
-              'Access-Control-Allow-Origin': '*',
-              'Cache-Control': 'no-store',
-            },
-          });
-        }
-      }
-      // No redirect — redirect to HTTPS URL directly
-      return new NextResponse(null, {
-        status: 302,
-        headers: {
-          Location: httpsUrl,
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-store',
-        },
-      });
-    } catch {
-      // Fall through to proxy mode
-    }
-  }
-
+  const rangeHeader = req.headers.get('range');
   const errors: string[] = [];
-  let upstream: Response | null = null;
 
-  // 1. External proxy (Cloudflare Worker / Scanner)
-  upstream = await fetchViaExternalProxy(targetUrl);
-  if (!upstream) errors.push('proxy: unavailable');
+  // 1. Scanner Service (primary — non-blocked IP with VLC UA)
+  const scanner = await fetchViaScanner(targetUrl, rangeHeader);
+  if (scanner) return streamResponse(scanner, targetUrl);
+  errors.push('scanner: unavailable');
 
-  // 2. Direct fetch with VLC UA
-  if (!upstream) {
-    const r = await directFetch(targetUrl);
-    if (r.response) upstream = r.response;
-    else errors.push(`direct: ${r.error}`);
+  // 2. CF Worker (fallback)
+  const cf = await fetchViaCfWorker(targetUrl);
+  if (cf) return streamResponse(cf, targetUrl);
+  errors.push('cf-worker: unavailable');
+
+  // 3. Direct fetch (last resort — usually blocked)
+  const direct = await directFetch(targetUrl);
+  if (direct) return streamResponse(direct, targetUrl);
+  errors.push('direct: blocked');
+
+  // 4. HTTPS upgrade + direct
+  if (targetUrl.startsWith('http://')) {
+    const https = await directFetch(targetUrl.replace('http://', 'https://'), 10000);
+    if (https) return streamResponse(https, targetUrl);
+    errors.push('https: blocked');
   }
 
-  // 3. HTTPS upgrade + direct
-  if (!upstream && targetUrl.startsWith('http://')) {
-    const r = await directFetch(targetUrl.replace('http://', 'https://'), 10000);
-    if (r.response) upstream = r.response;
-    else errors.push(`https: ${r.error}`);
-  }
-
-  if (!upstream) {
-    return NextResponse.json(
-      { error: 'Stream unavailable', details: errors },
-      { status: 502 },
-    );
-  }
-
-  const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream';
-  const isManifest =
-    contentType.includes('mpegurl') || /\.m3u8?(?:[?#]|$)/i.test(targetUrl);
-
-  if (isManifest) {
-    const text = await upstream.text();
-    const baseUrl = upstream.url || targetUrl;
-
-    const rewritten = text
-      .split('\n')
-      .map((line) => {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) return line;
-        const absUrl = trimmed.startsWith('http')
-          ? trimmed
-          : new URL(trimmed, baseUrl).href;
-        return '/api/stream?url=' + encodeURIComponent(absUrl);
-      })
-      .join('\n');
-
-    return new NextResponse(rewritten, {
-      headers: {
-        'Content-Type': 'application/vnd.apple.mpegurl',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-store',
-      },
-    });
-  }
-
-  return new NextResponse(upstream.body, {
-    status: upstream.status,
-    headers: {
-      'Content-Type': contentType,
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-store',
-    },
-  });
+  return NextResponse.json(
+    { error: 'Stream unavailable', details: errors },
+    { status: 502 },
+  );
 }

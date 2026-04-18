@@ -83,16 +83,6 @@ function proxyUrl(streamUrl: string): string {
   return `/api/stream?url=${encodeURIComponent(streamUrl)}`;
 }
 
-/** Proxy URL that 302-redirects to the real stream (browser follows with its own residential IP) */
-function redirectUrl(streamUrl: string): string {
-  return `/api/stream?mode=redirect&url=${encodeURIComponent(streamUrl)}`;
-}
-
-/** Convert HTTP URL to HTTPS for direct browser playback (avoids mixed content + uses residential IP) */
-function toHttps(url: string): string {
-  return url.replace(/^http:\/\//, 'https://');
-}
-
 /** Try loading a URL into <video> and wait for success or failure */
 function tryVideoUrl(
   video: HTMLVideoElement,
@@ -306,29 +296,13 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
       if (!video) return;
       video.playbackRate = 1;
 
-      // ── HTTPS direct URL (browser uses user's residential IP — bypasses datacenter IP blocks) ──
-      const directHttps = toHttps(url);
-      const directHlsHttps = toHttps(url).replace(/\.\w+$/, '.m3u8');
-      // Redirect mode: Vercel resolves HTTPS→HTTP redirect, browser follows with residential IP
-      const redirected = redirectUrl(url);
-      const redirectedHls = redirectUrl(url.replace(/\.\w+$/, '.m3u8'));
+      // All traffic goes through /api/stream → Scanner Service (non-blocked IP + VLC UA)
+      const proxied = proxyUrl(url);
+      const proxiedHls = proxyUrl(url.replace(/\.\w+$/, '.m3u8'));
 
       if (isHls) {
-        // Safari native HLS — try redirect (residential IP) first, then direct HTTPS, then proxy
+        // Safari native HLS
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          if (await tryVideoUrl(video, redirectedHls, 10000)) {
-            if (saved > 10) setResumeOffer(saved);
-            try { await video.play(); } catch { /* user presses play */ }
-            setLoading(false);
-            return;
-          }
-          if (await tryVideoUrl(video, directHlsHttps, 8000)) {
-            if (saved > 10) setResumeOffer(saved);
-            try { await video.play(); } catch { /* user presses play */ }
-            setLoading(false);
-            return;
-          }
-          // Fallback to proxy
           video.src = proxied;
           video.load();
           if (saved > 10) setResumeOffer(saved);
@@ -340,30 +314,22 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         // Chrome/Firefox — use hls.js
         const Hls = (await import('hls.js')).default;
         if (Hls.isSupported()) {
-          // Try: redirect HLS (residential IP) → direct HTTPS → proxy
-          const hlsSources = [redirectedHls, directHlsHttps, proxied];
-          let sourceIndex = 0;
-
-          function loadHlsSource(hls: import('hls.js').default, src: string) {
-            hls.loadSource(src);
-            hls.attachMedia(video!);
-          }
-
           const hls = new Hls({
             enableWorker: true,
             lowLatencyMode: isLive,
             maxBufferLength: isLive ? 10 : 30,
             maxMaxBufferLength: isLive ? 30 : 120,
-            fragLoadingTimeOut: 20000,
-            fragLoadingMaxRetry: 3,
-            fragLoadingRetryDelay: 1000,
-            levelLoadingTimeOut: 15000,
-            manifestLoadingTimeOut: 15000,
+            fragLoadingTimeOut: 30000,
+            fragLoadingMaxRetry: 5,
+            fragLoadingRetryDelay: 2000,
+            levelLoadingTimeOut: 20000,
+            manifestLoadingTimeOut: 20000,
             startFragPrefetch: true,
             testBandwidth: true,
           });
           hlsRef.current = hls;
-          loadHlsSource(hls, hlsSources[sourceIndex]);
+          hls.loadSource(proxied);
+          hls.attachMedia(video);
 
           hls.on(Hls.Events.MANIFEST_PARSED, async (_: unknown, data: { levels: { height: number; width: number; bitrate: number }[] }) => {
             setLoading(false);
@@ -388,39 +354,11 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
           });
 
           let mediaErrorRecoveries = 0;
-          hls.on(Hls.Events.ERROR, async (_: unknown, data: { fatal: boolean; type: string }) => {
+          hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; type: string }) => {
             if (data.fatal) {
               if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
                 mediaErrorRecoveries++;
                 hls.recoverMediaError();
-              } else if (sourceIndex < hlsSources.length - 1) {
-                // Try next source (e.g., proxy fallback)
-                sourceIndex++;
-                mediaErrorRecoveries = 0;
-                hls.destroy();
-                const newHls = new Hls({
-                  enableWorker: true,
-                  lowLatencyMode: isLive,
-                  maxBufferLength: isLive ? 10 : 30,
-                  maxMaxBufferLength: isLive ? 30 : 120,
-                  fragLoadingTimeOut: 45000,
-                  fragLoadingMaxRetry: 6,
-                  fragLoadingRetryDelay: 2000,
-                  levelLoadingTimeOut: 30000,
-                  manifestLoadingTimeOut: 30000,
-                });
-                hlsRef.current = newHls;
-                newHls.on(Hls.Events.MANIFEST_PARSED, async () => {
-                  setLoading(false);
-                  try { await video.play(); } catch { /* user presses play */ }
-                });
-                newHls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean }) => {
-                  if (d.fatal) {
-                    setError('تعذّر تشغيل البث.');
-                    setLoading(false);
-                  }
-                });
-                loadHlsSource(newHls, hlsSources[sourceIndex]);
               } else {
                 setError('تعذّر تشغيل البث.');
                 setLoading(false);
@@ -431,43 +369,17 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         }
       }
 
-      // ── VOD/MP4 (movies, series episodes) ──
-      // 1. Redirect mode (Vercel resolves redirect, browser fetches with residential IP)
-      if (await tryVideoUrl(video, redirected, 12000)) {
+      // ── VOD/MP4 (movies, series episodes) — proxy through scanner ──
+      if (await tryVideoUrl(video, proxied, 20000)) {
         if (saved > 10) setResumeOffer(saved);
         try { await video.play(); } catch { /* user presses play */ }
         setLoading(false);
         return;
       }
 
-      // 2. Direct HTTPS (user's residential IP — bypasses datacenter blocks)
-      if (await tryVideoUrl(video, directHttps, 10000)) {
-        if (saved > 10) setResumeOffer(saved);
-        try { await video.play(); } catch { /* user presses play */ }
-        setLoading(false);
-        return;
-      }
-
-      // 3. Proxy (for servers that only work via proxy)
-      if (await tryVideoUrl(video, proxied, 15000)) {
-        if (saved > 10) setResumeOffer(saved);
-        try { await video.play(); } catch { /* user presses play */ }
-        setLoading(false);
-        return;
-      }
-
-      // 3. HLS conversion via proxy
+      // Try HLS conversion via proxy
       if (/\/(movie|series)\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url) && !url.endsWith('.m3u8')) {
-        const m3u8Url = url.replace(/\.\w+$/, '.m3u8');
-        // Direct HTTPS HLS
-        if (await tryVideoUrl(video, toHttps(m3u8Url), 10000)) {
-          if (saved > 10) setResumeOffer(saved);
-          try { await video.play(); } catch { /* user presses play */ }
-          setLoading(false);
-          return;
-        }
-        // Proxy HLS
-        if (await tryVideoUrl(video, proxyUrl(m3u8Url), 15000)) {
+        if (await tryVideoUrl(video, proxiedHls, 15000)) {
           if (saved > 10) setResumeOffer(saved);
           try { await video.play(); } catch { /* user presses play */ }
           setLoading(false);

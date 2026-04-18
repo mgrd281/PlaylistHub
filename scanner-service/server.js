@@ -204,10 +204,13 @@ const server = http.createServer(async (req, res) => {
 
       const target = new URL(targetUrl);
       const browserOrigin = `${target.protocol}//${target.host}`;
+      // Forward Range header from client for seeking support
+      const clientRange = req.headers['range'];
       const headerProfiles = [
         {
           'User-Agent': 'VLC/3.0.21 LibVLC/3.0.21',
           Accept: '*/*',
+          ...(clientRange ? { Range: clientRange } : {}),
         },
         {
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -216,6 +219,7 @@ const server = http.createServer(async (req, res) => {
           Referer: `${browserOrigin}/`,
           Origin: browserOrigin,
           Connection: 'keep-alive',
+          ...(clientRange ? { Range: clientRange } : {}),
         },
       ];
 
@@ -226,7 +230,7 @@ const server = http.createServer(async (req, res) => {
         const attempt = await fetchWithManualRedirects(targetUrl, headers, 30000);
 
         lastStatus = attempt.status;
-        if (attempt.ok) {
+        if (attempt.ok || attempt.status === 206) {
           upstream = attempt;
           break;
         }
@@ -267,13 +271,23 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Binary pass-through for .ts segments, .mp4, etc.
-      res.writeHead(upstream.status, {
+      const responseHeaders = {
         'Content-Type': contentType,
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
         'Cache-Control': 'no-store',
-      });
+      };
+      // Forward range-related headers for seeking
+      const cl = upstream.headers.get('content-length');
+      const cr = upstream.headers.get('content-range');
+      const ar = upstream.headers.get('accept-ranges');
+      if (cl) responseHeaders['Content-Length'] = cl;
+      if (cr) responseHeaders['Content-Range'] = cr;
+      if (ar) responseHeaders['Accept-Ranges'] = ar;
+      else responseHeaders['Accept-Ranges'] = 'bytes';
+      res.writeHead(upstream.status, responseHeaders);
       if (upstream.body) {
         const reader = upstream.body.getReader();
         const pump = async () => {
