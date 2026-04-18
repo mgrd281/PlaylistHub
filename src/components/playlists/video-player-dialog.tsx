@@ -237,6 +237,12 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const [viewMode, setViewMode] = useState<ViewMode>('normal');
   const [showSidePanel, setShowSidePanel] = useState(true);
 
+  /* ── Seek preview thumbnails ── */
+  const thumbnailCacheRef = useRef<Map<number, string>>(new Map());
+  const thumbCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [seekPreviewThumb, setSeekPreviewThumb] = useState<string | null>(null);
+  const [seekPreviewPos, setSeekPreviewPos] = useState<{ x: number; y: number } | null>(null);
+
   /* ── Channel navigation ── */
   const currentIndex = useMemo(() => {
     if (!item || !channelList?.length) return -1;
@@ -310,6 +316,38 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   useEffect(() => {
     if (isVod && viewMode === 'normal') setViewMode('large');
   }, [isVod]);
+
+  /* ── Progressive thumbnail capture during playback ── */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const THUMB_W = 192;
+    const THUMB_H = 108;
+    const INTERVAL = 10; // capture grid in seconds
+    if (!thumbCanvasRef.current) {
+      const c = document.createElement('canvas');
+      c.width = THUMB_W;
+      c.height = THUMB_H;
+      thumbCanvasRef.current = c;
+    }
+    const canvas = thumbCanvasRef.current;
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+    if (!ctx) return;
+    const cache = thumbnailCacheRef.current;
+    const capture = () => {
+      if (video.paused || video.ended || !video.videoWidth || video.readyState < 2) return;
+      const t = Math.round(video.currentTime / INTERVAL) * INTERVAL;
+      if (cache.has(t)) return;
+      try {
+        ctx.drawImage(video, 0, 0, THUMB_W, THUMB_H);
+        cache.set(t, canvas.toDataURL('image/jpeg', 0.45));
+      } catch { /* tainted canvas — CORS stream, ignore */ }
+    };
+    // Capture immediately + on interval
+    capture();
+    const timer = setInterval(capture, 1500);
+    return () => clearInterval(timer);
+  }, [duration, playing]);
 
   const navigateChannel = useCallback((target: PlaylistItem) => {
     onNavigate?.(target);
@@ -784,8 +822,24 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     if (!bar || !duration) return;
     const rect = bar.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setSeekPreview(pct * duration);
+    const time = pct * duration;
+    setSeekPreview(time);
+    // Fixed position for thumbnail preview (escapes overflow:hidden)
+    setSeekPreviewPos({ x: rect.left + pct * rect.width, y: rect.top });
+    // Find nearest cached thumbnail
+    const cache = thumbnailCacheRef.current;
+    const INTERVAL = 10;
+    const snapped = Math.round(time / INTERVAL) * INTERVAL;
+    const thumb = cache.get(snapped) || cache.get(snapped - INTERVAL) || cache.get(snapped + INTERVAL)
+      || cache.get(snapped - INTERVAL * 2) || cache.get(snapped + INTERVAL * 2);
+    setSeekPreviewThumb(thumb || null);
   }, [duration]);
+
+  const clearSeekPreview = useCallback(() => {
+    setSeekPreview(null);
+    setSeekPreviewThumb(null);
+    setSeekPreviewPos(null);
+  }, []);
 
   /* ── Actions ── */
   const togglePlay = () => {
@@ -1105,7 +1159,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                             className="group relative h-[3px] hover:h-[5px] bg-white/[0.15] rounded-full cursor-pointer mb-4 transition-all duration-200"
                             onClick={handleProgressClick}
                             onMouseMove={handleProgressHover}
-                            onMouseLeave={() => setSeekPreview(null)}
+                            onMouseLeave={clearSeekPreview}
                           >
                             <div
                               className="absolute inset-y-0 left-0 bg-white/[0.2] rounded-full transition-[width] duration-300"
@@ -1119,14 +1173,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                               className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[13px] h-[13px] bg-white rounded-full scale-0 group-hover:scale-100 transition-transform duration-150 shadow-[0_0_8px_rgba(255,255,255,0.3)]"
                               style={{ left: `${progress}%` }}
                             />
-                            {seekPreview !== null && (
-                              <div
-                                className="absolute -top-9 -translate-x-1/2 bg-white text-black text-[11px] font-semibold px-2.5 py-1 rounded-md pointer-events-none shadow-lg"
-                                style={{ left: `${(seekPreview / duration) * 100}%` }}
-                              >
-                                {formatTime(seekPreview)}
-                              </div>
-                            )}
                           </div>
                         )}
 
@@ -1686,7 +1732,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                   className="group relative h-[3px] hover:h-[5px] bg-white/[0.15] rounded-full cursor-pointer mb-4 transition-all duration-200"
                   onClick={handleProgressClick}
                   onMouseMove={handleProgressHover}
-                  onMouseLeave={() => setSeekPreview(null)}
+                  onMouseLeave={clearSeekPreview}
                 >
                   <div
                     className="absolute inset-y-0 left-0 bg-white/[0.2] rounded-full transition-[width] duration-300"
@@ -1700,14 +1746,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                     className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[13px] h-[13px] bg-white rounded-full scale-0 group-hover:scale-100 transition-transform duration-150 shadow-[0_0_8px_rgba(255,255,255,0.3)]"
                     style={{ left: `${progress}%` }}
                   />
-                  {seekPreview !== null && (
-                    <div
-                      className="absolute -top-9 -translate-x-1/2 bg-white text-black text-[11px] font-semibold px-2.5 py-1 rounded-md pointer-events-none shadow-lg"
-                      style={{ left: `${(seekPreview / duration) * 100}%` }}
-                    >
-                      {formatTime(seekPreview)}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -2018,6 +2056,37 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           </div>
         )}
       </div>
+      )}
+
+      {/* ── Fixed-position seek preview thumbnail (escapes overflow:hidden) ── */}
+      {seekPreview !== null && seekPreviewPos && (
+        <div
+          className="fixed z-[9999] pointer-events-none"
+          style={{
+            left: seekPreviewPos.x,
+            top: seekPreviewPos.y,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <div className="flex flex-col items-center mb-3">
+            {seekPreviewThumb ? (
+              <div className="relative w-[192px] h-[108px] rounded-xl overflow-hidden bg-black border-2 border-white/[0.15] shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+                <img src={seekPreviewThumb} alt="" className="w-full h-full object-cover" draggable={false} />
+                <div className="absolute inset-0 ring-1 ring-inset ring-white/[0.08] rounded-xl" />
+              </div>
+            ) : (
+              <div className="w-[160px] h-[90px] rounded-xl bg-black/90 border border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex items-center justify-center backdrop-blur-xl">
+                <div className="flex flex-col items-center gap-1.5">
+                  <Film className="h-5 w-5 text-white/[0.15]" />
+                  <span className="text-[9px] text-white/[0.25] font-medium">Preview</span>
+                </div>
+              </div>
+            )}
+            <div className="mt-2 bg-white/95 backdrop-blur-sm text-black text-[11px] font-bold px-3 py-1 rounded-lg shadow-[0_4px_12px_rgba(0,0,0,0.3)] tabular-nums tracking-tight">
+              {formatTime(seekPreview)}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
