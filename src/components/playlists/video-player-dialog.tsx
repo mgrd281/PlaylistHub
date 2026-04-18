@@ -8,6 +8,7 @@ import {
   PictureInPicture2, MonitorPlay, ChevronLeft,
   Radio, PanelRightOpen, PanelRightClose, Tv,
   RectangleHorizontal, Square, Expand,
+  Film, Clapperboard,
 } from 'lucide-react';
 
 type ViewMode = 'normal' | 'large' | 'theater';
@@ -26,6 +27,8 @@ if (typeof window !== 'undefined') getHlsModule();
 interface VideoPlayerDialogProps {
   item: PlaylistItem | null;
   channelList?: PlaylistItem[];
+  /** Pre-loaded items from the same browse context (movies/series) for recommendations */
+  relatedItems?: PlaylistItem[];
   onClose: () => void;
   onNavigate?: (item: PlaylistItem) => void;
 }
@@ -135,7 +138,75 @@ function formatTime(seconds: number): string {
 /* ── Speed options ── */
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: VideoPlayerDialogProps) {
+/* ── VOD Recommendation Card (YouTube-style thumbnail + title) ── */
+const DARK_TONES = [
+  'from-neutral-800 to-neutral-900',
+  'from-zinc-800 to-zinc-900',
+  'from-stone-800 to-stone-900',
+  'from-gray-800 to-gray-900',
+];
+function darkTone(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return DARK_TONES[Math.abs(h) % DARK_TONES.length];
+}
+
+function VodRecommendationCard({ item, onPlay }: { item: PlaylistItem; onPlay: () => void }) {
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const hasImage = item.tvg_logo && !imgError;
+
+  return (
+    <button
+      type="button"
+      onClick={onPlay}
+      className="group flex gap-3 w-full rounded-xl p-1.5 text-left transition-all hover:bg-white/[0.05]"
+    >
+      {/* Thumbnail */}
+      <div className="relative w-[110px] aspect-video rounded-lg overflow-hidden shrink-0 bg-white/[0.04]">
+        {hasImage ? (
+          <>
+            <img
+              src={item.tvg_logo!}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+              onLoad={() => setImgLoaded(true)}
+              onError={() => setImgError(true)}
+            />
+            {!imgLoaded && <div className="absolute inset-0 bg-white/[0.04] animate-pulse" />}
+          </>
+        ) : (
+          <div className={`absolute inset-0 bg-gradient-to-br ${darkTone(item.name)}`}>
+            <div className="absolute inset-0 flex items-center justify-center">
+              {item.content_type === 'series'
+                ? <Clapperboard className="h-4 w-4 text-white/20" />
+                : <Film className="h-4 w-4 text-white/20" />
+              }
+            </div>
+          </div>
+        )}
+        {/* Hover play overlay */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <Play className="h-5 w-5 text-white fill-white" />
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0 py-0.5">
+        <p className="text-[12px] font-medium text-white/80 leading-snug line-clamp-2 group-hover:text-white transition-colors">
+          {item.name}
+        </p>
+        {item.group_title && (
+          <p className="text-[10px] text-white/25 truncate mt-1">{item.group_title}</p>
+        )}
+      </div>
+    </button>
+  );
+}
+
+export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, onNavigate }: VideoPlayerDialogProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -181,6 +252,53 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
       .filter(ch => ch.id !== item.id && ch.group_title === item.group_title)
       .slice(0, 20);
   }, [item, channelList]);
+
+  /* ── VOD recommendations (movies/series) — lazy loaded ── */
+  const [vodRecommendations, setVodRecommendations] = useState<PlaylistItem[]>([]);
+  const [vodRecsLoading, setVodRecsLoading] = useState(false);
+  const isVod = item ? (item.content_type === 'movie' || item.content_type === 'series') : false;
+
+  // Compute recommendations from relatedItems prop or fetch lazily
+  useEffect(() => {
+    if (!item || !isVod) { setVodRecommendations([]); return; }
+
+    // If parent passed relatedItems, filter in-memory (instant)
+    if (relatedItems?.length) {
+      const recs = relatedItems
+        .filter(r => r.id !== item.id)
+        .slice(0, 30);
+      setVodRecommendations(recs);
+      return;
+    }
+
+    // Otherwise fetch from API — non-blocking, after a short delay to not compete with video
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (!item.group_title) return;
+      setVodRecsLoading(true);
+      try {
+        const params = new URLSearchParams({
+          type: item.content_type,
+          group: item.group_title,
+          limit: '30',
+        });
+        const res = await fetch(`/api/browse?${params}`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          const items = (data.items || []) as PlaylistItem[];
+          setVodRecommendations(items.filter(r => r.id !== item.id).slice(0, 30));
+        }
+      } catch { /* non-critical */ }
+      if (!cancelled) setVodRecsLoading(false);
+    }, 800); // Delay to prioritize video startup
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [item, isVod, relatedItems]);
+
+  // Auto-enlarge for VOD so side panel has room
+  useEffect(() => {
+    if (isVod && viewMode === 'normal') setViewMode('large');
+  }, [isVod]);
 
   const navigateChannel = useCallback((target: PlaylistItem) => {
     onNavigate?.(target);
@@ -728,7 +846,9 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
   const displayName = activeEpisode?.title || item.name;
-  const hasSideContent = !fullscreen && hasNavigation && relatedChannels.length > 0;
+  const hasLiveSide = hasNavigation && relatedChannels.length > 0;
+  const hasVodSide = isVod && (vodRecommendations.length > 0 || vodRecsLoading);
+  const hasSideContent = !fullscreen && (hasLiveSide || hasVodSide);
   const sideVisible = hasSideContent && showSidePanel;
 
   const containerClass =
@@ -1306,21 +1426,28 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
         </div>
         </div>
 
-        {/* ═══════ SIDE PANEL — Related Channels ═══════ */}
+        {/* ═══════ SIDE PANEL — Related Channels / VOD Recommendations ═══════ */}
         {sideVisible && (
           <div className={`flex flex-col bg-[#0c0c0e] border-l border-white/[0.04] ${
-            viewMode === 'theater' ? 'w-80' : 'w-72'
+            viewMode === 'theater' ? 'w-[340px]' : 'w-[300px]'
           } rounded-r-2xl overflow-hidden`}>
             <div className="shrink-0 px-4 pt-4 pb-3">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <Tv className="h-3.5 w-3.5 text-white/30" />
+                  {isVod
+                    ? (item.content_type === 'movie'
+                      ? <Film className="h-3.5 w-3.5 text-white/30" />
+                      : <Clapperboard className="h-3.5 w-3.5 text-white/30" />)
+                    : <Tv className="h-3.5 w-3.5 text-white/30" />
+                  }
                   <span className="text-[13px] font-semibold text-white/80">
-                    {item.group_title || 'Related'}
+                    {isVod ? 'More Like This' : (item.group_title || 'Related')}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-white/25 tabular-nums">{relatedChannels.length}</span>
+                  <span className="text-[11px] text-white/25 tabular-nums">
+                    {isVod ? vodRecommendations.length : relatedChannels.length}
+                  </span>
                   <button
                     onClick={() => setShowSidePanel(false)}
                     className="p-1 rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
@@ -1330,51 +1457,88 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
                   </button>
                 </div>
               </div>
+              {isVod && item.group_title && (
+                <p className="text-[11px] text-white/25 truncate mt-0.5">{item.group_title}</p>
+              )}
               <div className="h-px bg-white/[0.04] mt-2" />
             </div>
 
             <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-3">
-              <div className="space-y-0.5">
-                {relatedChannels.map((ch) => {
-                  const isActive = ch.id === item.id;
-                  return (
-                    <button
-                      key={ch.id}
-                      onClick={() => navigateChannel(ch)}
-                      className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all ${
-                        isActive
-                          ? 'bg-white/[0.08] text-white'
-                          : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
-                      }`}
-                    >
-                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
-                        isActive ? 'bg-white/[0.12] ring-1 ring-white/[0.1]' : 'bg-white/[0.04]'
-                      }`}>
-                        {ch.tvg_logo ? (
-                          <img
-                            src={ch.tvg_logo}
-                            alt=""
-                            className="h-full w-full object-contain p-1"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                          />
-                        ) : (
-                          <Radio className="h-3 w-3 text-white/20" />
-                        )}
-                      </div>
-                      <p className={`text-[12px] truncate leading-tight flex-1 ${isActive ? 'font-medium' : ''}`}>
-                        {ch.name}
-                      </p>
-                      {isActive && (
-                        <div className="flex items-center gap-[2px] shrink-0">
-                          <div className="w-[2px] h-3 bg-white/60 rounded-full animate-pulse" />
-                          <div className="w-[2px] h-2 bg-white/40 rounded-full animate-pulse [animation-delay:150ms]" />
-                          <div className="w-[2px] h-3.5 bg-white/60 rounded-full animate-pulse [animation-delay:300ms]" />
+              {/* ── Live channel list ── */}
+              {!isVod && (
+                <div className="space-y-0.5">
+                  {relatedChannels.map((ch) => {
+                    const isActive = ch.id === item.id;
+                    return (
+                      <button
+                        key={ch.id}
+                        onClick={() => navigateChannel(ch)}
+                        className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all ${
+                          isActive
+                            ? 'bg-white/[0.08] text-white'
+                            : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
+                        }`}
+                      >
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
+                          isActive ? 'bg-white/[0.12] ring-1 ring-white/[0.1]' : 'bg-white/[0.04]'
+                        }`}>
+                          {ch.tvg_logo ? (
+                            <img src={ch.tvg_logo} alt="" className="h-full w-full object-contain p-1"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          ) : (
+                            <Radio className="h-3 w-3 text-white/20" />
+                          )}
                         </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                        <p className={`text-[12px] truncate leading-tight flex-1 ${isActive ? 'font-medium' : ''}`}>
+                          {ch.name}
+                        </p>
+                        {isActive && (
+                          <div className="flex items-center gap-[2px] shrink-0">
+                            <div className="w-[2px] h-3 bg-white/60 rounded-full animate-pulse" />
+                            <div className="w-[2px] h-2 bg-white/40 rounded-full animate-pulse [animation-delay:150ms]" />
+                            <div className="w-[2px] h-3.5 bg-white/60 rounded-full animate-pulse [animation-delay:300ms]" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── VOD recommendation cards ── */}
+              {isVod && vodRecsLoading && vodRecommendations.length === 0 && (
+                <div className="space-y-2 px-1 pt-1">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="flex gap-3 animate-pulse">
+                      <div className="w-[100px] aspect-video rounded-lg bg-white/[0.06] shrink-0" />
+                      <div className="flex-1 py-1 space-y-2">
+                        <div className="h-3 bg-white/[0.06] rounded w-4/5" />
+                        <div className="h-2.5 bg-white/[0.04] rounded w-2/5" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isVod && vodRecommendations.length > 0 && (
+                <div className="space-y-1.5 px-1 pt-1">
+                  {vodRecommendations.map((rec) => (
+                    <VodRecommendationCard
+                      key={rec.id}
+                      item={rec}
+                      onPlay={() => onNavigate ? onNavigate(rec) : (() => {
+                        // If no onNavigate, close and re-open isn't ideal,
+                        // but we need to switch the item
+                      })()}
+                    />
+                  ))}
+                </div>
+              )}
+              {isVod && !vodRecsLoading && vodRecommendations.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <Film className="h-5 w-5 text-white/15 mb-2" />
+                  <p className="text-[11px] text-white/25">No recommendations available</p>
+                </div>
+              )}
             </div>
           </div>
         )}

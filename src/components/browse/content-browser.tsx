@@ -401,7 +401,12 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
 
       {/* Player */}
       {playerItem && (
-        <VideoPlayerDialog item={playerItem} onClose={() => setPlayerItem(null)} />
+        <VideoPlayerDialog
+          item={playerItem}
+          relatedItems={items}
+          onClose={() => setPlayerItem(null)}
+          onNavigate={(next) => setPlayerItem(next)}
+        />
       )}
     </div>
   );
