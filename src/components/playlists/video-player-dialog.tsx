@@ -240,8 +240,21 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   /* ── Seek preview thumbnails ── */
   const thumbnailCacheRef = useRef<Map<number, string>>(new Map());
   const thumbCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const thumbVideoRef = useRef<HTMLVideoElement | null>(null);
+  const thumbHlsRef = useRef<import('hls.js').default | null>(null);
+  const thumbSeekingRef = useRef(false);
+  const thumbLastSeekRef = useRef<number | null>(null);
   const [seekPreviewThumb, setSeekPreviewThumb] = useState<string | null>(null);
   const [seekPreviewPos, setSeekPreviewPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Series episode state
+  const [seriesEpisodes, setSeriesEpisodes] = useState<{
+    seasons: { season: number; episodes: { id: string; title: string; season: number; episode: number; streamUrl: string }[] }[];
+    seriesName: string;
+  } | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<number>(1);
+  const [activeEpisode, setActiveEpisode] = useState<{ streamUrl: string; title: string } | null>(null);
+  const [seriesLoading, setSeriesLoading] = useState(false);
 
   /* ── Channel navigation ── */
   const currentIndex = useMemo(() => {
@@ -317,13 +330,140 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     if (isVod && viewMode === 'normal') setViewMode('large');
   }, [isVod]);
 
-  /* ── Progressive thumbnail capture during playback ── */
+  /* ── Thumbnail preview: hidden seekable video for real frame capture ── */
+  useEffect(() => {
+    if (!item) return;
+    const THUMB_W = 192;
+    const THUMB_H = 108;
+    const THUMB_BUCKET = 2;
+    let cancelled = false;
+
+    thumbnailCacheRef.current.clear();
+    thumbSeekingRef.current = false;
+    thumbLastSeekRef.current = null;
+    setSeekPreviewThumb(null);
+
+    // Create canvas once
+    if (!thumbCanvasRef.current) {
+      const c = document.createElement('canvas');
+      c.width = THUMB_W;
+      c.height = THUMB_H;
+      thumbCanvasRef.current = c;
+    }
+
+    // Create hidden video for thumbnail seeking
+    const tv = document.createElement('video');
+    tv.crossOrigin = 'anonymous';
+    tv.preload = 'metadata';
+    tv.muted = true;
+    tv.playsInline = true;
+    tv.style.position = 'fixed';
+    tv.style.width = '1px';
+    tv.style.height = '1px';
+    tv.style.opacity = '0';
+    tv.style.left = '-9999px';
+    tv.style.top = '-9999px';
+    tv.style.pointerEvents = 'none';
+    document.body.appendChild(tv);
+    thumbVideoRef.current = tv;
+
+    // Capture frame when seeked
+    const canvas = thumbCanvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const onSeeked = () => {
+      if (!ctx || cancelled) {
+        thumbSeekingRef.current = false;
+        return;
+      }
+      try {
+        ctx.drawImage(tv, 0, 0, THUMB_W, THUMB_H);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+        const t = Math.max(0, Math.floor(tv.currentTime / THUMB_BUCKET) * THUMB_BUCKET);
+        thumbnailCacheRef.current.set(t, dataUrl);
+        setSeekPreviewThumb(dataUrl);
+      } catch { /* CORS issue */ }
+      thumbSeekingRef.current = false;
+    };
+    const onError = () => {
+      thumbSeekingRef.current = false;
+    };
+    tv.addEventListener('seeked', onSeeked);
+    tv.addEventListener('error', onError);
+
+    const url = resolveStreamUrl(item, activeEpisode?.streamUrl);
+    const proxied = proxyUrl(url);
+    const isHlsStream =
+      url.includes('.m3u8') ||
+      url.includes('/live/') ||
+      url.includes('/hls/') ||
+      item.content_type === 'channel';
+
+    void (async () => {
+      try {
+        if (isHlsStream) {
+          // Safari can seek native HLS directly.
+          if (tv.canPlayType('application/vnd.apple.mpegurl')) {
+            tv.src = proxied;
+            tv.load();
+            return;
+          }
+
+          // Other browsers: attach a dedicated lightweight HLS instance for thumbnail seeks.
+          const Hls = (await getHlsModule()).default;
+          if (cancelled) return;
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              enableWorker: true,
+              lowLatencyMode: false,
+              startLevel: 0,
+              maxBufferLength: 8,
+              maxMaxBufferLength: 20,
+              backBufferLength: 0,
+              fragLoadingTimeOut: 8000,
+              levelLoadingTimeOut: 8000,
+              manifestLoadingTimeOut: 8000,
+              fragLoadingMaxRetry: 2,
+              manifestLoadingMaxRetry: 2,
+            });
+            thumbHlsRef.current = hls;
+            hls.loadSource(proxied);
+            hls.attachMedia(tv);
+          } else {
+            tv.src = proxied;
+            tv.load();
+          }
+        } else {
+          tv.src = proxied;
+          tv.load();
+        }
+      } catch {
+        thumbSeekingRef.current = false;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      tv.removeEventListener('seeked', onSeeked);
+      tv.removeEventListener('error', onError);
+      thumbHlsRef.current?.destroy();
+      thumbHlsRef.current = null;
+      tv.pause();
+      tv.removeAttribute('src');
+      tv.load();
+      if (tv.parentNode) tv.parentNode.removeChild(tv);
+      thumbVideoRef.current = null;
+      thumbSeekingRef.current = false;
+      thumbLastSeekRef.current = null;
+    };
+  }, [item, activeEpisode]);
+
+  // Also capture from main video during playback (for HLS streams)
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     const THUMB_W = 192;
     const THUMB_H = 108;
-    const INTERVAL = 10; // capture grid in seconds
+    const INTERVAL = 10;
     if (!thumbCanvasRef.current) {
       const c = document.createElement('canvas');
       c.width = THUMB_W;
@@ -331,7 +471,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       thumbCanvasRef.current = c;
     }
     const canvas = thumbCanvasRef.current;
-    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const cache = thumbnailCacheRef.current;
     const capture = () => {
@@ -340,27 +480,17 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       if (cache.has(t)) return;
       try {
         ctx.drawImage(video, 0, 0, THUMB_W, THUMB_H);
-        cache.set(t, canvas.toDataURL('image/jpeg', 0.45));
-      } catch { /* tainted canvas — CORS stream, ignore */ }
+        cache.set(t, canvas.toDataURL('image/jpeg', 0.5));
+      } catch { /* tainted */ }
     };
-    // Capture immediately + on interval
     capture();
-    const timer = setInterval(capture, 1500);
+    const timer = setInterval(capture, 2000);
     return () => clearInterval(timer);
   }, [duration, playing]);
 
   const navigateChannel = useCallback((target: PlaylistItem) => {
     onNavigate?.(target);
   }, [onNavigate]);
-
-  // Series episode state
-  const [seriesEpisodes, setSeriesEpisodes] = useState<{
-    seasons: { season: number; episodes: { id: string; title: string; season: number; episode: number; streamUrl: string }[] }[];
-    seriesName: string;
-  } | null>(null);
-  const [selectedSeason, setSelectedSeason] = useState<number>(1);
-  const [activeEpisode, setActiveEpisode] = useState<{ streamUrl: string; title: string } | null>(null);
-  const [seriesLoading, setSeriesLoading] = useState(false);
 
   const isLive = item?.content_type === 'channel' ||
     item?.stream_url.includes('/live/') || false;
@@ -682,19 +812,41 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
 
   /* ── Fullscreen ── */
   const toggleFullscreen = useCallback(() => {
-    const el = containerRef.current;
+    const el = containerRef.current as (HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> | void }) | null;
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element;
+      webkitExitFullscreen?: () => Promise<void> | void;
+    };
     if (!el) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      el.requestFullscreen();
-    }
+    const isFs = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+    void (async () => {
+      try {
+        if (isFs) {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if (doc.webkitExitFullscreen) {
+            await doc.webkitExitFullscreen();
+          }
+        } else if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+          await el.webkitRequestFullscreen();
+        }
+      } catch {
+        // Ignore gesture/API failures and keep player usable.
+      }
+    })();
   }, []);
 
   useEffect(() => {
-    const onChange = () => setFullscreen(!!document.fullscreenElement);
+    const doc = document as Document & { webkitFullscreenElement?: Element };
+    const onChange = () => setFullscreen(!!(document.fullscreenElement || doc.webkitFullscreenElement));
     document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
+    document.addEventListener('webkitfullscreenchange', onChange as EventListener);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      document.removeEventListener('webkitfullscreenchange', onChange as EventListener);
+    };
   }, []);
 
   /* ── PiP ── */
@@ -823,16 +975,35 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     const rect = bar.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const time = pct * duration;
+    const bucket = Math.max(0, Math.floor(time / 2) * 2);
     setSeekPreview(time);
-    // Fixed position for thumbnail preview (escapes overflow:hidden)
     setSeekPreviewPos({ x: rect.left + pct * rect.width, y: rect.top });
-    // Find nearest cached thumbnail
+
+    // Check cache first (exact second match + nearby)
     const cache = thumbnailCacheRef.current;
-    const INTERVAL = 10;
-    const snapped = Math.round(time / INTERVAL) * INTERVAL;
-    const thumb = cache.get(snapped) || cache.get(snapped - INTERVAL) || cache.get(snapped + INTERVAL)
-      || cache.get(snapped - INTERVAL * 2) || cache.get(snapped + INTERVAL * 2);
-    setSeekPreviewThumb(thumb || null);
+    const thumb = cache.get(bucket)
+      || cache.get(bucket - 2) || cache.get(bucket + 2)
+      || cache.get(bucket - 4) || cache.get(bucket + 4)
+      || cache.get(bucket - 6) || cache.get(bucket + 6);
+
+    if (thumb) {
+      setSeekPreviewThumb(thumb);
+    } else {
+      // Seek hidden video to generate a real frame on-demand.
+      const tv = thumbVideoRef.current;
+      if (tv && !thumbSeekingRef.current && tv.readyState >= 1 && thumbLastSeekRef.current !== bucket) {
+        thumbSeekingRef.current = true;
+        thumbLastSeekRef.current = bucket;
+        const seekTime = Number.isFinite(tv.duration) && tv.duration > 0
+          ? Math.max(0, Math.min(bucket, tv.duration - 0.05))
+          : bucket;
+        try {
+          tv.currentTime = seekTime;
+        } catch {
+          thumbSeekingRef.current = false;
+        }
+      }
+    }
   }, [duration]);
 
   const clearSeekPreview = useCallback(() => {
@@ -917,22 +1088,22 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   }
 
   /* ── VOD full-page layout vs Live dark overlay ── */
-  const isVodPage = isVod && !fullscreen;
+  const isVodPage = isVod;
 
   return (
     <div
       className={`fixed inset-0 z-50 ${
         isVodPage
-          ? 'bg-background overflow-y-auto'
+          ? fullscreen ? 'bg-black' : 'bg-background overflow-y-auto'
           : 'flex items-center justify-center bg-black/95'
       }`}
       onClick={(e) => { if (e.target === e.currentTarget && !isVodPage) onClose(); }}
     >
       {/* ═══ VOD: Full-page premium layout ═══ */}
       {isVodPage ? (
-        <div className="min-h-screen flex flex-col">
-          {/* ── Premium Header ── */}
-          <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/40">
+        <div className={`flex flex-col ${fullscreen ? 'h-screen' : 'min-h-screen'}`}>
+          {/* ── Premium Header (hidden in fullscreen) ── */}
+          <header className={`sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/40 ${fullscreen ? 'hidden' : ''}`}>
             <div className="max-w-[1800px] mx-auto flex items-center gap-4 px-4 sm:px-6 h-14">
               {/* Left: Brand + Back */}
               <div className="flex items-center gap-3 shrink-0">
@@ -989,21 +1160,24 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           </header>
 
           {/* ── Main content area ── */}
-          <div className="flex-1 max-w-[1800px] w-full mx-auto px-4 sm:px-6 py-5">
-            <div className="flex gap-6">
+          <div className={`flex-1 ${fullscreen ? 'flex items-center justify-center' : 'max-w-[1800px] w-full mx-auto px-4 sm:px-6 py-5'}`}>
+            <div className={`flex gap-6 ${fullscreen ? 'w-full h-full' : ''}`}>
               {/* ── Left: Player + Metadata ── */}
-              <div className="flex-1 min-w-0">
+              <div className={`flex-1 min-w-0 ${fullscreen ? 'flex items-center justify-center' : ''}`}>
                 {/* Player container — always dark */}
                 <div
                   ref={containerRef}
-                  className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-white/[0.05]"
+                  className={`relative bg-black overflow-hidden ${
+                    fullscreen ? 'w-screen h-screen' : 'rounded-2xl shadow-2xl shadow-black/20 ring-1 ring-white/[0.05]'
+                  }`}
                   onMouseMove={showControlsTemporarily}
                   onMouseLeave={() => { if (playing) { setShowControls(false); setSettingsPanel(null); } }}
                 >
-                  <div className="relative aspect-video">
+                  <div className={`relative ${fullscreen ? 'w-full h-full' : 'aspect-video'}`}>
                     {/* Video */}
                     <video
                       ref={videoRef}
+                      crossOrigin="anonymous"
                       className="w-full h-full object-contain"
                       playsInline
                       autoPlay
@@ -1314,8 +1488,8 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                           {/* Fullscreen */}
                           <button onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
                             className="p-2 text-white/50 hover:text-white transition-colors"
-                            title="Fullscreen (F)">
-                            <Maximize className="h-4 w-4" />
+                            title={fullscreen ? "Exit Fullscreen (F)" : "Fullscreen (F)"}>
+                            {fullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
                           </button>
                         </div>
                       </div>
@@ -1324,6 +1498,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                 </div>
 
                 {/* ── Premium Metadata Section ── */}
+                {!fullscreen && (
                 <div className="mt-4 space-y-4">
                   {/* Title + Actions row */}
                   <div className="flex items-start gap-4">
@@ -1368,10 +1543,11 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                   {/* Divider */}
                   <div className="h-px bg-border/50" />
                 </div>
+                )}
               </div>
 
               {/* ── Right: Recommendation Column ── */}
-              {sideVisible && (
+              {sideVisible && !fullscreen && (
                 <div className="w-[380px] shrink-0 hidden lg:block">
                   <div className="sticky top-[72px]">
                     {/* Section header */}
@@ -1680,6 +1856,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           {/* Video element */}
           <video
             ref={videoRef}
+            crossOrigin="anonymous"
             className="w-full h-full object-contain"
             playsInline
             autoPlay
@@ -2044,17 +2221,10 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           }}
         >
           <div className="flex flex-col items-center mb-3">
-            {seekPreviewThumb ? (
+            {seekPreviewThumb && (
               <div className="relative w-[192px] h-[108px] rounded-xl overflow-hidden bg-black border-2 border-white/[0.15] shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
                 <img src={seekPreviewThumb} alt="" className="w-full h-full object-cover" draggable={false} />
                 <div className="absolute inset-0 ring-1 ring-inset ring-white/[0.08] rounded-xl" />
-              </div>
-            ) : (
-              <div className="w-[160px] h-[90px] rounded-xl bg-black/90 border border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex items-center justify-center backdrop-blur-xl">
-                <div className="flex flex-col items-center gap-1.5">
-                  <Film className="h-5 w-5 text-white/[0.15]" />
-                  <span className="text-[9px] text-white/[0.25] font-medium">Preview</span>
-                </div>
               </div>
             )}
             <div className="mt-2 bg-white/95 backdrop-blur-sm text-black text-[11px] font-bold px-3 py-1 rounded-lg shadow-[0_4px_12px_rgba(0,0,0,0.3)] tabular-nums tracking-tight">
