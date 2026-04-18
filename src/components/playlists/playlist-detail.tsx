@@ -106,6 +106,7 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
   const [manualContent, setManualContent] = useState('');
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [selectedItem, setSelectedItem] = useState<PlaylistItem | null>(null);
+  const [channelContext, setChannelContext] = useState<PlaylistItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchItems = useCallback(async () => {
@@ -218,7 +219,12 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
 
   return (
     <div className="space-y-6">
-      <VideoPlayerDialog item={selectedItem} onClose={() => setSelectedItem(null)} />
+      <VideoPlayerDialog
+        item={selectedItem}
+        channelList={selectedItem?.content_type === 'channel' ? channelContext : undefined}
+        onClose={() => setSelectedItem(null)}
+        onNavigate={(ch) => setSelectedItem(ch)}
+      />
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
@@ -372,7 +378,7 @@ export function PlaylistDetail({ playlist }: { playlist: Playlist }) {
         <ChannelBrowser
           playlistId={playlist.id}
           totalChannels={playlist.channels_count}
-          onSelectItem={setSelectedItem}
+          onSelectItem={(item, context) => { setSelectedItem(item); setChannelContext(context); }}
         />
       ) : loading ? (
         <div className="rounded-lg border bg-card p-6 space-y-3">

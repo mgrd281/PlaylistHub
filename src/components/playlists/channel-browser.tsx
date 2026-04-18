@@ -183,7 +183,7 @@ function GroupSection({
   items: PlaylistItem[] | undefined;
   isLoading: boolean;
   onToggle: () => void;
-  onSelectItem: (item: PlaylistItem) => void;
+  onSelectItem: (item: PlaylistItem, context: PlaylistItem[]) => void;
 }) {
   const fam = FAMILY_MAP.get(group.family);
   const FamIcon = fam?.icon || Tv;
@@ -233,7 +233,7 @@ function GroupSection({
                 <ChannelCard
                   key={item.id}
                   item={item}
-                  onSelect={() => onSelectItem(item)}
+                  onSelect={() => onSelectItem(item, items!)}
                 />
               ))}
             </div>
@@ -255,7 +255,7 @@ function GroupSection({
 interface ChannelBrowserProps {
   playlistId: string;
   totalChannels: number;
-  onSelectItem: (item: PlaylistItem) => void;
+  onSelectItem: (item: PlaylistItem, context: PlaylistItem[]) => void;
 }
 
 export function ChannelBrowser({
@@ -457,7 +457,7 @@ export function ChannelBrowser({
                 <ChannelCard
                   key={item.id}
                   item={item}
-                  onSelect={() => onSelectItem(item)}
+                  onSelect={() => onSelectItem(item, searchItems)}
                 />
               ))}
             </div>

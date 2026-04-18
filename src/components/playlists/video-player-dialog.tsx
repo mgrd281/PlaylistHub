@@ -1,18 +1,21 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   X, AlertCircle, Loader2, Copy, ExternalLink,
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, RotateCcw,
   PictureInPicture2, MonitorPlay, ChevronLeft,
+  Radio,
 } from 'lucide-react';
 import { PlaylistItem } from '@/types/database';
 import { toast } from 'sonner';
 
 interface VideoPlayerDialogProps {
   item: PlaylistItem | null;
+  channelList?: PlaylistItem[];
   onClose: () => void;
+  onNavigate?: (item: PlaylistItem) => void;
 }
 
 /* ── Resume position storage ── */
@@ -120,7 +123,7 @@ function formatTime(seconds: number): string {
 /* ── Speed options ── */
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
+export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: VideoPlayerDialogProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -147,6 +150,27 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
   const [settingsPanel, setSettingsPanel] = useState<'main' | 'speed' | 'quality' | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; seconds: number } | null>(null);
   const seekIndicatorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ── Channel navigation ── */
+  const currentIndex = useMemo(() => {
+    if (!item || !channelList?.length) return -1;
+    return channelList.findIndex(ch => ch.id === item.id);
+  }, [item, channelList]);
+
+  const prevChannel = currentIndex > 0 ? channelList![currentIndex - 1] : null;
+  const nextChannel = (currentIndex >= 0 && currentIndex < (channelList?.length ?? 0) - 1) ? channelList![currentIndex + 1] : null;
+  const hasNavigation = !!(channelList && channelList.length > 1 && currentIndex >= 0);
+
+  const relatedChannels = useMemo(() => {
+    if (!item || !channelList?.length) return [];
+    return channelList
+      .filter(ch => ch.id !== item.id && ch.group_title === item.group_title)
+      .slice(0, 20);
+  }, [item, channelList]);
+
+  const navigateChannel = useCallback((target: PlaylistItem) => {
+    onNavigate?.(target);
+  }, [onNavigate]);
 
   // Series episode state
   const [seriesEpisodes, setSeriesEpisodes] = useState<{
@@ -534,6 +558,16 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
           e.preventDefault();
           togglePip();
           break;
+        case 'n':
+        case ']':
+          e.preventDefault();
+          if (nextChannel) navigateChannel(nextChannel);
+          break;
+        case 'b':
+        case '[':
+          e.preventDefault();
+          if (prevChannel) navigateChannel(prevChannel);
+          break;
         case 'ArrowLeft':
           e.preventDefault();
           video.currentTime = Math.max(0, video.currentTime - 10);
@@ -576,7 +610,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, duration, showControlsTemporarily, toggleFullscreen, togglePip]);
+  }, [onClose, duration, showControlsTemporarily, toggleFullscreen, togglePip, prevChannel, nextChannel, navigateChannel]);
 
   /* ── Seek on progress bar ── */
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -659,6 +693,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
   const displayName = activeEpisode?.title || item.name;
+  const showRelated = !fullscreen && hasNavigation && relatedChannels.length > 0;
 
   function copyUrl() {
     void navigator.clipboard.writeText(streamUrl);
@@ -667,7 +702,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/92 backdrop-blur-md"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
@@ -678,35 +713,74 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
       >
         {/* Header — only when not fullscreen */}
         {!fullscreen && (
-          <div className="flex items-center justify-between bg-zinc-900/95 px-4 py-2.5 rounded-t-xl border-b border-zinc-800">
+          <div className="flex items-center justify-between bg-zinc-950 px-4 py-3 rounded-t-xl border-b border-white/[0.06]">
             <div className="flex items-center gap-3 min-w-0">
-              {item.tvg_logo && (
-                <img
-                  src={item.tvg_logo}
-                  alt=""
-                  className="h-8 w-8 rounded object-contain bg-zinc-800 shrink-0"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                />
-              )}
-              <div className="min-w-0">
-                <p className="font-semibold text-white truncate text-sm">{displayName}</p>
-                {item.group_title && (
-                  <p className="text-xs text-zinc-500 truncate">{item.group_title}</p>
+              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-800/80 overflow-hidden ring-1 ring-white/[0.06]">
+                {item.tvg_logo ? (
+                  <img
+                    src={item.tvg_logo}
+                    alt=""
+                    className="h-full w-full object-contain p-1"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                      const sib = e.currentTarget.nextElementSibling;
+                      if (sib) (sib as HTMLElement).classList.remove('hidden');
+                    }}
+                  />
+                ) : null}
+                <div className={`flex items-center justify-center ${item.tvg_logo ? 'hidden' : ''}`}>
+                  <Radio className="h-4 w-4 text-zinc-500" />
+                </div>
+                {isLive && (
+                  <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse" />
                 )}
               </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-white truncate text-sm leading-tight">{displayName}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {item.group_title && (
+                    <span className="text-[11px] text-zinc-500 truncate">{item.group_title}</span>
+                  )}
+                  {hasNavigation && (
+                    <span className="text-[11px] text-zinc-600 tabular-nums shrink-0">
+                      {currentIndex + 1} / {channelList!.length}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 ml-4 shrink-0">
+            <div className="flex items-center gap-0.5 ml-3 shrink-0">
+              {hasNavigation && (
+                <div className="flex items-center gap-0.5 mr-1 border-r border-white/[0.06] pr-1.5">
+                  <button
+                    onClick={() => prevChannel && navigateChannel(prevChannel)}
+                    disabled={!prevChannel}
+                    title={prevChannel ? `Previous: ${prevChannel.name}` : undefined}
+                    className="rounded-lg p-1.5 text-zinc-400 transition-all disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/[0.06] hover:text-white"
+                  >
+                    <SkipBack className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => nextChannel && navigateChannel(nextChannel)}
+                    disabled={!nextChannel}
+                    title={nextChannel ? `Next: ${nextChannel.name}` : undefined}
+                    className="rounded-lg p-1.5 text-zinc-400 transition-all disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/[0.06] hover:text-white"
+                  >
+                    <SkipForward className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
               <button onClick={copyUrl} title="Copy stream URL"
-                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-700/50 hover:text-white transition-colors">
-                <Copy className="h-4 w-4" />
+                className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors">
+                <Copy className="h-3.5 w-3.5" />
               </button>
               <a href={vlcUrl} title="Open in VLC"
-                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-700/50 hover:text-white transition-colors">
-                <ExternalLink className="h-4 w-4" />
+                className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors">
+                <ExternalLink className="h-3.5 w-3.5" />
               </a>
               <button onClick={onClose}
-                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-700/50 hover:text-white transition-colors">
-                <X className="h-5 w-5" />
+                className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors ml-0.5">
+                <X className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -714,7 +788,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
 
         {/* Video area */}
         <div
-          className={`relative bg-black overflow-hidden ${fullscreen ? 'w-full h-full' : 'rounded-b-xl aspect-video'}`}
+          className={`relative bg-black overflow-hidden ${fullscreen ? 'w-full h-full' : `${showRelated ? '' : 'rounded-b-xl'} aspect-video`}`}
           onClick={(e) => {
             if ((e.target as HTMLElement).closest('.player-controls')) return;
             togglePlay();
@@ -933,6 +1007,24 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
                   {playing ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white" />}
                 </button>
 
+                {/* Channel prev/next (live channels with navigation) */}
+                {hasNavigation && isLive && (
+                  <>
+                    <button onClick={(e) => { e.stopPropagation(); prevChannel && navigateChannel(prevChannel); }}
+                      disabled={!prevChannel}
+                      title={prevChannel ? `Previous: ${prevChannel.name}` : 'No previous channel'}
+                      className="p-1.5 text-white/70 hover:text-white transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
+                      <SkipBack className="h-4 w-4" />
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); nextChannel && navigateChannel(nextChannel); }}
+                      disabled={!nextChannel}
+                      title={nextChannel ? `Next: ${nextChannel.name}` : 'No next channel'}
+                      className="p-1.5 text-white/70 hover:text-white transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
+                      <SkipForward className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
+
                 {/* Skip back/forward (VOD only) */}
                 {!isLive && (
                   <>
@@ -972,6 +1064,18 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
                     </>
                   )}
                 </div>
+
+                {/* Channel info in fullscreen */}
+                {fullscreen && hasNavigation && (
+                  <div className="flex items-center gap-2 ml-2">
+                    {item.tvg_logo && (
+                      <img src={item.tvg_logo} alt="" className="h-5 w-5 rounded object-contain shrink-0"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    )}
+                    <span className="text-white/70 text-xs truncate max-w-[200px]">{displayName}</span>
+                    <span className="text-white/30 text-[10px] tabular-nums shrink-0">{currentIndex + 1}/{channelList!.length}</span>
+                  </div>
+                )}
 
                 <div className="flex-1" />
 
@@ -1095,16 +1199,50 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
           </div>
         </div>
 
+        {/* ═══════════ Related Channels Strip ═══════════ */}
+        {showRelated && (
+          <div className="bg-zinc-950 border-t border-white/[0.04] px-3 py-2.5 rounded-b-xl">
+            <p className="text-[10px] text-zinc-600 uppercase tracking-wider font-medium mb-2">Same group</p>
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+              {relatedChannels.map(ch => (
+                <button
+                  key={ch.id}
+                  onClick={() => navigateChannel(ch)}
+                  className="flex items-center gap-2 shrink-0 rounded-lg bg-zinc-900/80 border border-white/[0.04] px-2.5 py-1.5 hover:bg-zinc-800 hover:border-white/[0.08] transition-all group"
+                >
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-zinc-800 overflow-hidden">
+                    {ch.tvg_logo ? (
+                      <img
+                        src={ch.tvg_logo}
+                        alt=""
+                        className="h-full w-full object-contain p-0.5"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <Radio className="h-3 w-3 text-zinc-600" />
+                    )}
+                  </div>
+                  <span className="text-[11px] text-zinc-400 group-hover:text-zinc-200 truncate max-w-[120px] transition-colors">
+                    {ch.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Keyboard shortcuts hint — below player, not fullscreen */}
         {!fullscreen && (
           <div className="flex justify-center flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] text-zinc-600 select-none">
             <span>Space: Play/Pause</span>
-            <span>←→: Seek 10s</span>
+            {!isLive && <span>←→: Seek 10s</span>}
             <span>↑↓: Volume</span>
             <span>F: Fullscreen</span>
             <span>M: Mute</span>
             <span>P: PiP</span>
-            <span>0-9: Jump</span>
+            {!isLive && <span>0-9: Jump</span>}
+            {hasNavigation && <span>N: Next</span>}
+            {hasNavigation && <span>B: Prev</span>}
           </div>
         )}
       </div>
