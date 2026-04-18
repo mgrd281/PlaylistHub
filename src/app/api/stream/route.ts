@@ -79,23 +79,62 @@ async function directFetch(
   return null;
 }
 
-function streamResponse(upstream: Response, targetUrl: string): NextResponse {
+async function streamResponse(upstream: Response, targetUrl: string): Promise<NextResponse> {
   const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream';
   const isManifest =
     contentType.includes('mpegurl') || /\.m3u8?(?:[?#]|$)/i.test(targetUrl);
 
-  if (isManifest) {
-    // We need to rewrite URLs in HLS manifests — but can't do async in map.
-    // Return as-is since scanner already rewrites relative URLs to absolute.
-    // For proxy mode, we'll rewrite in the text handler below.
-  }
-
-  const headers: Record<string, string> = {
-    'Content-Type': contentType,
+  const baseHeaders: Record<string, string> = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Range',
     'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
     'Cache-Control': 'no-store',
+  };
+
+  if (isManifest) {
+    // Rewrite HLS manifest: scanner returns /stream?url=... paths,
+    // but on Vercel the endpoint is /api/stream. Also rewrite any
+    // bare http:// URLs to go through our proxy.
+    const text = await upstream.text();
+    const rewritten = text
+      .split('\n')
+      .map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) {
+          // Rewrite URIs inside #EXT-X-MAP or similar tags
+          return line.replace(/URI="([^"]+)"/, (_m, uri: string) => {
+            const abs = uri.startsWith('http') ? uri : uri;
+            return `URI="/api/stream?url=${encodeURIComponent(abs)}"`;
+          });
+        }
+        // Scanner already rewrote to /stream?url=<encoded>
+        if (trimmed.startsWith('/stream?url=')) {
+          return '/api' + trimmed;
+        }
+        // Absolute http URL — proxy it
+        if (trimmed.startsWith('http')) {
+          return `/api/stream?url=${encodeURIComponent(trimmed)}`;
+        }
+        // Relative path — resolve against original target URL base
+        try {
+          const base = new URL(targetUrl);
+          const abs = new URL(trimmed, base).href;
+          return `/api/stream?url=${encodeURIComponent(abs)}`;
+        } catch {
+          return line;
+        }
+      })
+      .join('\n');
+
+    return new NextResponse(rewritten, {
+      status: 200,
+      headers: { ...baseHeaders, 'Content-Type': 'application/vnd.apple.mpegurl' },
+    });
+  }
+
+  const headers: Record<string, string> = {
+    ...baseHeaders,
+    'Content-Type': contentType,
   };
 
   // Forward range-related headers
@@ -130,23 +169,23 @@ export async function GET(req: NextRequest) {
 
   // 1. Scanner Service (primary — non-blocked IP with VLC UA)
   const scanner = await fetchViaScanner(targetUrl, rangeHeader);
-  if (scanner) return streamResponse(scanner, targetUrl);
+  if (scanner) return await streamResponse(scanner, targetUrl);
   errors.push('scanner: unavailable');
 
   // 2. CF Worker (fallback)
   const cf = await fetchViaCfWorker(targetUrl);
-  if (cf) return streamResponse(cf, targetUrl);
+  if (cf) return await streamResponse(cf, targetUrl);
   errors.push('cf-worker: unavailable');
 
   // 3. Direct fetch (last resort — usually blocked)
   const direct = await directFetch(targetUrl);
-  if (direct) return streamResponse(direct, targetUrl);
+  if (direct) return await streamResponse(direct, targetUrl);
   errors.push('direct: blocked');
 
   // 4. HTTPS upgrade + direct
   if (targetUrl.startsWith('http://')) {
     const https = await directFetch(targetUrl.replace('http://', 'https://'), 10000);
-    if (https) return streamResponse(https, targetUrl);
+    if (https) return await streamResponse(https, targetUrl);
     errors.push('https: blocked');
   }
 
