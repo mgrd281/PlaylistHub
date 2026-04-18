@@ -4,11 +4,11 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   X, AlertCircle, Loader2, Copy, ExternalLink,
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, Settings,
+  SkipBack, SkipForward, Settings, Search, Share2,
   PictureInPicture2, MonitorPlay, ChevronLeft,
   Radio, PanelRightOpen, PanelRightClose, Tv,
   RectangleHorizontal, Square, Expand,
-  Film, Clapperboard,
+  Film, Clapperboard, Clock, Eye,
 } from 'lucide-react';
 
 type ViewMode = 'normal' | 'large' | 'theater';
@@ -144,7 +144,7 @@ function darkTone(name: string) {
   return DARK_TONES[Math.abs(h) % DARK_TONES.length];
 }
 
-function VodRecommendationCard({ item, onPlay }: { item: PlaylistItem; onPlay: () => void }) {
+function VodRecommendationCard({ item, onPlay, isCompact }: { item: PlaylistItem; onPlay: () => void; isCompact?: boolean }) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const hasImage = item.tvg_logo && !imgError;
@@ -153,10 +153,10 @@ function VodRecommendationCard({ item, onPlay }: { item: PlaylistItem; onPlay: (
     <button
       type="button"
       onClick={onPlay}
-      className="group flex gap-3 w-full rounded-xl p-2 text-left transition-all hover:bg-foreground/[0.04]"
+      className="group flex gap-3 w-full rounded-xl p-2 text-left transition-all hover:bg-foreground/[0.05] active:scale-[0.99]"
     >
       {/* Thumbnail */}
-      <div className="relative w-[168px] aspect-video rounded-lg overflow-hidden shrink-0 bg-foreground/[0.06]">
+      <div className={`relative ${isCompact ? 'w-[140px]' : 'w-[168px]'} aspect-video rounded-lg overflow-hidden shrink-0 bg-muted`}>
         {hasImage ? (
           <>
             <img
@@ -168,7 +168,7 @@ function VodRecommendationCard({ item, onPlay }: { item: PlaylistItem; onPlay: (
               onLoad={() => setImgLoaded(true)}
               onError={() => setImgError(true)}
             />
-            {!imgLoaded && <div className="absolute inset-0 bg-foreground/[0.06] animate-pulse" />}
+            {!imgLoaded && <div className="absolute inset-0 bg-muted animate-pulse" />}
           </>
         ) : (
           <div className={`absolute inset-0 bg-gradient-to-br ${darkTone(item.name)}`}>
@@ -180,9 +180,13 @@ function VodRecommendationCard({ item, onPlay }: { item: PlaylistItem; onPlay: (
             </div>
           </div>
         )}
+        {/* Duration badge */}
+        <div className="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded backdrop-blur-sm">
+          {item.content_type === 'series' ? 'Series' : 'Movie'}
+        </div>
         {/* Hover play overlay */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow-lg">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-lg scale-90 group-hover:scale-100 transition-transform duration-200">
             <Play className="h-4 w-4 text-black fill-black ml-0.5" />
           </div>
         </div>
@@ -196,7 +200,9 @@ function VodRecommendationCard({ item, onPlay }: { item: PlaylistItem; onPlay: (
         {item.group_title && (
           <p className="text-[11px] text-muted-foreground truncate mt-1.5">{item.group_title}</p>
         )}
-        <p className="text-[10px] text-muted-foreground/60 mt-1 capitalize">{item.content_type}</p>
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="text-[10px] text-muted-foreground/60 capitalize bg-muted/60 px-1.5 py-0.5 rounded">{item.content_type}</span>
+        </div>
       </div>
     </button>
   );
@@ -251,7 +257,17 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   /* ── VOD recommendations (movies/series) — lazy loaded ── */
   const [vodRecommendations, setVodRecommendations] = useState<PlaylistItem[]>([]);
   const [vodRecsLoading, setVodRecsLoading] = useState(false);
+  const [vodSearch, setVodSearch] = useState('');
   const isVod = item ? (item.content_type === 'movie' || item.content_type === 'series') : false;
+
+  // Filter recommendations by search
+  const filteredRecommendations = useMemo(() => {
+    if (!vodSearch.trim()) return vodRecommendations;
+    const q = vodSearch.toLowerCase();
+    return vodRecommendations.filter(r =>
+      r.name.toLowerCase().includes(q) || r.group_title?.toLowerCase().includes(q)
+    );
+  }, [vodRecommendations, vodSearch]);
 
   // Compute recommendations from relatedItems prop or fetch lazily
   useEffect(() => {
@@ -861,23 +877,56 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     >
       {/* ═══ VOD: Full-page premium layout ═══ */}
       {isVodPage ? (
-        <div className="min-h-screen">
-          {/* ── Top bar ── */}
-          <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/50">
-            <div className="max-w-[1800px] mx-auto flex items-center justify-between px-6 h-14">
-              <div className="flex items-center gap-3 min-w-0">
+        <div className="min-h-screen flex flex-col">
+          {/* ── Premium Header ── */}
+          <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/40">
+            <div className="max-w-[1800px] mx-auto flex items-center gap-4 px-4 sm:px-6 h-14">
+              {/* Left: Brand + Back */}
+              <div className="flex items-center gap-3 shrink-0">
                 <button onClick={onClose} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg px-2 py-1.5 hover:bg-foreground/[0.04]">
                   <ChevronLeft className="h-4 w-4" />
-                  <span className="text-sm font-medium">Back</span>
+                  <span className="text-sm font-medium hidden sm:inline">Back</span>
                 </button>
-                <div className="h-5 w-px bg-border/60 mx-1" />
-                <div className="min-w-0">
-                  <h1 className="text-sm font-semibold text-foreground truncate max-w-md">
-                    {displayName}
-                  </h1>
+                <div className="h-5 w-px bg-border/50" />
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
+                    <Play className="h-3 w-3 text-primary-foreground fill-primary-foreground ml-[1px]" />
+                  </div>
+                  <span className="text-sm font-bold text-foreground tracking-tight hidden md:inline">PlaylistHub</span>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+
+              {/* Center: Search Bar */}
+              <div className="flex-1 max-w-xl mx-auto">
+                <div className="relative group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 group-focus-within:text-foreground/60 transition-colors" />
+                  <input
+                    type="text"
+                    placeholder="Search recommendations..."
+                    value={vodSearch}
+                    onChange={(e) => setVodSearch(e.target.value)}
+                    className="w-full h-9 pl-9 pr-9 rounded-full bg-muted/50 border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-border focus:bg-muted/80 transition-all"
+                  />
+                  {vodSearch && (
+                    <button
+                      onClick={() => setVodSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: Actions */}
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button onClick={() => {
+                  void navigator.clipboard.writeText(window.location.origin);
+                  toast.success('Link copied');
+                }} title="Share"
+                  className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all">
+                  <Share2 className="h-4 w-4" />
+                </button>
                 <button onClick={copyUrl} title="Copy stream URL"
                   className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all">
                   <Copy className="h-4 w-4" />
@@ -888,17 +937,17 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                 </a>
               </div>
             </div>
-          </div>
+          </header>
 
           {/* ── Main content area ── */}
-          <div className="max-w-[1800px] mx-auto px-6 py-6">
-            <div className={`flex gap-6 ${sideVisible ? '' : ''}`}>
-              {/* ── Left: Player + Info ── */}
+          <div className="flex-1 max-w-[1800px] w-full mx-auto px-4 sm:px-6 py-5">
+            <div className="flex gap-6">
+              {/* ── Left: Player + Metadata ── */}
               <div className="flex-1 min-w-0">
                 {/* Player container — always dark */}
                 <div
                   ref={containerRef}
-                  className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-black/20"
+                  className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-white/[0.05]"
                   onMouseMove={showControlsTemporarily}
                   onMouseLeave={() => { if (playing) { setShowControls(false); setSettingsPanel(null); } }}
                 >
@@ -1239,45 +1288,63 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                   </div>
                 </div>
 
-                {/* ── Metadata section (below player, theme-aware) ── */}
-                <div className="mt-5">
+                {/* ── Premium Metadata Section ── */}
+                <div className="mt-4 space-y-4">
+                  {/* Title + Actions row */}
                   <div className="flex items-start gap-4">
-                    {item.tvg_logo && (
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-card border border-border overflow-hidden">
-                        <img src={item.tvg_logo} alt="" className="h-full w-full object-contain p-1.5"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      </div>
-                    )}
                     <div className="flex-1 min-w-0">
-                      <h2 className="text-lg font-semibold text-foreground leading-tight line-clamp-2">
+                      <h2 className="text-xl font-semibold text-foreground leading-tight line-clamp-2">
                         {displayName}
                       </h2>
-                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                      <div className="flex items-center gap-3 mt-2 flex-wrap">
                         {item.group_title && (
-                          <span className="text-sm text-muted-foreground">{item.group_title}</span>
+                          <span className="text-sm text-muted-foreground font-medium">{item.group_title}</span>
                         )}
-                        <span className="text-xs text-muted-foreground/50 capitalize">{item.content_type}</span>
+                        <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+                        <span className="text-xs text-muted-foreground capitalize">{item.content_type}</span>
+                        {duration > 0 && (
+                          <>
+                            <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {formatTime(duration)}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button onClick={copyUrl}
-                        className="flex items-center gap-2 rounded-lg bg-secondary px-3.5 py-2 text-sm text-secondary-foreground hover:bg-secondary/80 transition-colors border border-border/50">
-                        <Copy className="h-3.5 w-3.5" /> Copy URL
-                      </button>
-                      <a href={vlcUrl}
-                        className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm text-primary-foreground hover:opacity-90 transition-opacity">
-                        <ExternalLink className="h-3.5 w-3.5" /> VLC
-                      </a>
-                    </div>
                   </div>
+
+                  {/* Action bar */}
+                  <div className="flex items-center gap-2 pb-1">
+                    <button onClick={copyUrl}
+                      className="flex items-center gap-2 rounded-full bg-secondary hover:bg-secondary/80 px-4 py-2 text-sm font-medium text-secondary-foreground transition-colors">
+                      <Copy className="h-3.5 w-3.5" /> Copy URL
+                    </button>
+                    <a href={vlcUrl}
+                      className="flex items-center gap-2 rounded-full bg-primary hover:opacity-90 px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity">
+                      <ExternalLink className="h-3.5 w-3.5" /> Open in VLC
+                    </a>
+                    <button onClick={() => {
+                      void navigator.clipboard.writeText(window.location.origin);
+                      toast.success('Link copied');
+                    }}
+                      className="flex items-center gap-2 rounded-full bg-secondary hover:bg-secondary/80 px-4 py-2 text-sm font-medium text-secondary-foreground transition-colors">
+                      <Share2 className="h-3.5 w-3.5" /> Share
+                    </button>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="h-px bg-border/50" />
                 </div>
               </div>
 
-              {/* ── Right: Recommendation Column (theme-aware) ── */}
+              {/* ── Right: Recommendation Column ── */}
               {sideVisible && (
-                <div className="w-[380px] shrink-0">
-                  <div className="sticky top-20">
-                    <div className="flex items-center justify-between mb-4">
+                <div className="w-[380px] shrink-0 hidden lg:block">
+                  <div className="sticky top-[72px]">
+                    {/* Section header */}
+                    <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         {item.content_type === 'movie'
                           ? <Film className="h-4 w-4 text-muted-foreground" />
@@ -1286,31 +1353,32 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                         <span className="text-sm font-semibold text-foreground">More Like This</span>
                       </div>
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {vodRecommendations.length} titles
+                        {filteredRecommendations.length}{vodSearch ? ` / ${vodRecommendations.length}` : ''} titles
                       </span>
                     </div>
 
-                    <div className="max-h-[calc(100vh-160px)] overflow-y-auto scrollbar-none space-y-1 -mx-1">
+                    {/* Recommendation list */}
+                    <div className="max-h-[calc(100vh-140px)] overflow-y-auto scrollbar-none space-y-0.5 -mx-1">
                       {/* Loading skeletons */}
                       {vodRecsLoading && vodRecommendations.length === 0 && (
                         <div className="space-y-3 px-1">
                           {Array.from({ length: 6 }).map((_, i) => (
                             <div key={i} className="flex gap-3 animate-pulse">
-                              <div className="w-[168px] aspect-video rounded-lg bg-foreground/[0.06] shrink-0" />
+                              <div className="w-[168px] aspect-video rounded-lg bg-muted shrink-0" />
                               <div className="flex-1 py-1 space-y-2">
-                                <div className="h-3 bg-foreground/[0.06] rounded w-4/5" />
-                                <div className="h-2.5 bg-foreground/[0.04] rounded w-3/5" />
-                                <div className="h-2 bg-foreground/[0.03] rounded w-2/5" />
+                                <div className="h-3 bg-muted rounded w-4/5" />
+                                <div className="h-2.5 bg-muted/70 rounded w-3/5" />
+                                <div className="h-2 bg-muted/50 rounded w-2/5" />
                               </div>
                             </div>
                           ))}
                         </div>
                       )}
 
-                      {/* Recommendation cards */}
-                      {vodRecommendations.length > 0 && (
+                      {/* Filtered cards */}
+                      {filteredRecommendations.length > 0 && (
                         <div className="space-y-0.5 px-1">
-                          {vodRecommendations.map((rec) => (
+                          {filteredRecommendations.map((rec) => (
                             <VodRecommendationCard
                               key={rec.id}
                               item={rec}
@@ -1321,12 +1389,19 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                       )}
 
                       {/* Empty state */}
-                      {!vodRecsLoading && vodRecommendations.length === 0 && (
+                      {!vodRecsLoading && filteredRecommendations.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-16 text-center">
-                          <div className="w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-3">
-                            <Film className="h-5 w-5 text-muted-foreground/40" />
+                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                            {vodSearch ? <Search className="h-5 w-5 text-muted-foreground/40" /> : <Film className="h-5 w-5 text-muted-foreground/40" />}
                           </div>
-                          <p className="text-sm text-muted-foreground/60">No recommendations available</p>
+                          <p className="text-sm text-muted-foreground/60">
+                            {vodSearch ? `No results for "${vodSearch}"` : 'No recommendations available'}
+                          </p>
+                          {vodSearch && (
+                            <button onClick={() => setVodSearch('')} className="text-xs text-primary hover:underline mt-2">
+                              Clear search
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
