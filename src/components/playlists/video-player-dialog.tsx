@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   X, AlertCircle, Loader2, Copy, ExternalLink,
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, Settings, RotateCcw,
+  SkipBack, SkipForward, Settings,
   PictureInPicture2, MonitorPlay, ChevronLeft,
   Radio, PanelRightOpen, PanelRightClose, Tv,
   RectangleHorizontal, Square, Expand,
@@ -35,13 +35,6 @@ interface VideoPlayerDialogProps {
 
 /* ── Resume position storage ── */
 const RESUME_KEY = 'playlisthub_resume';
-
-function getSavedPosition(streamUrl: string): number {
-  try {
-    const data = JSON.parse(localStorage.getItem(RESUME_KEY) || '{}');
-    return data[streamUrl] ?? 0;
-  } catch { return 0; }
-}
 
 function savePosition(streamUrl: string, time: number) {
   try {
@@ -229,7 +222,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const [showControls, setShowControls] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [seekPreview, setSeekPreview] = useState<number | null>(null);
-  const [resumeOffer, setResumeOffer] = useState<number | null>(null);
   const [qualities, setQualities] = useState<{ height: number; label: string; index: number }[]>([]);
   const [currentQuality, setCurrentQuality] = useState(-1); // -1 = auto
   const [pip, setPip] = useState(false);
@@ -434,7 +426,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     setCurrentTime(0);
     setDuration(0);
     setBuffered(0);
-    setResumeOffer(null);
     // Don't reset speed on channel switch — preserve user's choice
     // setSpeed(1) only on initial mount is handled by useState default
 
@@ -450,8 +441,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       url.includes('/hls/') ||
       item.content_type === 'channel';
 
-    const saved = isLive ? 0 : getSavedPosition(url);
-
     async function initPlayer() {
       if (!video) return;
       video.playbackRate = 1;
@@ -465,7 +454,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = proxied;
           video.load();
-          if (saved > 10) setResumeOffer(saved);
           try { await video.play(); } catch { /* user presses play */ }
           setLoading(false);
           return;
@@ -508,7 +496,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
 
           hls.on(Hls.Events.MANIFEST_PARSED, async (_: unknown, data: { levels: { height: number; width: number; bitrate: number }[] }) => {
             setLoading(false);
-            if (saved > 10) setResumeOffer(saved);
             if (data.levels && data.levels.length > 1) {
               const q = data.levels.map((lvl, i) => ({
                 height: lvl.height,
@@ -563,7 +550,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
 
       // ── VOD/MP4 (movies, series episodes) — proxy through scanner ──
       if (await tryVideoUrl(video, proxied, 20000)) {
-        if (saved > 10) setResumeOffer(saved);
         try { await video.play(); } catch { /* user presses play */ }
         setLoading(false);
         return;
@@ -572,7 +558,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       // Try HLS conversion via proxy
       if (/\/(movie|series)\/[^/]+\/[^/]+\/\d+\.\w+$/.test(url) && !url.endsWith('.m3u8')) {
         if (await tryVideoUrl(video, proxiedHls, 15000)) {
-          if (saved > 10) setResumeOffer(saved);
           try { await video.play(); } catch { /* user presses play */ }
           setLoading(false);
           return;
@@ -833,15 +818,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     video.muted = v === 0;
   };
 
-  const resumeFromSaved = () => {
-    const video = videoRef.current;
-    if (!video || resumeOffer === null) return;
-    video.currentTime = resumeOffer;
-    setResumeOffer(null);
-  };
-
-  const dismissResume = () => setResumeOffer(null);
-
   if (!item) return null;
 
   const streamUrl = resolveStreamUrl(item, activeEpisode?.streamUrl);
@@ -953,24 +929,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                       <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
                         <div className="w-20 h-20 rounded-full bg-white/[0.12] backdrop-blur-sm flex items-center justify-center">
                           <Play className="h-9 w-9 text-white fill-white ml-1" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Resume offer */}
-                    {resumeOffer !== null && (
-                      <div className="player-overlay absolute top-20 left-1/2 -translate-x-1/2 z-30">
-                        <div className="flex items-center gap-3 bg-black/80 backdrop-blur-xl rounded-xl px-5 py-3 border border-white/[0.08] shadow-2xl">
-                          <RotateCcw className="h-4 w-4 text-blue-400 shrink-0" />
-                          <span className="text-sm text-white/80">Resume from {formatTime(resumeOffer)}?</span>
-                          <button onClick={resumeFromSaved}
-                            className="px-3.5 py-1.5 bg-white text-black text-xs font-semibold rounded-lg hover:bg-white/90 transition-colors">
-                            Resume
-                          </button>
-                          <button onClick={dismissResume}
-                            className="px-3.5 py-1.5 text-white/60 text-xs hover:text-white transition-colors">
-                            Start Over
-                          </button>
                         </div>
                       </div>
                     )}
@@ -1509,24 +1467,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
               <div className="w-16 h-16 rounded-full border-2 border-white/10 border-t-white/80 animate-spin" />
-            </div>
-          )}
-
-          {/* Resume offer */}
-          {resumeOffer !== null && (
-            <div className="player-overlay absolute top-20 left-1/2 -translate-x-1/2 z-30">
-              <div className="flex items-center gap-3 bg-black/80 backdrop-blur-xl rounded-xl px-5 py-3 border border-white/[0.08] shadow-2xl">
-                <RotateCcw className="h-4 w-4 text-blue-400 shrink-0" />
-                <span className="text-sm text-white/80">Resume from {formatTime(resumeOffer)}?</span>
-                <button onClick={resumeFromSaved}
-                  className="px-3.5 py-1.5 bg-white text-black text-xs font-semibold rounded-lg hover:bg-white/90 transition-colors">
-                  Resume
-                </button>
-                <button onClick={dismissResume}
-                  className="px-3.5 py-1.5 text-white/60 text-xs hover:text-white transition-colors">
-                  Start Over
-                </button>
-              </div>
             </div>
           )}
 
