@@ -711,11 +711,11 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
   const hasSideContent = !fullscreen && hasNavigation && relatedChannels.length > 0;
   const sideVisible = hasSideContent && showSidePanel;
 
-  const containerWidth =
+  const containerClass =
     fullscreen ? 'w-screen h-screen' :
-    viewMode === 'theater' ? 'w-full max-w-[100vw] mx-0' :
-    viewMode === 'large' ? 'w-full max-w-7xl mx-4' :
-    'w-full max-w-5xl mx-4';
+    viewMode === 'theater' ? 'w-[calc(100vw-32px)] max-w-[100vw] h-[calc(100vh-60px)]' :
+    viewMode === 'large' ? 'w-full max-w-[1400px] mx-4' :
+    'w-full max-w-[1100px] mx-4';
 
   function cycleViewMode() {
     const modes: ViewMode[] = ['normal', 'large', 'theater'];
@@ -730,162 +730,177 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/92 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
+      {/* Player shell */}
       <div
         ref={containerRef}
-        className={`relative flex ${containerWidth} ${viewMode === 'theater' ? 'h-[calc(100vh-40px)]' : ''}`}
+        className={`relative flex ${containerClass} transition-all duration-300 ease-out`}
         onMouseMove={showControlsTemporarily}
-        onMouseLeave={() => { if (playing) setShowControls(false); }}
+        onMouseLeave={() => { if (playing) { setShowControls(false); setSettingsPanel(null); } }}
       >
-        {/* Main player column */}
-        <div className={`flex-1 min-w-0 flex flex-col ${sideVisible ? 'mr-0' : ''}`}>
-        {/* Header — only when not fullscreen */}
-        {!fullscreen && (
-          <div className={`flex items-center justify-between bg-zinc-950 px-4 py-3 ${sideVisible ? 'rounded-tl-xl' : 'rounded-t-xl'} border-b border-white/[0.06]`}>
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-800/80 overflow-hidden ring-1 ring-white/[0.06]">
-                {item.tvg_logo ? (
-                  <img
-                    src={item.tvg_logo}
-                    alt=""
-                    className="h-full w-full object-contain p-1"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                      const sib = e.currentTarget.nextElementSibling;
-                      if (sib) (sib as HTMLElement).classList.remove('hidden');
-                    }}
-                  />
-                ) : null}
-                <div className={`flex items-center justify-center ${item.tvg_logo ? 'hidden' : ''}`}>
-                  <Radio className="h-4 w-4 text-zinc-500" />
+        {/* ═══════ MAIN PLAYER ═══════ */}
+        <div className={`relative flex-1 min-w-0 flex flex-col bg-black ${
+          fullscreen ? '' : sideVisible ? 'rounded-l-2xl' : 'rounded-2xl'
+        } overflow-hidden`}>
+
+          {/* ── Floating top bar (inside video, fades with controls) ── */}
+          <div className={`absolute top-0 left-0 right-0 z-30 transition-all duration-500 ease-out ${
+            showControls || !playing ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'
+          }`}>
+            <div className="bg-gradient-to-b from-black/80 via-black/40 to-transparent pt-4 pb-12 px-5">
+              <div className="flex items-center justify-between">
+                {/* Channel info */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] overflow-hidden backdrop-blur-sm border border-white/[0.06]">
+                    {item.tvg_logo ? (
+                      <img
+                        src={item.tvg_logo}
+                        alt=""
+                        className="h-full w-full object-contain p-1.5"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          const sib = e.currentTarget.nextElementSibling;
+                          if (sib) (sib as HTMLElement).classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`flex items-center justify-center ${item.tvg_logo ? 'hidden' : ''}`}>
+                      {isLive ? <Radio className="h-4 w-4 text-white/40" /> : <Play className="h-4 w-4 text-white/40" />}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="font-semibold text-white text-[15px] leading-tight truncate max-w-md">
+                      {displayName}
+                    </h2>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {item.group_title && (
+                        <span className="text-[11px] text-white/40 truncate max-w-[200px]">{item.group_title}</span>
+                      )}
+                      {hasNavigation && (
+                        <span className="text-[11px] text-white/25 tabular-nums shrink-0">
+                          {currentIndex + 1} of {channelList!.length}
+                        </span>
+                      )}
+                      {isLive && (
+                        <span className="flex items-center gap-1 ml-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                          <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">Live</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                {isLive && (
-                  <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-white truncate text-sm leading-tight">{displayName}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {item.group_title && (
-                    <span className="text-[11px] text-zinc-500 truncate">{item.group_title}</span>
-                  )}
+
+                {/* Top-right actions */}
+                <div className="flex items-center gap-1 shrink-0">
                   {hasNavigation && (
-                    <span className="text-[11px] text-zinc-600 tabular-nums shrink-0">
-                      {currentIndex + 1} / {channelList!.length}
-                    </span>
+                    <div className="flex items-center mr-1">
+                      <button
+                        onClick={() => prevChannel && navigateChannel(prevChannel)}
+                        disabled={!prevChannel}
+                        title={prevChannel ? `Previous: ${prevChannel.name}` : undefined}
+                        className="rounded-lg p-2 text-white/50 transition-all disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/10 hover:text-white"
+                      >
+                        <SkipBack className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => nextChannel && navigateChannel(nextChannel)}
+                        disabled={!nextChannel}
+                        title={nextChannel ? `Next: ${nextChannel.name}` : undefined}
+                        className="rounded-lg p-2 text-white/50 transition-all disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/10 hover:text-white"
+                      >
+                        <SkipForward className="h-4 w-4" />
+                      </button>
+                    </div>
                   )}
+
+                  <button onClick={copyUrl} title="Copy stream URL"
+                    className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white transition-all">
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <a href={vlcUrl} title="Open in VLC"
+                    className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white transition-all">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+
+                  {hasSideContent && (
+                    <button
+                      onClick={() => setShowSidePanel(!showSidePanel)}
+                      title={showSidePanel ? 'Hide channels' : 'Show channels'}
+                      className={`rounded-lg p-2 transition-all ${
+                        showSidePanel ? 'text-white/70 bg-white/10' : 'text-white/40 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {showSidePanel ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+                    </button>
+                  )}
+
+                  <button onClick={onClose}
+                    className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white transition-all ml-1">
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-0.5 ml-3 shrink-0">
-              {/* View mode toggle */}
-              <button onClick={cycleViewMode}
-                title={`View: ${viewMode} (click to cycle)`}
-                className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors">
-                {viewMode === 'normal' ? <Square className="h-3.5 w-3.5" /> :
-                 viewMode === 'large' ? <RectangleHorizontal className="h-3.5 w-3.5" /> :
-                 <Expand className="h-3.5 w-3.5" />}
-              </button>
-
-              {/* Side panel toggle */}
-              {hasSideContent && (
-                <button onClick={() => setShowSidePanel(!showSidePanel)}
-                  title={showSidePanel ? 'Hide channels panel' : 'Show channels panel'}
-                  className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors">
-                  {showSidePanel ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
-                </button>
-              )}
-
-              {hasNavigation && (
-                <div className="flex items-center gap-0.5 mr-1 border-r border-white/[0.06] pr-1.5">
-                  <button
-                    onClick={() => prevChannel && navigateChannel(prevChannel)}
-                    disabled={!prevChannel}
-                    title={prevChannel ? `Previous: ${prevChannel.name}` : undefined}
-                    className="rounded-lg p-1.5 text-zinc-400 transition-all disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/[0.06] hover:text-white"
-                  >
-                    <SkipBack className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => nextChannel && navigateChannel(nextChannel)}
-                    disabled={!nextChannel}
-                    title={nextChannel ? `Next: ${nextChannel.name}` : undefined}
-                    className="rounded-lg p-1.5 text-zinc-400 transition-all disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/[0.06] hover:text-white"
-                  >
-                    <SkipForward className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-              <button onClick={copyUrl} title="Copy stream URL"
-                className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors">
-                <Copy className="h-3.5 w-3.5" />
-              </button>
-              <a href={vlcUrl} title="Open in VLC"
-                className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors">
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-              <button onClick={onClose}
-                className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-white transition-colors ml-0.5">
-                <X className="h-4 w-4" />
-              </button>
             </div>
           </div>
-        )}
 
-        {/* Video area */}
-        <div
-          className={`relative bg-black overflow-hidden ${fullscreen ? 'w-full h-full' : `${sideVisible ? 'rounded-bl-xl' : 'rounded-b-xl'} ${viewMode === 'theater' ? 'flex-1' : 'aspect-video'}`}`}
-          onClick={(e) => {
-            if ((e.target as HTMLElement).closest('.player-controls')) return;
-            togglePlay();
-            showControlsTemporarily();
-          }}
-          onDoubleClick={(e) => {
-            if ((e.target as HTMLElement).closest('.player-controls')) return;
-            toggleFullscreen();
-          }}
-        >
-          {/* Loading spinner */}
+          {/* ── Video area ── */}
+          <div
+            className={`relative flex-1 bg-black ${fullscreen ? 'w-full h-full' : viewMode === 'theater' ? 'flex-1' : 'aspect-video'}`}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('.player-controls, .player-overlay')) return;
+              togglePlay();
+              showControlsTemporarily();
+            }}
+            onDoubleClick={(e) => {
+              if ((e.target as HTMLElement).closest('.player-controls, .player-overlay')) return;
+              toggleFullscreen();
+            }}
+          >
+          {/* Loading */}
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-              <div className="bg-black/50 rounded-full p-4">
-                <Loader2 className="h-10 w-10 animate-spin text-white/80" />
-              </div>
+              <div className="w-16 h-16 rounded-full border-2 border-white/10 border-t-white/80 animate-spin" />
             </div>
           )}
 
           {/* Resume offer */}
           {resumeOffer !== null && (
-            <div className="absolute top-4 left-4 z-30 bg-zinc-900/95 rounded-lg px-4 py-3 flex items-center gap-3 shadow-xl border border-zinc-700">
-              <RotateCcw className="h-5 w-5 text-blue-400 shrink-0" />
-              <div className="text-sm">
-                <p className="text-white">Continue from {formatTime(resumeOffer)}?</p>
+            <div className="player-overlay absolute top-20 left-1/2 -translate-x-1/2 z-30">
+              <div className="flex items-center gap-3 bg-black/80 backdrop-blur-xl rounded-xl px-5 py-3 border border-white/[0.08] shadow-2xl">
+                <RotateCcw className="h-4 w-4 text-blue-400 shrink-0" />
+                <span className="text-sm text-white/80">Resume from {formatTime(resumeOffer)}?</span>
+                <button onClick={resumeFromSaved}
+                  className="px-3.5 py-1.5 bg-white text-black text-xs font-semibold rounded-lg hover:bg-white/90 transition-colors">
+                  Resume
+                </button>
+                <button onClick={dismissResume}
+                  className="px-3.5 py-1.5 text-white/60 text-xs hover:text-white transition-colors">
+                  Start Over
+                </button>
               </div>
-              <button onClick={resumeFromSaved}
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-md transition-colors">
-                Resume
-              </button>
-              <button onClick={dismissResume}
-                className="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded-md transition-colors">
-                Start Over
-              </button>
             </div>
           )}
 
-          {/* Error overlay */}
+          {/* Error */}
           {error && !seriesLoading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white/80 p-6 text-center z-20">
-              <AlertCircle className="h-10 w-10 text-red-400" />
-              <p className="text-sm">{error}</p>
-              <div className="flex flex-wrap gap-3 justify-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-white/80 p-8 text-center z-20">
+              <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
+                <AlertCircle className="h-8 w-8 text-red-400" />
+              </div>
+              <div>
+                <p className="text-base font-medium text-white/90 mb-1">Playback Error</p>
+                <p className="text-sm text-white/50">{error}</p>
+              </div>
+              <div className="flex gap-3">
                 <button onClick={copyUrl}
-                  className="flex items-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm text-white hover:bg-zinc-700 transition-colors">
+                  className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]">
                   <Copy className="h-4 w-4" /> Copy URL
                 </button>
                 <a href={vlcUrl}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 transition-colors">
+                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm text-white hover:bg-blue-500 transition-colors">
                   <ExternalLink className="h-4 w-4" /> Open in VLC
                 </a>
               </div>
@@ -895,48 +910,48 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
           {/* Series loading */}
           {seriesLoading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
-              <Loader2 className="h-10 w-10 animate-spin text-white/80 mb-3" />
-              <p className="text-sm text-white/60">جاري تحميل الحلقات...</p>
+              <div className="w-12 h-12 rounded-full border-2 border-white/10 border-t-white/80 animate-spin mb-4" />
+              <p className="text-sm text-white/50">Loading episodes...</p>
             </div>
           )}
 
           {/* Series episode selector */}
           {isSeries && seriesEpisodes && !seriesLoading && (
-            <div className="absolute top-0 right-0 bottom-0 w-72 z-30 bg-zinc-900/95 border-l border-zinc-700/50 backdrop-blur-xl overflow-y-auto">
-              <div className="sticky top-0 bg-zinc-900/98 border-b border-zinc-700/50 p-3">
+            <div className="player-overlay absolute top-0 right-0 bottom-0 w-72 z-30 bg-black/90 backdrop-blur-xl border-l border-white/[0.06] overflow-hidden flex flex-col">
+              <div className="shrink-0 p-4 border-b border-white/[0.06]">
                 <p className="text-white text-sm font-semibold truncate">{seriesEpisodes.seriesName || item.name}</p>
                 {seriesEpisodes.seasons.length > 1 && (
-                  <div className="flex gap-1 mt-2 overflow-x-auto pb-1">
+                  <div className="flex gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-none">
                     {seriesEpisodes.seasons.map((s) => (
                       <button
                         key={s.season}
                         onClick={() => setSelectedSeason(s.season)}
-                        className={`px-2.5 py-1 text-xs rounded-md whitespace-nowrap transition-colors ${
+                        className={`px-3 py-1.5 text-xs rounded-lg whitespace-nowrap transition-all ${
                           selectedSeason === s.season
-                            ? 'bg-red-600 text-white'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                            ? 'bg-white text-black font-semibold'
+                            : 'bg-white/[0.06] text-white/50 hover:bg-white/[0.1] hover:text-white/70'
                         }`}
                       >
-                        S{s.season}
+                        Season {s.season}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-              <div className="p-2">
+              <div className="flex-1 overflow-y-auto scrollbar-none p-2">
                 {seriesEpisodes.seasons
                   .find(s => s.season === selectedSeason)
                   ?.episodes.map((ep) => (
                     <button
                       key={ep.id}
                       onClick={() => setActiveEpisode({ streamUrl: ep.streamUrl, title: ep.title })}
-                      className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 text-sm transition-colors ${
+                      className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 text-sm transition-all ${
                         activeEpisode?.streamUrl === ep.streamUrl
-                          ? 'bg-red-600/20 text-red-400 border border-red-600/30'
-                          : 'text-zinc-300 hover:bg-zinc-800'
+                          ? 'bg-white/[0.1] text-white border border-white/[0.1]'
+                          : 'text-white/60 hover:bg-white/[0.05] hover:text-white/80 border border-transparent'
                       }`}
                     >
-                      <span className="text-zinc-500 text-xs mr-2">E{ep.episode}</span>
+                      <span className="text-white/30 text-xs mr-2 tabular-nums">E{ep.episode}</span>
                       <span className="truncate">{ep.title}</span>
                     </button>
                   ))}
@@ -944,92 +959,87 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
             </div>
           )}
 
-          {/* Big play button when paused */}
+          {/* Big play button */}
           {!playing && !loading && !error && (
             <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-              <div className="bg-black/40 rounded-full p-5">
-                <Play className="h-12 w-12 text-white fill-white" />
+              <div className="w-20 h-20 rounded-full bg-white/[0.12] backdrop-blur-sm flex items-center justify-center">
+                <Play className="h-9 w-9 text-white fill-white ml-1" />
               </div>
             </div>
           )}
 
-          {/* Seek indicator (Netflix-style) */}
+          {/* Seek indicator */}
           {seekIndicator && (
-            <div className={`absolute top-1/2 -translate-y-1/2 z-20 pointer-events-none animate-pulse ${
+            <div className={`absolute top-1/2 -translate-y-1/2 z-20 pointer-events-none ${
               seekIndicator.side === 'left' ? 'left-[15%]' : 'right-[15%]'
             }`}>
-              <div className="bg-black/50 rounded-full p-4 flex flex-col items-center">
-                {seekIndicator.side === 'left' ? (
-                  <SkipBack className="h-6 w-6 text-white" />
-                ) : (
-                  <SkipForward className="h-6 w-6 text-white" />
-                )}
-                <span className="text-white text-xs mt-1 font-medium">{seekIndicator.seconds}s</span>
+              <div className="flex flex-col items-center animate-pulse">
+                <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                  {seekIndicator.side === 'left' ? (
+                    <SkipBack className="h-6 w-6 text-white" />
+                  ) : (
+                    <SkipForward className="h-6 w-6 text-white" />
+                  )}
+                </div>
+                <span className="text-white text-xs mt-1.5 font-medium">{seekIndicator.seconds}s</span>
               </div>
             </div>
           )}
 
           {/* Quality badge */}
           {qualities.length > 0 && currentQuality !== -1 && showControls && (
-            <div className="absolute top-3 right-3 z-20 pointer-events-none">
-              <span className="bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div className="absolute top-4 right-4 z-20 pointer-events-none">
+              <span className="bg-white/[0.1] backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-md border border-white/[0.06]">
                 {qualities.find(q => q.index === currentQuality)?.label || ''}
               </span>
             </div>
           )}
 
-          {/* Video element — no native controls */}
+          {/* Video element */}
           <video
             ref={videoRef}
             className="w-full h-full object-contain"
             playsInline
-            style={{ imageRendering: 'auto', WebkitFontSmoothing: 'antialiased' }}
             onError={() => {
               if (hlsRef.current) return;
-              // initPlayer already tried all fallbacks; this fires if the final src fails
-              setError('تعذّر تشغيل الفيديو. جرّب فتحه في VLC.');
+              setError('Video could not be played. Try opening in VLC.');
               setLoading(false);
             }}
           />
 
-          {/* Custom controls overlay */}
+          {/* ── Bottom controls overlay ── */}
           <div
-            className={`player-controls absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 ${
-              showControls || !playing ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            className={`player-controls absolute bottom-0 left-0 right-0 z-20 transition-all duration-500 ease-out ${
+              showControls || !playing ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
             }`}
           >
-            {/* Gradient background */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none" />
 
-            <div className="relative px-3 pb-3 pt-10">
+            <div className="relative px-4 pb-4 pt-16">
               {/* Progress bar */}
               {!isLive && duration > 0 && (
                 <div
                   ref={progressRef}
-                  className="group relative h-1 hover:h-1.5 bg-white/20 rounded-full cursor-pointer mb-3 transition-all"
+                  className="group relative h-[3px] hover:h-[5px] bg-white/[0.15] rounded-full cursor-pointer mb-4 transition-all duration-200"
                   onClick={handleProgressClick}
                   onMouseMove={handleProgressHover}
                   onMouseLeave={() => setSeekPreview(null)}
                 >
-                  {/* Buffered */}
                   <div
-                    className="absolute inset-y-0 left-0 bg-white/30 rounded-full"
+                    className="absolute inset-y-0 left-0 bg-white/[0.2] rounded-full transition-[width] duration-300"
                     style={{ width: `${bufferedPct}%` }}
                   />
-                  {/* Progress */}
                   <div
-                    className="absolute inset-y-0 left-0 bg-red-500 rounded-full"
+                    className="absolute inset-y-0 left-0 bg-white rounded-full transition-[width] duration-100"
                     style={{ width: `${progress}%` }}
                   />
-                  {/* Scrub handle */}
                   <div
-                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[13px] h-[13px] bg-white rounded-full scale-0 group-hover:scale-100 transition-transform duration-150 shadow-[0_0_8px_rgba(255,255,255,0.3)]"
                     style={{ left: `${progress}%` }}
                   />
-                  {/* Seek preview tooltip */}
                   {seekPreview !== null && (
                     <div
-                      className="absolute -top-8 -translate-x-1/2 bg-black/90 text-white text-xs px-2 py-1 rounded pointer-events-none"
+                      className="absolute -top-9 -translate-x-1/2 bg-white text-black text-[11px] font-semibold px-2.5 py-1 rounded-md pointer-events-none shadow-lg"
                       style={{ left: `${(seekPreview / duration) * 100}%` }}
                     >
                       {formatTime(seekPreview)}
@@ -1040,198 +1050,206 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
 
               {/* Live indicator */}
               {isLive && (
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded">
+                <div className="mb-3">
+                  <span className="inline-flex items-center gap-1.5 bg-red-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">
                     <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                    LIVE
+                    Live
                   </span>
                 </div>
               )}
 
               {/* Controls row */}
-              <div className="flex items-center gap-2">
-                {/* Play/Pause */}
+              <div className="flex items-center gap-1">
                 <button onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-                  className="p-1.5 text-white hover:text-white/80 transition-colors">
-                  {playing ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white" />}
+                  className="p-2 text-white hover:scale-110 transition-transform">
+                  {playing
+                    ? <Pause className="h-5 w-5 fill-white" />
+                    : <Play className="h-5 w-5 fill-white" />
+                  }
                 </button>
 
-                {/* Channel prev/next (live channels with navigation) */}
                 {hasNavigation && isLive && (
                   <>
                     <button onClick={(e) => { e.stopPropagation(); prevChannel && navigateChannel(prevChannel); }}
                       disabled={!prevChannel}
-                      title={prevChannel ? `Previous: ${prevChannel.name}` : 'No previous channel'}
-                      className="p-1.5 text-white/70 hover:text-white transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
+                      className="p-2 text-white/60 hover:text-white transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
                       <SkipBack className="h-4 w-4" />
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); nextChannel && navigateChannel(nextChannel); }}
                       disabled={!nextChannel}
-                      title={nextChannel ? `Next: ${nextChannel.name}` : 'No next channel'}
-                      className="p-1.5 text-white/70 hover:text-white transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
+                      className="p-2 text-white/60 hover:text-white transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
                       <SkipForward className="h-4 w-4" />
                     </button>
                   </>
                 )}
 
-                {/* Skip back/forward (VOD only) */}
                 {!isLive && (
                   <>
                     <button onClick={(e) => { e.stopPropagation(); seek(-10); }}
                       title="-10s (J)"
-                      className="p-1.5 text-white/70 hover:text-white transition-colors">
+                      className="p-2 text-white/60 hover:text-white transition-colors">
                       <SkipBack className="h-4 w-4" />
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); seek(10); }}
                       title="+10s (L)"
-                      className="p-1.5 text-white/70 hover:text-white transition-colors">
+                      className="p-2 text-white/60 hover:text-white transition-colors">
                       <SkipForward className="h-4 w-4" />
                     </button>
                   </>
                 )}
 
-                {/* Volume */}
-                <button onClick={(e) => { e.stopPropagation(); toggleMute(); }}
-                  className="p-1.5 text-white/70 hover:text-white transition-colors">
-                  {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                </button>
-                <input
-                  type="range"
-                  min={0} max={1} step={0.05}
-                  value={muted ? 0 : volume}
-                  onChange={handleVolumeChange}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-16 h-1 accent-white cursor-pointer"
-                />
+                {/* Volume group */}
+                <div className="flex items-center group/vol">
+                  <button onClick={(e) => { e.stopPropagation(); toggleMute(); }}
+                    className="p-2 text-white/60 hover:text-white transition-colors">
+                    {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </button>
+                  <div className="w-0 overflow-hidden group-hover/vol:w-20 transition-all duration-300">
+                    <input
+                      type="range"
+                      min={0} max={1} step={0.05}
+                      value={muted ? 0 : volume}
+                      onChange={handleVolumeChange}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-20 h-1 accent-white cursor-pointer"
+                    />
+                  </div>
+                </div>
 
                 {/* Time */}
-                <div className="text-white/80 text-xs font-mono ml-1 select-none">
+                <div className="text-white/50 text-xs font-mono ml-1 select-none tabular-nums">
                   {!isLive && (
                     <>
-                      {formatTime(currentTime)}
-                      {duration > 0 && <span className="text-white/40"> / {formatTime(duration)}</span>}
+                      <span className="text-white/80">{formatTime(currentTime)}</span>
+                      {duration > 0 && <span className="text-white/30"> / {formatTime(duration)}</span>}
                     </>
                   )}
                 </div>
 
                 {/* Channel info in fullscreen */}
                 {fullscreen && hasNavigation && (
-                  <div className="flex items-center gap-2 ml-2">
+                  <div className="flex items-center gap-2 ml-3">
                     {item.tvg_logo && (
                       <img src={item.tvg_logo} alt="" className="h-5 w-5 rounded object-contain shrink-0"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     )}
-                    <span className="text-white/70 text-xs truncate max-w-[200px]">{displayName}</span>
-                    <span className="text-white/30 text-[10px] tabular-nums shrink-0">{currentIndex + 1}/{channelList!.length}</span>
+                    <span className="text-white/60 text-xs truncate max-w-[200px]">{displayName}</span>
+                    <span className="text-white/25 text-[10px] tabular-nums shrink-0">{currentIndex + 1}/{channelList!.length}</span>
                   </div>
                 )}
 
                 <div className="flex-1" />
 
-                {/* Speed (VOD only) */}
+                {/* Settings (VOD) */}
                 {!isLive && (
                   <div className="relative">
                     <button onClick={(e) => { e.stopPropagation(); setSettingsPanel(settingsPanel ? null : 'main'); }}
-                      className={`p-1.5 transition-colors ${speed !== 1 ? 'text-red-400' : 'text-white/70 hover:text-white'}`}
+                      className={`p-2 transition-all ${
+                        settingsPanel ? 'text-white rotate-45' : speed !== 1 ? 'text-white' : 'text-white/50 hover:text-white'
+                      }`}
                       title="Settings">
                       <Settings className="h-4 w-4" />
                     </button>
 
-                    {/* Settings panel */}
                     {settingsPanel && (
-                      <div className="absolute bottom-full right-0 mb-2 w-56 bg-zinc-900/98 border border-zinc-700/50 rounded-xl overflow-hidden shadow-2xl backdrop-blur-xl"
+                      <div className="absolute bottom-full right-0 mb-3 w-52 bg-[#1a1a1e]/95 backdrop-blur-xl border border-white/[0.08] rounded-xl overflow-hidden shadow-2xl"
                         onClick={(e) => e.stopPropagation()}>
 
-                        {/* Main menu */}
                         {settingsPanel === 'main' && (
-                          <>
+                          <div className="py-1">
                             <button onClick={() => setSettingsPanel('quality')}
-                              className="flex items-center justify-between w-full px-4 py-2.5 text-sm text-white hover:bg-white/10 transition-colors">
-                              <span className="flex items-center gap-2.5">
-                                <MonitorPlay className="h-4 w-4 text-zinc-400" />
+                              className="flex items-center justify-between w-full px-4 py-3 text-[13px] text-white hover:bg-white/[0.06] transition-colors">
+                              <span className="flex items-center gap-3">
+                                <MonitorPlay className="h-4 w-4 text-white/40" />
                                 Quality
                               </span>
-                              <span className="text-xs text-zinc-400">
+                              <span className="text-[12px] text-white/40">
                                 {currentQuality === -1 ? 'Auto' : qualities.find(q => q.index === currentQuality)?.label || 'Auto'}
                               </span>
                             </button>
                             <button onClick={() => setSettingsPanel('speed')}
-                              className="flex items-center justify-between w-full px-4 py-2.5 text-sm text-white hover:bg-white/10 transition-colors">
-                              <span className="flex items-center gap-2.5">
-                                <Settings className="h-4 w-4 text-zinc-400" />
-                                Speed
+                              className="flex items-center justify-between w-full px-4 py-3 text-[13px] text-white hover:bg-white/[0.06] transition-colors">
+                              <span className="flex items-center gap-3">
+                                <Settings className="h-4 w-4 text-white/40" />
+                                Playback Speed
                               </span>
-                              <span className="text-xs text-zinc-400">{speed === 1 ? 'Normal' : `${speed}x`}</span>
+                              <span className="text-[12px] text-white/40">{speed === 1 ? 'Normal' : `${speed}x`}</span>
                             </button>
-                          </>
+                          </div>
                         )}
 
-                        {/* Quality submenu */}
                         {settingsPanel === 'quality' && (
-                          <>
+                          <div>
                             <button onClick={() => setSettingsPanel('main')}
-                              className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-400 border-b border-zinc-700/50 hover:bg-white/5">
+                              className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-white/50 border-b border-white/[0.06] hover:bg-white/[0.04] transition-colors">
                               <ChevronLeft className="h-3 w-3" /> Quality
                             </button>
-                            <button onClick={() => changeQuality(-1)}
-                              className={`flex items-center justify-between w-full px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
-                                currentQuality === -1 ? 'text-red-400 font-medium' : 'text-white'
-                              }`}>
-                              Auto
-                              {currentQuality === -1 && <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />}
-                            </button>
-                            {qualities.map((q) => (
-                              <button key={q.index} onClick={() => changeQuality(q.index)}
-                                className={`flex items-center justify-between w-full px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
-                                  currentQuality === q.index ? 'text-red-400 font-medium' : 'text-white'
+                            <div className="py-1">
+                              <button onClick={() => changeQuality(-1)}
+                                className={`flex items-center justify-between w-full px-4 py-2.5 text-[13px] hover:bg-white/[0.06] transition-colors ${
+                                  currentQuality === -1 ? 'text-white font-medium' : 'text-white/70'
                                 }`}>
-                                {q.label}
-                                {q.height >= 1080 && <span className="text-[10px] bg-blue-600 text-white px-1 rounded">HD</span>}
-                                {currentQuality === q.index && <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />}
+                                Auto
+                                {currentQuality === -1 && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
                               </button>
-                            ))}
-                            {qualities.length === 0 && (
-                              <div className="px-4 py-3 text-xs text-zinc-500">Single quality stream</div>
-                            )}
-                          </>
+                              {qualities.map((q) => (
+                                <button key={q.index} onClick={() => changeQuality(q.index)}
+                                  className={`flex items-center justify-between w-full px-4 py-2.5 text-[13px] hover:bg-white/[0.06] transition-colors ${
+                                    currentQuality === q.index ? 'text-white font-medium' : 'text-white/70'
+                                  }`}>
+                                  <span className="flex items-center gap-2">
+                                    {q.label}
+                                    {q.height >= 1080 && <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.5 rounded font-bold">HD</span>}
+                                  </span>
+                                  {currentQuality === q.index && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                </button>
+                              ))}
+                              {qualities.length === 0 && (
+                                <div className="px-4 py-3 text-xs text-white/30">Single quality stream</div>
+                              )}
+                            </div>
+                          </div>
                         )}
 
-                        {/* Speed submenu */}
                         {settingsPanel === 'speed' && (
-                          <>
+                          <div>
                             <button onClick={() => setSettingsPanel('main')}
-                              className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-400 border-b border-zinc-700/50 hover:bg-white/5">
+                              className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-white/50 border-b border-white/[0.06] hover:bg-white/[0.04] transition-colors">
                               <ChevronLeft className="h-3 w-3" /> Speed
                             </button>
-                            {SPEEDS.map((s) => (
-                              <button key={s} onClick={() => changeSpeed(s)}
-                                className={`flex items-center justify-between w-full px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
-                                  speed === s ? 'text-red-400 font-medium' : 'text-white'
-                                }`}>
-                                {s === 1 ? 'Normal' : `${s}x`}
-                                {speed === s && <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />}
-                              </button>
-                            ))}
-                          </>
+                            <div className="py-1">
+                              {SPEEDS.map((s) => (
+                                <button key={s} onClick={() => changeSpeed(s)}
+                                  className={`flex items-center justify-between w-full px-4 py-2.5 text-[13px] hover:bg-white/[0.06] transition-colors ${
+                                    speed === s ? 'text-white font-medium' : 'text-white/70'
+                                  }`}>
+                                  {s === 1 ? 'Normal' : `${s}x`}
+                                  {speed === s && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* View mode (not fullscreen) */}
+                {/* View mode */}
                 {!fullscreen && (
                   <button onClick={(e) => { e.stopPropagation(); cycleViewMode(); }}
-                    className="p-1.5 text-white/70 hover:text-white transition-colors"
-                    title={`View mode: ${viewMode}`}>
-                    <Tv className="h-4 w-4" />
+                    className="p-2 text-white/50 hover:text-white transition-colors"
+                    title={`View: ${viewMode}`}>
+                    {viewMode === 'normal' ? <Square className="h-4 w-4" /> :
+                     viewMode === 'large' ? <RectangleHorizontal className="h-4 w-4" /> :
+                     <Expand className="h-4 w-4" />}
                   </button>
                 )}
 
-                {/* Side panel toggle */}
+                {/* Side panel */}
                 {!fullscreen && hasSideContent && (
                   <button onClick={(e) => { e.stopPropagation(); setShowSidePanel(!showSidePanel); }}
-                    className={`p-1.5 transition-colors ${showSidePanel ? 'text-blue-400' : 'text-white/70 hover:text-white'}`}
+                    className={`p-2 transition-all ${showSidePanel ? 'text-white' : 'text-white/50 hover:text-white'}`}
                     title={showSidePanel ? 'Hide channels' : 'Show channels'}>
                     {showSidePanel ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
                   </button>
@@ -1240,7 +1258,7 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
                 {/* PiP */}
                 {typeof document !== 'undefined' && document.pictureInPictureEnabled && (
                   <button onClick={(e) => { e.stopPropagation(); togglePip(); }}
-                    className={`p-1.5 transition-colors ${pip ? 'text-blue-400' : 'text-white/70 hover:text-white'}`}
+                    className={`p-2 transition-all ${pip ? 'text-white' : 'text-white/50 hover:text-white'}`}
                     title="Picture-in-Picture (P)">
                     <PictureInPicture2 className="h-4 w-4" />
                   </button>
@@ -1248,15 +1266,14 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
 
                 {/* Fullscreen */}
                 <button onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-                  className="p-1.5 text-white/70 hover:text-white transition-colors"
+                  className="p-2 text-white/50 hover:text-white transition-colors"
                   title="Fullscreen (F)">
                   {fullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
                 </button>
 
-                {/* Close in fullscreen */}
                 {fullscreen && (
                   <button onClick={(e) => { e.stopPropagation(); onClose(); }}
-                    className="p-1.5 text-white/70 hover:text-white transition-colors"
+                    className="p-2 text-white/50 hover:text-white transition-colors"
                     title="Close (Esc)">
                     <X className="h-4 w-4" />
                   </button>
@@ -1266,86 +1283,77 @@ export function VideoPlayerDialog({ item, channelList, onClose, onNavigate }: Vi
           </div>
         </div>
         </div>
-        {/* ── end main player column ── */}
 
-        {/* ═══════════ Collapsible Side Panel ═══════════ */}
+        {/* ═══════ SIDE PANEL — Related Channels ═══════ */}
         {sideVisible && (
-          <div className={`bg-zinc-950 border-l border-white/[0.06] flex flex-col ${
+          <div className={`flex flex-col bg-[#0c0c0e] border-l border-white/[0.04] ${
             viewMode === 'theater' ? 'w-80' : 'w-72'
-          } rounded-r-xl overflow-hidden transition-all duration-300`}>
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06] shrink-0">
-              <div className="flex items-center gap-2">
-                <Radio className="h-3.5 w-3.5 text-zinc-500" />
-                <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-                  {item.group_title || 'Related'}
-                </span>
-                <span className="text-[10px] text-zinc-600 tabular-nums">
-                  {relatedChannels.length}
-                </span>
-              </div>
-              <button
-                onClick={() => setShowSidePanel(false)}
-                className="p-1 rounded-md text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
-                title="Close panel"
-              >
-                <PanelRightClose className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto scrollbar-none p-1.5 space-y-0.5">
-              {relatedChannels.map((ch) => {
-                const isActive = ch.id === item.id;
-                return (
+          } rounded-r-2xl overflow-hidden`}>
+            <div className="shrink-0 px-4 pt-4 pb-3">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Tv className="h-3.5 w-3.5 text-white/30" />
+                  <span className="text-[13px] font-semibold text-white/80">
+                    {item.group_title || 'Related'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-white/25 tabular-nums">{relatedChannels.length}</span>
                   <button
-                    key={ch.id}
-                    onClick={() => navigateChannel(ch)}
-                    className={`flex items-center gap-2.5 w-full rounded-lg px-2.5 py-2 text-left transition-all group ${
-                      isActive
-                        ? 'bg-red-600/10 border border-red-500/20 text-white'
-                        : 'border border-transparent hover:bg-white/[0.04] hover:border-white/[0.06] text-zinc-400 hover:text-zinc-200'
-                    }`}
+                    onClick={() => setShowSidePanel(false)}
+                    className="p-1 rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
+                    title="Close panel"
                   >
-                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden ${
-                      isActive ? 'bg-red-600/20 ring-1 ring-red-500/30' : 'bg-zinc-800/80 ring-1 ring-white/[0.06]'
-                    }`}>
-                      {ch.tvg_logo ? (
-                        <img
-                          src={ch.tvg_logo}
-                          alt=""
-                          className="h-full w-full object-contain p-1"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      ) : (
-                        <Radio className="h-3 w-3 text-zinc-600" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className={`text-xs truncate leading-tight ${isActive ? 'font-medium text-white' : ''}`}>
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+              <div className="h-px bg-white/[0.04] mt-2" />
+            </div>
+
+            <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-3">
+              <div className="space-y-0.5">
+                {relatedChannels.map((ch) => {
+                  const isActive = ch.id === item.id;
+                  return (
+                    <button
+                      key={ch.id}
+                      onClick={() => navigateChannel(ch)}
+                      className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all ${
+                        isActive
+                          ? 'bg-white/[0.08] text-white'
+                          : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
+                      }`}
+                    >
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
+                        isActive ? 'bg-white/[0.12] ring-1 ring-white/[0.1]' : 'bg-white/[0.04]'
+                      }`}>
+                        {ch.tvg_logo ? (
+                          <img
+                            src={ch.tvg_logo}
+                            alt=""
+                            className="h-full w-full object-contain p-1"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : (
+                          <Radio className="h-3 w-3 text-white/20" />
+                        )}
+                      </div>
+                      <p className={`text-[12px] truncate leading-tight flex-1 ${isActive ? 'font-medium' : ''}`}>
                         {ch.name}
                       </p>
-                    </div>
-                    {isActive && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />
-                    )}
-                  </button>
-                );
-              })}
+                      {isActive && (
+                        <div className="flex items-center gap-[2px] shrink-0">
+                          <div className="w-[2px] h-3 bg-white/60 rounded-full animate-pulse" />
+                          <div className="w-[2px] h-2 bg-white/40 rounded-full animate-pulse [animation-delay:150ms]" />
+                          <div className="w-[2px] h-3.5 bg-white/60 rounded-full animate-pulse [animation-delay:300ms]" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
-
-        {/* Keyboard shortcuts hint — below player, not fullscreen */}
-        {!fullscreen && (
-          <div className={`flex justify-center flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] text-zinc-600 select-none ${sideVisible ? 'pr-72' : ''}`}>
-            <span>Space: Play/Pause</span>
-            {!isLive && <span>←→: Seek 10s</span>}
-            <span>↑↓: Volume</span>
-            <span>F: Fullscreen</span>
-            <span>M: Mute</span>
-            <span>P: PiP</span>
-            <span>T: View Mode</span>
-            {!isLive && <span>0-9: Jump</span>}
-            {hasNavigation && <span>N: Next</span>}
-            {hasNavigation && <span>B: Prev</span>}
           </div>
         )}
       </div>
