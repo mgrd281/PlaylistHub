@@ -40,7 +40,7 @@ async function fetchViaScanner(
       if (rangeHeader) headers['Range'] = rangeHeader;
 
       const res = await fetch(url, {
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(8000),
         headers,
       });
       if (res.ok || res.status === 206) return res;
@@ -57,7 +57,7 @@ async function fetchViaCfWorker(targetUrl: string): Promise<Response | null> {
   try {
     const separator = proxyUrl.includes('?') ? '&' : '?';
     const url = `${proxyUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(25000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (res.ok || res.status === 206) return res;
   } catch { /* unreachable */ }
   return null;
@@ -66,7 +66,7 @@ async function fetchViaCfWorker(targetUrl: string): Promise<Response | null> {
 /** Direct fetch with VLC UA (works only if Vercel IP isn't blocked) */
 async function directFetch(
   url: string,
-  timeoutMs = 15000,
+  timeoutMs = 6000,
 ): Promise<Response | null> {
   try {
     const res = await fetch(normalizeUrl(url), {

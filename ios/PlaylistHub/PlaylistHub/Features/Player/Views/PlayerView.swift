@@ -457,6 +457,14 @@ final class PlayerViewModel: ObservableObject {
     private var statusObserver: NSKeyValueObservation?
     private var currentIndex: Int
 
+    /// Cascade fallback state
+    private var fallbackURLs: [URL] = []
+    private var fallbackTimer: DispatchWorkItem?
+    private var loadStartTime: CFAbsoluteTime = 0
+
+    /// Timeout per source in cascade (seconds)
+    private static let sourceTimeout: TimeInterval = 6
+
     var prevChannel: PlaylistItem? {
         guard currentIndex > 0 else { return nil }
         return channelList?[currentIndex - 1]
@@ -500,6 +508,8 @@ final class PlayerViewModel: ObservableObject {
         isBuffering = true
         error = nil
         hasFirstFrame = false
+        fallbackTimer?.cancel()
+        fallbackURLs = []
 
         // Flash channel name
         showChannelFlash = true
@@ -521,35 +531,88 @@ final class PlayerViewModel: ObservableObject {
         switchTo(prev)
     }
 
+    /// Build URL cascade and start with the fastest source (direct → CF → Vercel)
     private func loadStream(for item: PlaylistItem) {
-        let url = item.proxiedStreamURL
+        let cascade = AppConfig.streamCascade(for: item.resolvedStreamURL)
+        guard let first = cascade.first else {
+            error = "Invalid stream URL"
+            isBuffering = false
+            return
+        }
+        fallbackURLs = Array(cascade.dropFirst())
+        loadStartTime = CFAbsoluteTimeGetCurrent()
+        playURL(first)
+    }
+
+    /// Attempt playback from a single URL. On failure/timeout, cascade to next.
+    private func playURL(_ url: URL) {
+        let attemptStart = CFAbsoluteTimeGetCurrent()
+        let host = url.host ?? url.absoluteString.prefix(60).description
+        print("[Player] ▶ Trying: \(host)")
+
         let asset = AVURLAsset(url: url, options: [
-            "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": "PlaylistHub/1.0"],
+            "AVURLAssetHTTPHeaderFieldsKey": [
+                "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
+            ],
             AVURLAssetPreferPreciseDurationAndTimingKey: false
         ])
-        // Minimal buffer for fast start
         let playerItem = AVPlayerItem(asset: asset)
         playerItem.preferredForwardBufferDuration = 2
 
-        // Observe when first frame is ready
+        // Cancel previous observers
         statusObserver?.invalidate()
+        fallbackTimer?.cancel()
+
         statusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                let elapsed = CFAbsoluteTimeGetCurrent() - attemptStart
+                let total = CFAbsoluteTimeGetCurrent() - self.loadStartTime
                 switch item.status {
                 case .readyToPlay:
+                    print("[Player] ✓ Ready in \(String(format: "%.1f", elapsed))s (total \(String(format: "%.1f", total))s) via \(host)")
                     self.hasFirstFrame = true
+                    self.fallbackURLs = []
+                    self.fallbackTimer?.cancel()
                 case .failed:
-                    self.error = item.error?.localizedDescription ?? "Playback failed"
-                    self.isBuffering = false
+                    let reason = item.error?.localizedDescription ?? "unknown"
+                    print("[Player] ✗ Failed in \(String(format: "%.1f", elapsed))s: \(reason)")
+                    self.advanceToNextSource(lastError: reason)
                 default: break
                 }
             }
         }
 
+        // Timeout: if this source doesn't resolve within limit, try next
+        let timeout = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self, !self.hasFirstFrame else { return }
+                print("[Player] ⏱ Timeout (\(Self.sourceTimeout)s) for \(host)")
+                self.advanceToNextSource(lastError: "Timeout — source too slow")
+            }
+        }
+        fallbackTimer = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sourceTimeout, execute: timeout)
+
         player.replaceCurrentItem(with: playerItem)
         player.play()
         isPlaying = true
+    }
+
+    /// Move to next URL in the cascade, or show error if none left
+    private func advanceToNextSource(lastError: String?) {
+        fallbackTimer?.cancel()
+        statusObserver?.invalidate()
+
+        if let next = fallbackURLs.first {
+            fallbackURLs.removeFirst()
+            playURL(next)
+        } else {
+            let total = CFAbsoluteTimeGetCurrent() - loadStartTime
+            print("[Player] ✗ All sources exhausted after \(String(format: "%.1f", total))s")
+            error = lastError ?? "Playback failed"
+            isBuffering = false
+        }
     }
 
     private func setupTimeObserver() {
@@ -571,6 +634,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func teardown() {
+        fallbackTimer?.cancel()
         player.pause()
         player.replaceCurrentItem(with: nil)
         if let obs = timeObserver { player.removeTimeObserver(obs) }
@@ -598,15 +662,14 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func playEpisode(_ episode: EpisodeData) {
-        let url = AppConfig.streamProxyURL(for: episode.streamUrl)
-        let asset = AVURLAsset(url: url)
-        let item = AVPlayerItem(asset: asset)
-        item.preferredForwardBufferDuration = 2
-        player.replaceCurrentItem(with: item)
-        player.play()
-        isPlaying = true
+        // Episodes also use cascade for fastest start
+        let cascade = AppConfig.streamCascade(for: episode.streamUrl)
+        guard let first = cascade.first else { return }
+        fallbackURLs = Array(cascade.dropFirst())
+        loadStartTime = CFAbsoluteTimeGetCurrent()
         activeEpisodeId = episode.id
         displayName = episode.title
+        playURL(first)
     }
 
     private func loadEpisodes() {
