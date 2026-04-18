@@ -94,7 +94,16 @@ export async function GET(req: NextRequest) {
     // Strategy 1: Scanner service (tunnel to local machine — bypasses IP blocks)
     upstream = await fetchViaScanner(targetUrl);
 
-    // Strategy 2: Direct fetch (fallback — works locally or for non-blocking providers)
+    // Strategy 2: Try HTTPS version (many IPTV servers support both HTTP and HTTPS)
+    if (!upstream && targetUrl.startsWith('http://')) {
+      try {
+        const httpsUrl = targetUrl.replace('http://', 'https://');
+        const attempt = await fetchWithRedirects(httpsUrl, HEADERS, 10000);
+        if (attempt.ok) upstream = attempt;
+      } catch { /* HTTPS not available */ }
+    }
+
+    // Strategy 3: Direct fetch with original URL
     if (!upstream) {
       try {
         const attempt = await fetchWithRedirects(targetUrl, HEADERS, 15000);

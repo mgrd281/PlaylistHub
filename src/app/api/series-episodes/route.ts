@@ -51,6 +51,8 @@ export async function GET(req: NextRequest) {
     // Use scanner to bypass IP blocks
     const scannerUrl = process.env.SCANNER_API_URL?.trim().replace(/\/$/, '');
     const apiUrl = `${baseUrl}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&action=get_series_info&series_id=${seriesId}`;
+    // Also try HTTPS version if original is HTTP (many Xtream panels support both)
+    const apiUrlHttps = baseUrl.startsWith('http://') ? apiUrl.replace('http://', 'https://') : null;
 
     let data: Record<string, unknown> | null = null;
 
@@ -65,7 +67,18 @@ export async function GET(req: NextRequest) {
       } catch { /* scanner unavailable */ }
     }
 
-    // Strategy 2: Direct fetch (fallback — works locally or when scanner is down)
+    // Strategy 2: Direct fetch with HTTPS upgrade
+    if (!data && apiUrlHttps) {
+      try {
+        const res = await fetch(apiUrlHttps, {
+          signal: AbortSignal.timeout(10000),
+          headers: { 'User-Agent': 'VLC/3.0.21 LibVLC/3.0.21' },
+        });
+        if (res.ok) data = await res.json() as Record<string, unknown>;
+      } catch { /* HTTPS not supported by this server */ }
+    }
+
+    // Strategy 3: Direct fetch with original URL
     if (!data) {
       const res = await fetch(apiUrl, {
         signal: AbortSignal.timeout(15000),

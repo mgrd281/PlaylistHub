@@ -61,6 +61,20 @@ function resolveStreamUrl(item: PlaylistItem, episodeUrl?: string): string {
   return url;
 }
 
+/** Build a list of URLs to try, in priority order */
+function buildUrlChain(url: string): string[] {
+  const urls: string[] = [];
+  // 1. HTTPS direct (upgrade http→https to avoid mixed-content blocks)
+  if (url.startsWith('http://')) {
+    urls.push(url.replace('http://', 'https://'));
+  }
+  // 2. Original direct URL
+  urls.push(url);
+  // 3. Proxy (server-side fetch with scanner fallback)
+  urls.push(`/api/stream?url=${encodeURIComponent(url)}`);
+  return urls;
+}
+
 /** Extract Xtream credentials from a stream URL */
 function extractXtreamInfo(streamUrl: string) {
   const match = streamUrl.match(
@@ -101,7 +115,8 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hlsRef = useRef<import('hls.js').default | null>(null);
-  const fallbackTriedRef = useRef(false);
+  const urlChainRef = useRef<string[]>([]);
+  const urlChainIndexRef = useRef(0);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -160,28 +175,40 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
     /** Client-side direct Xtream API call (uses user's residential IP — bypasses datacenter blocks) */
     async function fetchSeriesDirectly(): Promise<typeof seriesEpisodes> {
       if (!xtream) return null;
-      const apiUrl = `${xtream.baseUrl}/player_api.php?username=${encodeURIComponent(xtream.username)}&password=${encodeURIComponent(xtream.password)}&action=get_series_info&series_id=${xtream.id}`;
-      const res = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) return null;
-      const data = await res.json();
-      const episodes = data.episodes;
-      if (!episodes || typeof episodes !== 'object') return null;
-      const seasons: { season: number; episodes: { id: string; title: string; season: number; episode: number; streamUrl: string }[] }[] = [];
-      for (const [seasonNum, eps] of Object.entries(episodes)) {
-        if (!Array.isArray(eps)) continue;
-        seasons.push({
-          season: parseInt(seasonNum) || 0,
-          episodes: (eps as Array<{ id?: string; title?: string; episode_num?: number; season?: number; container_extension?: string }>).map((ep) => ({
-            id: String(ep.id || ''),
-            title: ep.title || `Episode ${ep.episode_num || '?'}`,
-            season: ep.season || parseInt(seasonNum) || 0,
-            episode: ep.episode_num || 0,
-            streamUrl: `${xtream!.baseUrl}/series/${encodeURIComponent(xtream!.username)}/${encodeURIComponent(xtream!.password)}/${ep.id}.${ep.container_extension || 'mp4'}`,
-          })),
-        });
+      // Try HTTPS first (avoids mixed content on HTTPS sites), then HTTP
+      const bases = xtream.baseUrl.startsWith('http://')
+        ? [xtream.baseUrl.replace('http://', 'https://'), xtream.baseUrl]
+        : [xtream.baseUrl];
+
+      for (const base of bases) {
+        try {
+          const apiUrl = `${base}/player_api.php?username=${encodeURIComponent(xtream.username)}&password=${encodeURIComponent(xtream.password)}&action=get_series_info&series_id=${xtream.id}`;
+          const res = await fetch(apiUrl, { signal: AbortSignal.timeout(10000) });
+          if (!res.ok) continue;
+          const data = await res.json();
+          const episodes = data.episodes;
+          if (!episodes || typeof episodes !== 'object') continue;
+          const seasons: { season: number; episodes: { id: string; title: string; season: number; episode: number; streamUrl: string }[] }[] = [];
+          for (const [seasonNum, eps] of Object.entries(episodes)) {
+            if (!Array.isArray(eps)) continue;
+            seasons.push({
+              season: parseInt(seasonNum) || 0,
+              episodes: (eps as Array<{ id?: string; title?: string; episode_num?: number; season?: number; container_extension?: string }>).map((ep) => ({
+                id: String(ep.id || ''),
+                title: ep.title || `Episode ${ep.episode_num || '?'}`,
+                season: ep.season || parseInt(seasonNum) || 0,
+                episode: ep.episode_num || 0,
+                streamUrl: `${xtream!.baseUrl}/series/${encodeURIComponent(xtream!.username)}/${encodeURIComponent(xtream!.password)}/${ep.id}.${ep.container_extension || 'mp4'}`,
+              })),
+            });
+          }
+          seasons.sort((a, b) => a.season - b.season);
+          if (seasons.length > 0) {
+            return { seriesName: (data.info as Record<string, unknown>)?.name as string || '', seasons };
+          }
+        } catch { /* try next base URL */ }
       }
-      seasons.sort((a, b) => a.season - b.season);
-      return { seriesName: (data.info as Record<string, unknown>)?.name as string || '', seasons };
+      return null;
     }
 
     (async () => {
@@ -233,7 +260,6 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
 
     hlsRef.current?.destroy();
     hlsRef.current = null;
-    fallbackTriedRef.current = false;
     setError(null);
     setLoading(true);
     setPlaying(false);
@@ -246,8 +272,10 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
     const video = videoRef.current;
     if (!video) return;
 
-    // Use episode URL for series, otherwise resolve from item
     const url = resolveStreamUrl(item, activeEpisode?.streamUrl);
+    const chain = buildUrlChain(url);
+    urlChainRef.current = chain;
+    urlChainIndexRef.current = 0;
 
     const isHls =
       url.includes('.m3u8') ||
@@ -255,75 +283,38 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
       url.includes('/hls/') ||
       item.content_type === 'channel';
 
+    const saved = isLive ? 0 : getSavedPosition(url);
+
+    /** Try next URL in the fallback chain (for non-HLS) */
+    function tryNextUrl(): boolean {
+      const idx = urlChainIndexRef.current;
+      if (idx >= chain.length || !video) return false;
+      video.src = chain[idx];
+      video.load();
+      urlChainIndexRef.current = idx + 1;
+      return true;
+    }
+
     async function initPlayer() {
       if (!video) return;
       video.playbackRate = 1;
 
-      // Check for saved position (VOD only)
-      const saved = isLive ? 0 : getSavedPosition(url);
-
-      // ── For VOD (movies/series episodes): try DIRECT URL first ──
-      // <video> element doesn't enforce CORS, so the user's residential IP
-      // can fetch directly from the IPTV server (bypasses datacenter IP blocks)
+      // ── For VOD (movies/series episodes): cascading fallback chain ──
       if (!isHls) {
-        // Try direct URL first
-        video.src = url;
-        video.load();
-
-        const directWorked = await new Promise<boolean>((resolve) => {
-          const onLoaded = () => { cleanup(); resolve(true); };
-          const onError = () => { cleanup(); resolve(false); };
-          const cleanup = () => {
-            video.removeEventListener('loadeddata', onLoaded);
-            video.removeEventListener('error', onError);
-          };
-          video.addEventListener('loadeddata', onLoaded, { once: true });
-          video.addEventListener('error', onError, { once: true });
-          // Timeout after 8 seconds
-          setTimeout(() => { cleanup(); resolve(false); }, 8000);
-        });
-
-        if (directWorked) {
-          if (saved > 10) setResumeOffer(saved);
-          try { await video.play(); } catch { /* user presses play */ }
-          setLoading(false);
-          return;
-        }
-
-        // Direct failed → try through proxy
-        fallbackTriedRef.current = true;
-        video.src = proxyUrl(url);
-        video.load();
+        tryNextUrl(); // Start with first URL in chain
         if (saved > 10) {
           video.addEventListener('loadedmetadata', () => setResumeOffer(saved), { once: true });
         }
-        try { await video.play(); } catch { /* user presses play */ }
+        // The onError handler on <video> element handles fallback cascade
         setLoading(false);
         return;
       }
 
-      // ── For HLS (live channels): use proxy for manifest rewriting ──
+      // ── For HLS (live channels) ──
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari native HLS — try direct first, then proxy
-        video.src = url;
-        video.load();
-        const directWorked = await new Promise<boolean>((resolve) => {
-          const onLoaded = () => { cleanup(); resolve(true); };
-          const onError = () => { cleanup(); resolve(false); };
-          const cleanup = () => {
-            video.removeEventListener('loadeddata', onLoaded);
-            video.removeEventListener('error', onError);
-          };
-          video.addEventListener('loadeddata', onLoaded, { once: true });
-          video.addEventListener('error', onError, { once: true });
-          setTimeout(() => { cleanup(); resolve(false); }, 8000);
-        });
-        if (!directWorked) {
-          video.src = proxyUrl(url);
-          video.load();
-        }
+        // Safari native HLS — use chain
+        tryNextUrl();
         if (saved > 10) setResumeOffer(saved);
-        try { await video.play(); } catch { /* user presses play */ }
         setLoading(false);
         return;
       }
@@ -345,16 +336,17 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         });
         hlsRef.current = hls;
 
-        // Try direct HLS first, fallback to proxy
-        hls.loadSource(url);
+        // HLS.js uses fetch() which enforces CORS, so go through proxy
+        const hlsChain = chain.filter(u => u.startsWith('/api/'));
+        // If no proxy URLs, try direct (might work if IPTV supports CORS)
+        const hlsSource = hlsChain.length > 0 ? hlsChain[0] : chain[0];
+        hls.loadSource(hlsSource);
         hls.attachMedia(video);
 
-        // Detect quality levels
         hls.on(Hls.Events.MANIFEST_PARSED, async (_: unknown, data: { levels: { height: number; width: number; bitrate: number }[] }) => {
           setLoading(false);
           if (saved > 10) setResumeOffer(saved);
 
-          // Build quality options from HLS levels
           if (data.levels && data.levels.length > 1) {
             const q = data.levels.map((lvl, i) => ({
               height: lvl.height,
@@ -368,8 +360,6 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
               index: i,
             })).sort((a, b) => b.height - a.height);
             setQualities(q);
-
-            // Force highest quality by default
             hls.currentLevel = q[0].index;
             setCurrentQuality(q[0].index);
           }
@@ -377,23 +367,13 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
           try { await video.play(); } catch { /* user presses play */ }
         });
         let mediaErrorRecoveries = 0;
-        let networkRetries = 0;
         hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; details: string; type: string }) => {
           if (data.fatal) {
-            if (data.type === 'networkError' && networkRetries < 1) {
-              networkRetries++;
-              // Direct HLS failed → try proxy
-              if (!fallbackTriedRef.current) {
-                fallbackTriedRef.current = true;
-                hls.loadSource(proxyUrl(url));
-                return;
-              }
-              hls.startLoad();
-            } else if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
+            if (data.type === 'mediaError' && mediaErrorRecoveries < 3) {
               mediaErrorRecoveries++;
               hls.recoverMediaError();
             } else {
-              setError(`تعذّر تشغيل البث في المتصفح.`);
+              setError('تعذّر تشغيل البث في المتصفح.');
               setLoading(false);
             }
           }
@@ -401,17 +381,14 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
         return;
       }
 
-      // No HLS support at all — try direct URL
-      video.src = url;
-      video.load();
-      try { await video.play(); } catch { /* user presses play */ }
+      // No HLS support — try direct URL chain
+      tryNextUrl();
       setLoading(false);
     }
 
     void initPlayer();
 
     return () => {
-      // Save position on unmount
       if (video && video.currentTime > 5 && video.duration > 60 && !isLive) {
         savePosition(url, video.currentTime);
       }
@@ -866,15 +843,16 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
             onError={() => {
               // Let hls.js handle its own errors
               if (hlsRef.current) return;
-              // If direct URL failed and we haven't tried proxy yet, try it
-              if (!fallbackTriedRef.current && item) {
-                fallbackTriedRef.current = true;
+              // Try next URL in the fallback chain
+              const idx = urlChainIndexRef.current;
+              const chain = urlChainRef.current;
+              if (idx < chain.length) {
                 const v = videoRef.current;
                 if (!v) return;
-                const fallbackUrl = resolveStreamUrl(item, activeEpisode?.streamUrl);
-                v.src = proxyUrl(fallbackUrl);
+                v.src = chain[idx];
                 v.load();
                 v.play().catch(() => {});
+                urlChainIndexRef.current = idx + 1;
                 return;
               }
               setError('تعذّر تشغيل البث في المتصفح.');
