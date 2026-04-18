@@ -62,6 +62,43 @@ export async function GET(request: Request) {
     return NextResponse.json({ groups });
   }
 
+  // Mode: grouped — return all items organized by group_title (for Live TV)
+  if (mode === 'grouped') {
+    const searchParam = url.searchParams.get('search') || '';
+    let gQuery = supabase
+      .from('playlist_items')
+      .select('*')
+      .in('playlist_id', playlistIds)
+      .eq('content_type', contentType)
+      .order('name', { ascending: true });
+
+    if (searchParam) {
+      gQuery = gQuery.or(`name.ilike.%${searchParam}%,group_title.ilike.%${searchParam}%`);
+    }
+
+    const { data: allItems, error: gError } = await gQuery;
+    if (gError) {
+      return NextResponse.json({ error: gError.message }, { status: 500 });
+    }
+
+    const grouped: Record<string, typeof allItems> = {};
+    for (const item of allItems || []) {
+      const g = item.group_title || 'Uncategorized';
+      if (!grouped[g]) grouped[g] = [];
+      grouped[g].push(item);
+    }
+
+    const sections = Object.entries(grouped)
+      .map(([name, items]) => ({ name, items, count: items.length }))
+      .sort((a, b) => b.count - a.count);
+
+    return NextResponse.json({
+      sections,
+      total: (allItems || []).length,
+      groupCount: sections.length,
+    });
+  }
+
   // Standard items query
   let query = supabase
     .from('playlist_items')
