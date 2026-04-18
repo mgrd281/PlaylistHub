@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Home, ListMusic, Tv, Film, Clapperboard, LayoutGrid,
   Heart, Clock, History, Smartphone, Settings, LogOut,
-  Menu, Sun, Moon, Play, Zap,
+  Menu, Sun, Moon, Play,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ interface NavItem {
   icon: React.ElementType;
   badge?: string;
   matchExact?: boolean;
-  shortcut?: boolean; // quick-access links that don't show active state
+  shortcut?: boolean;
 }
 
 interface NavSection {
@@ -78,14 +78,10 @@ function checkActive(href: string, pathname: string, matchExact?: boolean, short
 function BrandMark({ compact }: { compact?: boolean }) {
   return (
     <div className={cn('flex items-center gap-2.5', compact ? '' : 'px-5 py-5')}>
-      <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 shadow-lg shadow-violet-500/25">
-        <Play className="h-4 w-4 text-white fill-white ml-0.5" />
-        <div className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 border-2 border-[var(--sidebar-bg,hsl(var(--card)))]" />
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white">
+        <Play className="h-3.5 w-3.5 text-black fill-black ml-0.5" />
       </div>
-      <div className="flex flex-col">
-        <span className="text-sm font-bold tracking-tight leading-none">PlaylistHub</span>
-        <span className="text-[10px] text-muted-foreground/60 font-medium tracking-wide mt-0.5">STREAMING</span>
-      </div>
+      <span className="text-sm font-bold tracking-tight">PlaylistHub</span>
     </div>
   );
 }
@@ -112,28 +108,27 @@ function NavLink({
         onNavigate?.();
       }}
       className={cn(
-        'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-200',
+        'group relative flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium transition-all duration-150',
         active
-          ? 'bg-white/[0.08] text-foreground'
+          ? 'bg-white/[0.08] text-white'
           : disabled
-          ? 'text-muted-foreground/40 cursor-default'
-          : 'text-muted-foreground hover:bg-white/[0.05] hover:text-foreground'
+          ? 'text-white/25 cursor-default'
+          : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
       )}
     >
-      {/* Active indicator bar */}
       {active && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-full bg-gradient-to-b from-violet-400 to-purple-500" />
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-full bg-white" />
       )}
 
       <item.icon className={cn(
-        'h-[18px] w-[18px] shrink-0 transition-colors duration-200',
-        active ? 'text-violet-400' : disabled ? 'text-muted-foreground/30' : 'text-muted-foreground/70 group-hover:text-muted-foreground'
+        'h-[16px] w-[16px] shrink-0',
+        active ? 'text-white' : disabled ? 'text-white/20' : 'text-white/40 group-hover:text-white/60'
       )} />
 
       <span className="flex-1 truncate">{item.name}</span>
 
       {item.badge && (
-        <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/[0.06] text-muted-foreground/40">
+        <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/[0.05] text-white/25">
           {item.badge}
         </span>
       )}
@@ -145,8 +140,8 @@ function NavLink({
 
 function SectionLabel({ label }: { label: string }) {
   return (
-    <div className="px-3 pt-5 pb-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/40">
+    <div className="px-3 pt-6 pb-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/20">
         {label}
       </span>
     </div>
@@ -184,37 +179,34 @@ function UserFooter({ onLogout }: { onLogout: () => void }) {
   const initials = username.slice(0, 2).toUpperCase();
 
   return (
-    <div className="p-3 space-y-2">
-      <Separator className="opacity-[0.06]" />
+    <div className="p-3 space-y-1">
+      <Separator className="opacity-[0.06] mb-2" />
 
-      {/* Theme toggle */}
       <button
         type="button"
         onClick={toggleTheme}
-        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-white/[0.05] hover:text-foreground transition-all duration-200"
+        className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium text-white/50 hover:bg-white/[0.04] hover:text-white/80 transition-all duration-150"
       >
-        {isDark ? <Sun className="h-[18px] w-[18px] text-muted-foreground/70" /> : <Moon className="h-[18px] w-[18px] text-muted-foreground/70" />}
+        {isDark ? <Sun className="h-4 w-4 text-white/40" /> : <Moon className="h-4 w-4 text-white/40" />}
         <span className="flex-1 text-left">{isDark ? 'Light Mode' : 'Dark Mode'}</span>
       </button>
 
-      {/* User card */}
-      <div className="flex items-center gap-3 rounded-xl bg-white/[0.04] p-3">
-        <Avatar className="h-8 w-8 ring-2 ring-white/[0.08]">
-          <AvatarFallback className="text-[10px] font-bold bg-gradient-to-br from-violet-500/20 to-purple-600/20 text-violet-300">
+      <div className="flex items-center gap-3 rounded-lg bg-white/[0.03] p-2.5 mt-1">
+        <Avatar className="h-7 w-7">
+          <AvatarFallback className="text-[10px] font-bold bg-white/[0.08] text-white/60">
             {initials}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold truncate">{username}</p>
-          <p className="text-[10px] text-muted-foreground/50 truncate">{email || 'Loading...'}</p>
+          <p className="text-xs font-medium text-white/70 truncate">{username}</p>
         </div>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 text-muted-foreground/50 hover:text-red-400 hover:bg-red-500/10"
+          className="h-6 w-6 shrink-0 text-white/30 hover:text-white/60 hover:bg-white/[0.05]"
           onClick={onLogout}
         >
-          <LogOut className="h-3.5 w-3.5" />
+          <LogOut className="h-3 w-3" />
         </Button>
       </div>
     </div>
@@ -236,10 +228,8 @@ export function Sidebar() {
 
   const sidebarContent = (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Brand */}
       <BrandMark />
 
-      {/* Navigation */}
       <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-2">
         {NAV_SECTIONS.map((section, si) => (
           <div key={si}>
@@ -258,7 +248,6 @@ export function Sidebar() {
         ))}
       </div>
 
-      {/* User footer */}
       <UserFooter onLogout={handleLogout} />
     </div>
   );
@@ -266,21 +255,21 @@ export function Sidebar() {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-[260px] lg:flex-col">
-        <div className="flex grow flex-col overflow-y-auto border-r border-white/[0.06] bg-card">
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-[240px] lg:flex-col">
+        <div className="flex grow flex-col overflow-y-auto border-r border-white/[0.06] bg-[#0a0a0a]">
           {sidebarContent}
         </div>
       </aside>
 
       {/* Mobile top bar + sheet */}
-      <div className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-white/[0.06] bg-card/95 backdrop-blur-xl px-4 lg:hidden">
+      <div className="sticky top-0 z-40 flex h-12 items-center gap-3 border-b border-white/[0.06] bg-[#0a0a0a]/95 backdrop-blur-xl px-4 lg:hidden">
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger>
             <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1">
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-[260px] p-0 border-r border-white/[0.06]">
+          <SheetContent side="left" className="w-[240px] p-0 border-r border-white/[0.06] bg-[#0a0a0a]">
             {sidebarContent}
           </SheetContent>
         </Sheet>
