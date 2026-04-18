@@ -333,7 +333,7 @@ export function VideoPlayerDialog({ item, onClose }: VideoPlayerDialogProps) {
 
           function loadHlsSource(hls: import('hls.js').default, src: string) {
             hls.loadSource(src);
-            hls.attachMedia(video);
+            hls.attachMedia(video!);
           }
 
           const hls = new Hls({
