@@ -26,6 +26,7 @@ final class PreviewPlayerModel: ObservableObject {
     @Published private(set) var hasPreviewSource = false
     @Published var isReady = false
     @Published var isMuted = true
+    @Published private(set) var previewProgress: Double = 0
 
     let player = AVPlayer()
     private var statusObserver: AnyCancellable?
@@ -37,7 +38,7 @@ final class PreviewPlayerModel: ObservableObject {
     /// Duration of the preview clip in seconds
     private static let clipDuration: Double = 30
     /// Timeout to wait for playback start
-    private static let loadTimeout: TimeInterval = 4
+    private static let loadTimeout: TimeInterval = 2.5
     /// Seek target as fraction of total duration (skip logos/intros)
     private static let seekFraction: Double = 0.10
 
@@ -63,7 +64,7 @@ final class PreviewPlayerModel: ObservableObject {
             }
 
             self.hasPreviewSource = true
-            let didPlay = await self.tryURLs(urls)
+            let didPlay = await self.tryURLsFast(urls)
             guard !Task.isCancelled else { return }
 
             if didPlay {
@@ -134,7 +135,8 @@ final class PreviewPlayerModel: ObservableObject {
         return ordered
     }
 
-    private func tryURLs(_ urls: [URL]) async -> Bool {
+    /// Fast URL probing: skip asset pre-validation, play directly, seek after first frame
+    private func tryURLsFast(_ urls: [URL]) async -> Bool {
         for url in urls {
             guard !Task.isCancelled else { return false }
 
@@ -144,47 +146,46 @@ final class PreviewPlayerModel: ObservableObject {
                 ]
             ])
 
-            do {
-                let playable = try await asset.load(.isPlayable)
-                guard playable else { continue }
+            let playerItem = AVPlayerItem(asset: asset)
+            playerItem.preferredForwardBufferDuration = 1
 
-                // Load duration to calculate seek point
-                let duration = try await asset.load(.duration)
-                let totalSeconds = CMTimeGetSeconds(duration)
+            player.automaticallyWaitsToMinimizeStalling = false
+            player.replaceCurrentItem(with: playerItem)
+            player.isMuted = true
+            previewStartTime = .zero
+            player.play()
 
-                let playerItem = AVPlayerItem(asset: asset)
-                // Minimal buffer for fast start
-                playerItem.preferredForwardBufferDuration = 3
-
-                player.replaceCurrentItem(with: playerItem)
-                player.isMuted = true
-
-                // Seek to an interesting point (10% in) if duration is known
-                if totalSeconds > 60 {
-                    let seekSeconds = totalSeconds * Self.seekFraction
-                    let seekTime = CMTime(seconds: seekSeconds, preferredTimescale: 600)
-                    await player.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 2, preferredTimescale: 600))
-                    previewStartTime = seekTime
-                } else {
-                    previewStartTime = .zero
-                }
-
-                player.play()
-
-                let ready = await waitForPlayback(timeout: Self.loadTimeout)
-                if ready {
-                    setupClipLoop()
-                    return true
-                } else {
-                    player.pause()
-                    player.replaceCurrentItem(with: nil)
-                }
-            } catch {
-                continue
+            let ready = await waitForPlayback(timeout: Self.loadTimeout)
+            if ready {
+                // Seek to interesting point AFTER first frame is visible
+                Task { [weak self] in await self?.seekToInterestingPoint() }
+                setupClipLoop()
+                return true
+            } else {
+                player.pause()
+                player.replaceCurrentItem(with: nil)
             }
         }
-        // All URLs failed — artwork fallback remains
         return false
+    }
+
+    /// Seek to an interesting point after playback has started (non-blocking)
+    private func seekToInterestingPoint() async {
+        for _ in 0..<10 {
+            guard !Task.isCancelled else { return }
+            guard let item = player.currentItem else { return }
+            let dur = item.duration
+            if dur.isValid && !dur.isIndefinite {
+                let totalSeconds = CMTimeGetSeconds(dur)
+                if totalSeconds > 60 {
+                    let seekTime = CMTime(seconds: totalSeconds * Self.seekFraction, preferredTimescale: 600)
+                    await player.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 2, preferredTimescale: 600))
+                    previewStartTime = seekTime
+                }
+                return
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
     }
 
     private func waitForPlayback(timeout: TimeInterval) async -> Bool {
@@ -215,30 +216,33 @@ final class PreviewPlayerModel: ObservableObject {
         }
     }
 
-    /// Loop the preview: play for clipDuration seconds, then seek back to start point
+    /// Loop the preview and track progress for the red bar
     private func setupClipLoop() {
         if let token = timeObserverToken {
             player.removeTimeObserver(token)
             timeObserverToken = nil
         }
 
-        let startSeconds = CMTimeGetSeconds(previewStartTime)
-        let clipEnd = startSeconds + Self.clipDuration
-
-        // Periodic time observer — check every 0.5s
         timeObserverToken = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
             guard let self else { return }
             let current = CMTimeGetSeconds(time)
+            let startSeconds = CMTimeGetSeconds(self.previewStartTime)
+            let clipEnd = startSeconds + Self.clipDuration
 
-            // If past clip end OR near file end → loop back
+            // Update progress for red bar
+            let elapsed = current - startSeconds
+            self.previewProgress = min(max(elapsed / Self.clipDuration, 0), 1)
+
+            // Loop back when clip ends or near file end
             let item = self.player.currentItem
             let dur = item?.duration ?? .indefinite
             let fileDuration = dur.isValid && !dur.isIndefinite ? CMTimeGetSeconds(dur) : Double.greatestFiniteMagnitude
 
             if current >= clipEnd || current >= fileDuration - 0.5 {
+                self.previewProgress = 0
                 self.player.seek(to: self.previewStartTime, toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 1, preferredTimescale: 600))
                 self.player.play()
             }
@@ -261,6 +265,7 @@ final class PreviewPlayerModel: ObservableObject {
         player.replaceCurrentItem(with: nil)
         statusObserver = nil
         isReady = false
+        previewProgress = 0
         state = .idle
         hasPreviewSource = false
         didStart = false

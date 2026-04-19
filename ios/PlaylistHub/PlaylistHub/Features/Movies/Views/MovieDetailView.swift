@@ -103,16 +103,8 @@ struct MovieDetailView: View {
             let topInset = max(geo.safeAreaInsets.top, 20)
 
             ZStack(alignment: .bottom) {
-                // Layer 1: Video preview (muted, autoplaying 30s clip)
-                if previewVM.state == .ready {
-                    PreviewVideoLayer(player: previewVM.player)
-                        .frame(width: width, height: heroHeight)
-                        .clipped()
-                        .transition(.opacity.animation(.easeIn(duration: 0.6)))
-                } else if previewVM.state == .loading && previewVM.hasPreviewSource {
-                    previewLoadingLayer(width: width, height: heroHeight)
-                } else if let url = item.resolvedLogoURL {
-                    // Layer 2: Artwork with Ken Burns pan/zoom animation
+                // Layer 1: Artwork (always visible — instant, no black screen)
+                if let url = item.resolvedLogoURL {
                     CachedAsyncImage(url: url) {
                         heroFallback(width: width, height: heroHeight)
                     }
@@ -128,6 +120,14 @@ struct MovieDetailView: View {
                     }
                 } else {
                     heroFallback(width: width, height: heroHeight)
+                }
+
+                // Layer 2: Video preview (crossfades in over artwork when ready)
+                if previewVM.state == .ready {
+                    PreviewVideoLayer(player: previewVM.player)
+                        .frame(width: width, height: heroHeight)
+                        .clipped()
+                        .transition(.opacity.animation(.easeIn(duration: 0.6)))
                 }
 
                 // Bottom gradient fade to black
@@ -150,6 +150,19 @@ struct MovieDetailView: View {
                     )
                     .frame(height: heroHeight * 0.15)
                     Spacer()
+                }
+
+                // Netflix-style red progress line
+                if previewVM.state == .ready {
+                    VStack {
+                        Spacer()
+                        Rectangle()
+                            .fill(Color(red: 0.898, green: 0.035, blue: 0.078))
+                            .frame(width: width * previewVM.previewProgress, height: 3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .animation(.linear(duration: 0.1), value: previewVM.previewProgress)
+                    }
+                    .frame(width: width, height: heroHeight)
                 }
 
                 // Mute toggle + preview badge (bottom-right of hero)
