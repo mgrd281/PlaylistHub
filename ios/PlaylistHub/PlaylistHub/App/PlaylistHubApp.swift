@@ -19,9 +19,9 @@ struct PlaylistHubApp: App {
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var selectedTab: AppTab = .dashboard
+    @Published var selectedTab: AppTab = .home
 
     enum AppTab: Int, CaseIterable {
-        case dashboard, liveTV, playlists, settings
+        case home, liveTV, movies, series, settings
     }
 }

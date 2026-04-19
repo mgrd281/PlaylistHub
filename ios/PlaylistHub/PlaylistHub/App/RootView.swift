@@ -32,11 +32,11 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $appState.selectedTab) {
-            DashboardView()
+            HomeView()
                 .tabItem {
-                    Label("Dashboard", systemImage: "square.grid.2x2.fill")
+                    Label("Home", systemImage: "house.fill")
                 }
-                .tag(AppState.AppTab.dashboard)
+                .tag(AppState.AppTab.home)
 
             LiveTVView()
                 .tabItem {
@@ -44,11 +44,17 @@ struct MainTabView: View {
                 }
                 .tag(AppState.AppTab.liveTV)
 
-            PlaylistsView()
+            MoviesView()
                 .tabItem {
-                    Label("Playlists", systemImage: "list.bullet.rectangle.portrait.fill")
+                    Label("Movies", systemImage: "film.fill")
                 }
-                .tag(AppState.AppTab.playlists)
+                .tag(AppState.AppTab.movies)
+
+            SeriesView()
+                .tabItem {
+                    Label("Series", systemImage: "rectangle.stack.fill")
+                }
+                .tag(AppState.AppTab.series)
 
             SettingsView()
                 .tabItem {
