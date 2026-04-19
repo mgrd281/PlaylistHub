@@ -361,8 +361,9 @@ final class BackdropViewModel: ObservableObject {
     private var rotationTask: Task<Void, Never>?
 
     /// Curated premium movie poster URLs — used as fallback when user has no playlist artwork.
-    /// All verified 780×1170 portrait JPEG posters from TMDB CDN.
+    /// All verified portrait JPEG posters.
     private static let curatedPosterURLs: [URL] = [
+        "https://g.top4top.io/p_3761feu321.jpg",
         "https://image.tmdb.org/t/p/w780/d5NXSklXo0qyIYkgV94XAgMIckC.jpg",
         "https://image.tmdb.org/t/p/w780/sv1xJUazXeYqALzczSZ3O6nkH75.jpg",
         "https://image.tmdb.org/t/p/w780/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg",
@@ -371,7 +372,6 @@ final class BackdropViewModel: ObservableObject {
         "https://image.tmdb.org/t/p/w780/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg",
         "https://image.tmdb.org/t/p/w780/ngl2FKBlU4fhbdsrtdom9LVLBXw.jpg",
         "https://image.tmdb.org/t/p/w780/vpnVM9B6NMmQpWeZvzLvDESb2QY.jpg",
-        "https://image.tmdb.org/t/p/w780/gPbM0MK8CP8A174rmUwGsAB5gKr.jpg",
         "https://image.tmdb.org/t/p/w780/aosm8NMQ3UyoBVpSxyimorCQykC.jpg",
         "https://image.tmdb.org/t/p/w780/udDclJoHjfjb8Ekgsd4FDteOkCU.jpg",
     ].compactMap(URL.init(string:))
