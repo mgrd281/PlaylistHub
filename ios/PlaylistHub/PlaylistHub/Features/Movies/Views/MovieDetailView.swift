@@ -71,8 +71,6 @@ struct MovieDetailView: View {
                 }
             }
             .ignoresSafeArea(edges: .top)
-
-            floatingTopBar
         }
         .statusBarHidden()
         .preferredColorScheme(.dark)
@@ -82,6 +80,8 @@ struct MovieDetailView: View {
         .onChange(of: showPlayer) { _, isShowing in
             if isShowing {
                 previewVM.stop()
+            } else {
+                previewVM.startPreview(for: item)
             }
         }
         .task {
@@ -94,20 +94,23 @@ struct MovieDetailView: View {
         }
     }
 
-    // MARK: - Hero Section (Video Preview + Cinematic Artwork Fallback)
+    // MARK: - Hero Section (Preview First)
 
     private var heroSection: some View {
         GeometryReader { geo in
             let width = geo.size.width
             let heroHeight: CGFloat = width * 1.3
+            let topInset = max(geo.safeAreaInsets.top, 20)
 
             ZStack(alignment: .bottom) {
                 // Layer 1: Video preview (muted, autoplaying 30s clip)
-                if previewVM.isReady {
+                if previewVM.state == .ready {
                     PreviewVideoLayer(player: previewVM.player)
                         .frame(width: width, height: heroHeight)
                         .clipped()
                         .transition(.opacity.animation(.easeIn(duration: 0.6)))
+                } else if previewVM.state == .loading && previewVM.hasPreviewSource {
+                    previewLoadingLayer(width: width, height: heroHeight)
                 } else if let url = item.resolvedLogoURL {
                     // Layer 2: Artwork with Ken Burns pan/zoom animation
                     CachedAsyncImage(url: url) {
@@ -150,7 +153,7 @@ struct MovieDetailView: View {
                 }
 
                 // Mute toggle + preview badge (bottom-right of hero)
-                if previewVM.isReady {
+                if previewVM.state == .ready {
                     HStack(spacing: 8) {
                         Spacer()
 
@@ -178,11 +181,46 @@ struct MovieDetailView: View {
                     .padding(.trailing, 16)
                     .padding(.bottom, 80)
                 }
+
+                // Dismiss button inside hero so it scrolls away with hero (not sticky)
+                VStack {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(.black.opacity(0.5), in: Circle())
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, topInset + 12)
+                    Spacer()
+                }
             }
             .frame(width: width, height: heroHeight)
-            .animation(.easeInOut(duration: 0.5), value: previewVM.isReady)
+            .animation(.easeInOut(duration: 0.5), value: previewVM.state)
         }
         .aspectRatio(1 / 1.3, contentMode: .fit)
+    }
+
+    private func previewLoadingLayer(width: CGFloat, height: CGFloat) -> some View {
+        ZStack {
+            LinearGradient(
+                colors: [.black, .black.opacity(0.85), .black.opacity(0.65)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            VStack(spacing: 10) {
+                ProgressView()
+                    .tint(.white.opacity(0.85))
+                Text("Loading preview")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+        }
+        .frame(width: width, height: height)
     }
 
     private func heroFallback(width: CGFloat, height: CGFloat) -> some View {
@@ -205,23 +243,6 @@ struct MovieDetailView: View {
             }
         }
         .frame(width: width, height: height)
-    }
-
-    // MARK: - Floating Top Bar
-
-    private var floatingTopBar: some View {
-        HStack {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(.black.opacity(0.5), in: Circle())
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 54)
     }
 
     // MARK: - Content Section
