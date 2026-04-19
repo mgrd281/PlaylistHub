@@ -29,6 +29,7 @@ struct RootView: View {
 
 struct MainTabView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var themeManager: ThemeManager
 
     var body: some View {
         TabView(selection: $appState.selectedTab) {
@@ -62,6 +63,6 @@ struct MainTabView: View {
                 }
                 .tag(AppState.AppTab.settings)
         }
-        .tint(.red)
+        .tint(themeManager.accentColor)
     }
 }

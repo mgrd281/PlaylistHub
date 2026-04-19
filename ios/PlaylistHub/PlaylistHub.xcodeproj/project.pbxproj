@@ -20,6 +20,7 @@
 		4CF0A7A5AFDBFC4412CD0439 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D87095ABF15472C7518312 /* AppConfig.swift */; };
 		4EA15259EB6BDA9E89BDF160 /* SeriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B771C2E95F74C0E9A62E444E /* SeriesView.swift */; };
 		5115F334B1C32441F1B2184F /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E46E374DE46C6DD0B85877 /* DashboardView.swift */; };
+		5F592323645FD4855A57AFB1 /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CEE276D84134D7B9A8B893B /* ThemeManager.swift */; };
 		B7C169D965E864F99B184B92 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B03BB81AD4CB797EB55479 /* PlayerView.swift */; };
 		BC19BFF44FADABAF25BC6741 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678583869343B62DE3381494 /* LoginView.swift */; };
 		C80E1B55970AC4382CBC18C7 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDA21138AB82340B51337E1 /* KeychainHelper.swift */; };
@@ -49,6 +50,7 @@
 		678583869343B62DE3381494 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		79D87095ABF15472C7518312 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		8CDA21138AB82340B51337E1 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		8CEE276D84134D7B9A8B893B /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 		A16A13EF96F0187ACFC70B2A /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		B00FC575C15D1FC08C386E3E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		B771C2E95F74C0E9A62E444E /* SeriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesView.swift; sourceTree = "<group>"; };
@@ -207,6 +209,7 @@
 				5AF08A1A1B3F4BBDB74588F1 /* Extensions */,
 				10F3DC4C9D72DEFCDF7571ED /* Models */,
 				8CD9B9C68A7777048399741A /* Services */,
+				CF41BF5A2B9324D07E25B631 /* Theme */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -280,6 +283,14 @@
 				B00FC575C15D1FC08C386E3E /* RootView.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		CF41BF5A2B9324D07E25B631 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				8CEE276D84134D7B9A8B893B /* ThemeManager.swift */,
+			);
+			path = Theme;
 			sourceTree = "<group>";
 		};
 		D4452547C75067953C4C8BC3 /* Views */ = {
@@ -409,6 +420,7 @@
 				E95AD179054FE17FFEC18A89 /* SettingsView.swift in Sources */,
 				DBE559C25971769129324AEE /* SplashView.swift in Sources */,
 				E94BE6D8FD123625648F4304 /* SupabaseManager.swift in Sources */,
+				5F592323645FD4855A57AFB1 /* ThemeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

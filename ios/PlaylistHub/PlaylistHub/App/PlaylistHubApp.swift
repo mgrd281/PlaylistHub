@@ -5,6 +5,7 @@ struct PlaylistHubApp: App {
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var appState = AppState()
     @StateObject private var deviceManager = DeviceManager.shared
+    @StateObject private var themeManager = ThemeManager.shared
 
     var body: some Scene {
         WindowGroup {
@@ -12,7 +13,9 @@ struct PlaylistHubApp: App {
                 .environmentObject(authManager)
                 .environmentObject(appState)
                 .environmentObject(deviceManager)
+                .environmentObject(themeManager)
                 .preferredColorScheme(.dark)
+                .tint(themeManager.accentColor)
         }
     }
 }
