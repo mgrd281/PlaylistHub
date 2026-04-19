@@ -531,7 +531,8 @@ struct LiveTVView: View {
                             ForEach(vm.displayItems) { item in
                                 IPTVChannelRow(
                                     item: item,
-                                    isPlaying: item.id == vm.playingItem?.id
+                                    isPlaying: item.id == vm.playingItem?.id,
+                                    healthStatus: vm.channelHealth(for: item)
                                 ) {
                                     vm.playChannel(item)
                                 }
@@ -589,7 +590,8 @@ struct LiveTVView: View {
                             ForEach(vm.searchResults) { item in
                                 IPTVChannelRow(
                                     item: item,
-                                    isPlaying: item.id == vm.playingItem?.id
+                                    isPlaying: item.id == vm.playingItem?.id,
+                                    healthStatus: vm.channelHealth(for: item)
                                 ) {
                                     vm.playChannel(item)
                                 }
@@ -661,12 +663,13 @@ struct LiveTVView: View {
 private struct IPTVChannelRow: View {
     let item: PlaylistItem
     let isPlaying: Bool
+    let healthStatus: ChannelHealthManager.ChannelStatus
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 10) {
-                // Channel logo
+                // Channel logo with health dot overlay
                 Group {
                     if let logoURL = item.resolvedLogoURL {
                         CachedAsyncImage(url: logoURL) {
@@ -684,13 +687,27 @@ private struct IPTVChannelRow: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(isPlaying ? Color.red.opacity(0.5) : .clear, lineWidth: 1.5)
                 )
+                .overlay(alignment: .bottomTrailing) {
+                    // Health status dot
+                    if healthStatus != .unknown {
+                        Circle()
+                            .fill(healthStatus == .working ? Color.green : Color.red.opacity(0.7))
+                            .frame(width: 8, height: 8)
+                            .overlay(
+                                Circle().stroke(Color(.systemBackground), lineWidth: 1.5)
+                            )
+                            .offset(x: 2, y: 2)
+                    }
+                }
 
                 // Channel info
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
-                        .font(.subheadline.weight(isPlaying ? .semibold : .regular))
-                        .foregroundStyle(isPlaying ? .red : .primary)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(item.name)
+                            .font(.subheadline.weight(isPlaying ? .semibold : .regular))
+                            .foregroundStyle(isPlaying ? .red : healthStatus == .failed ? .secondary : .primary)
+                            .lineLimit(1)
+                    }
                     if let group = item.groupTitle {
                         Text(group)
                             .font(.caption2)
@@ -712,9 +729,9 @@ private struct IPTVChannelRow: View {
                     }
                     .frame(width: 18)
                 } else {
-                    Image(systemName: "play.fill")
+                    Image(systemName: healthStatus == .failed ? "xmark.circle" : "play.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(healthStatus == .failed ? .red.opacity(0.4) : .secondary)
                         .frame(width: 26, height: 26)
                         .background(Color(.systemGray6))
                         .clipShape(Circle())
@@ -723,6 +740,7 @@ private struct IPTVChannelRow: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(isPlaying ? Color.red.opacity(0.06) : .clear)
+            .opacity(healthStatus == .failed ? 0.6 : 1.0)
             .contentShape(Rectangle())
         }
         .buttonStyle(IPTVRowButtonStyle())
@@ -1067,6 +1085,13 @@ final class LiveTVViewModel: ObservableObject {
     private var fallbackURLs: [URL] = []
     private var fallbackTimer: DispatchWorkItem?
 
+    /// Channel-level auto-fallback state
+    private var channelFallbackAttempts = 0
+    private static let maxChannelFallbacks = 5  // max channels to try before giving up
+
+    /// Channel health manager
+    private let health = ChannelHealthManager.shared
+
     /// In-memory cache: playlistId → (categories, allChannels, timestamp)
     static var channelCache: [String: (categories: [LiveTVCategory], channels: [PlaylistItem], ts: CFAbsoluteTime)] = [:]
     private static let cacheTTL: CFAbsoluteTime = 600 // 10 minutes
@@ -1092,14 +1117,26 @@ final class LiveTVViewModel: ObservableObject {
 
     var totalChannels: Int { allChannels.count }
 
-    // Current display items based on selected category + group
+    // Current display items based on selected category + group, sorted by health
     var displayItems: [PlaylistItem] {
         guard let cat = activeCategory else { return [] }
 
+        let raw: [PlaylistItem]
         if let g = activeGroup, let group = cat.groups.first(where: { $0.name == g }) {
-            return group.items
+            raw = group.items
+        } else {
+            raw = cat.groups.flatMap(\.items)
         }
-        return cat.groups.flatMap(\.items)
+
+        // Smart ordering: working first, unknown middle, failed last
+        return raw.sorted { a, b in
+            health.sortScore(for: a.resolvedStreamURL) > health.sortScore(for: b.resolvedStreamURL)
+        }
+    }
+
+    /// Health status for a channel (used by UI)
+    func channelHealth(for item: PlaylistItem) -> ChannelHealthManager.ChannelStatus {
+        health.status(for: item.resolvedStreamURL)
     }
 
     var searchResults: [PlaylistItem] {
@@ -1108,6 +1145,8 @@ final class LiveTVViewModel: ObservableObject {
         return allChannels.filter {
             $0.name.lowercased().contains(q) ||
             ($0.groupTitle?.lowercased().contains(q) ?? false)
+        }.sorted { a, b in
+            health.sortScore(for: a.resolvedStreamURL) > health.sortScore(for: b.resolvedStreamURL)
         }
     }
 
@@ -1244,7 +1283,12 @@ final class LiveTVViewModel: ObservableObject {
     private func autoPlayFirstChannelIfNeeded() {
         guard playingItem == nil else { return }
         let items = displayItems
-        if let first = items.first {
+        // Prefer a known-working channel, otherwise take first unknown
+        if let working = items.first(where: { health.status(for: $0.resolvedStreamURL) == .working }) {
+            playChannel(working)
+        } else if let first = items.first(where: { !health.isKnownDead($0.resolvedStreamURL) }) {
+            playChannel(first)
+        } else if let first = items.first {
             playChannel(first)
         }
     }
@@ -1300,7 +1344,7 @@ final class LiveTVViewModel: ObservableObject {
 
     // MARK: - Inline player
 
-    func playChannel(_ item: PlaylistItem) {
+    func playChannel(_ item: PlaylistItem, isAutoFallback: Bool = false) {
         playingItem = item
         playerError = nil
         playerBuffering = true
@@ -1308,10 +1352,16 @@ final class LiveTVViewModel: ObservableObject {
         fallbackTimer?.cancel()
         fallbackURLs = []
 
+        // Reset channel-level fallback counter on manual selection
+        if !isAutoFallback {
+            channelFallbackAttempts = 0
+        }
+
         let cascade = AppConfig.streamCascade(for: item.resolvedStreamURL)
         guard let first = cascade.first else {
             playerError = "Invalid stream URL"
             playerBuffering = false
+            health.markFailed(item.resolvedStreamURL)
             return
         }
 
@@ -1353,6 +1403,11 @@ final class LiveTVViewModel: ObservableObject {
                     self.inlinePlayer?.play()
                     self.fallbackTimer?.cancel()
                     self.fallbackURLs = [] // Success — discard remaining fallbacks
+                    // Mark channel as working
+                    if let stream = self.playingItem?.resolvedStreamURL {
+                        self.health.markWorking(stream)
+                    }
+                    self.channelFallbackAttempts = 0
                 case .failed:
                     self.tryNextFallback()
                 default:
@@ -1378,15 +1433,65 @@ final class LiveTVViewModel: ObservableObject {
         fallbackTimer?.cancel()
 
         guard !fallbackURLs.isEmpty else {
-            playerBuffering = false
+            // All cascade URLs exhausted for this channel
             if inlinePlayer?.currentItem?.status != .readyToPlay {
-                playerError = "Stream unavailable"
+                // Mark channel as failed
+                if let stream = playingItem?.resolvedStreamURL {
+                    health.markFailed(stream)
+                }
+                // Auto-switch to next valid channel
+                autoFallbackToNextChannel()
             }
             return
         }
 
         let next = fallbackURLs.removeFirst()
         playStreamURL(next)
+    }
+
+    /// Automatically switch to the next valid channel in the current list
+    private func autoFallbackToNextChannel() {
+        guard channelFallbackAttempts < Self.maxChannelFallbacks else {
+            // Exhausted max attempts — show error
+            playerBuffering = false
+            playerError = "No working channels found"
+            channelFallbackAttempts = 0
+            return
+        }
+
+        channelFallbackAttempts += 1
+
+        guard let current = playingItem else {
+            playerBuffering = false
+            playerError = "Stream unavailable"
+            return
+        }
+
+        let items = displayItems.isEmpty ? allChannels : displayItems
+        guard let idx = items.firstIndex(where: { $0.id == current.id }) else {
+            playerBuffering = false
+            playerError = "Stream unavailable"
+            return
+        }
+
+        // Search forward for a non-known-dead channel
+        let remaining = items[(idx + 1)...]
+        if let next = remaining.first(where: { !health.isKnownDead($0.resolvedStreamURL) }) {
+            playChannel(next, isAutoFallback: true)
+            return
+        }
+
+        // Wrap around from start (before current index)
+        let before = items[..<idx]
+        if let next = before.first(where: { !health.isKnownDead($0.resolvedStreamURL) }) {
+            playChannel(next, isAutoFallback: true)
+            return
+        }
+
+        // Every channel in the list is known dead — stop
+        playerBuffering = false
+        playerError = "No working channels found"
+        channelFallbackAttempts = 0
     }
 
     func retryCurrentChannel() {
@@ -1419,17 +1524,27 @@ final class LiveTVViewModel: ObservableObject {
     func playNextChannel() {
         guard let playing = playingItem else { return }
         let items = displayItems.isEmpty ? allChannels : displayItems
-        guard let idx = items.firstIndex(where: { $0.id == playing.id }),
-              idx < items.count - 1 else { return }
-        playChannel(items[idx + 1])
+        guard let idx = items.firstIndex(where: { $0.id == playing.id }) else { return }
+        // Skip known-dead channels when manually navigating
+        let remaining = items[(idx + 1)...]
+        if let next = remaining.first(where: { !health.isKnownDead($0.resolvedStreamURL) }) {
+            playChannel(next)
+        } else if let next = remaining.first {
+            playChannel(next) // fallback: play next even if dead
+        }
     }
 
     func playPrevChannel() {
         guard let playing = playingItem else { return }
         let items = displayItems.isEmpty ? allChannels : displayItems
-        guard let idx = items.firstIndex(where: { $0.id == playing.id }),
-              idx > 0 else { return }
-        playChannel(items[idx - 1])
+        guard let idx = items.firstIndex(where: { $0.id == playing.id }) else { return }
+        // Skip known-dead channels when manually navigating
+        let before = items[..<idx].reversed()
+        if let prev = before.first(where: { !health.isKnownDead($0.resolvedStreamURL) }) {
+            playChannel(prev)
+        } else if let prev = before.first {
+            playChannel(prev) // fallback: play prev even if dead
+        }
     }
 
     private func teardownPlayer() {

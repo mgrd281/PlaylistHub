@@ -13,6 +13,7 @@
 		2AE3BBB4B395FCAF2F91D088 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B443990D0DE0D87C694B04 /* HomeView.swift */; };
 		2F61DD8BE07BC732C3C1A39B /* DeviceInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23AD53101C88C3935A572D80 /* DeviceInfoView.swift */; };
 		3265A6DF09766AF47A4634A5 /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02424ED07E2345E8FEE76928 /* DeviceManager.swift */; };
+		3565DED5B5F677EFDC63CB34 /* ChannelHealthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 982D7813C33AD3CD1F313FAD /* ChannelHealthManager.swift */; };
 		384CF2625095CDA17466588F /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E54D16CFBEA2671A756307 /* Extensions.swift */; };
 		4070AE18279C2693AAE32266 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44CD09BBC1D508CF1F26967D /* AuthManager.swift */; };
 		432D8F57ED08184F94952F3A /* MoviesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521BB1FB92D63A0234B463F2 /* MoviesView.swift */; };
@@ -58,6 +59,7 @@
 		79D87095ABF15472C7518312 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		8CDA21138AB82340B51337E1 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		8CEE276D84134D7B9A8B893B /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
+		982D7813C33AD3CD1F313FAD /* ChannelHealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelHealthManager.swift; sourceTree = "<group>"; };
 		A16A13EF96F0187ACFC70B2A /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		B00FC575C15D1FC08C386E3E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHistoryManager.swift; sourceTree = "<group>"; };
@@ -238,6 +240,7 @@
 			children = (
 				44CD09BBC1D508CF1F26967D /* AuthManager.swift */,
 				C1D70EF0595F56F8702826DA /* BuildInfo.swift */,
+				982D7813C33AD3CD1F313FAD /* ChannelHealthManager.swift */,
 				EF388B01C376C5E4B72CF928 /* DataService.swift */,
 				02424ED07E2345E8FEE76928 /* DeviceManager.swift */,
 				1C3149B3D0FB1ED1D81315FD /* ImageCache.swift */,
@@ -416,6 +419,7 @@
 				4CF0A7A5AFDBFC4412CD0439 /* AppConfig.swift in Sources */,
 				4070AE18279C2693AAE32266 /* AuthManager.swift in Sources */,
 				58D66EC37D7D00C076F46C1E /* BuildInfo.swift in Sources */,
+				3565DED5B5F677EFDC63CB34 /* ChannelHealthManager.swift in Sources */,
 				5115F334B1C32441F1B2184F /* DashboardView.swift in Sources */,
 				ED3CE299AB2013DD8821CEF8 /* DataService.swift in Sources */,
 				2F61DD8BE07BC732C3C1A39B /* DeviceInfoView.swift in Sources */,
