@@ -722,7 +722,7 @@ private struct IPTVPill: View {
                 Text(name)
                     .lineLimit(1)
                 Text("\(count)")
-                    .foregroundStyle(isSelected ? .white.opacity(0.5) : .tertiary)
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.5) : Color.gray.opacity(0.5))
             }
             .font(.caption2.weight(.medium))
             .padding(.horizontal, 9)
