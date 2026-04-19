@@ -251,8 +251,10 @@ struct PlayerView: View {
                 bottomBar
             }
 
-            // Center play/pause — premium frosted glass
-            centerPlayPause
+            // Center play/pause — hidden during initial buffering (spinner covers it)
+            if vm.hasFirstFrame || vm.error != nil {
+                centerPlayPause
+            }
         }
     }
 
@@ -1090,7 +1092,7 @@ final class PlayerViewModel: ObservableObject {
                 }
                 let status = self.player.timeControlStatus
                 self.isBuffering = status == .waitingToPlayAtSpecifiedRate
-                self.isPlaying = status == .playing
+                self.isPlaying = status == .playing || status == .waitingToPlayAtSpecifiedRate
 
                 // Save watch progress every ~5 seconds
                 let now = CFAbsoluteTimeGetCurrent()
