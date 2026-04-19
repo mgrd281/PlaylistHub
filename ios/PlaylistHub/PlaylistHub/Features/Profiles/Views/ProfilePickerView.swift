@@ -436,7 +436,7 @@ final class BackdropViewModel: ObservableObject {
         // Download & score images concurrently OFF the main actor
         let candidates: [(image: UIImage, score: Int)] = await withTaskGroup(of: (UIImage?, Int).self) { group in
             for url in urls {
-                group.addTask(priority: .userInitiated) { [self] in
+                group.addTask(priority: .userInitiated) {
                     guard let img = await Self.loadHighResImage(from: url) else { return (nil, 0) }
                     let score = Self.scoreImage(img)
                     return (img, score)
