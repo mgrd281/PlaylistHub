@@ -465,7 +465,7 @@ final class BackdropViewModel: ObservableObject {
 
     /// Gather artwork URLs from user's playlists — movies first, then series.
     /// Uses a simple approach: grab items that have any image URL.
-    nonisolated private func gatherArtworkURLs() async -> [URL] {
+    private func gatherArtworkURLs() async -> [URL] {
         do {
             let supabase = SupabaseManager.shared.client
             let session = try await supabase.auth.session
