@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" width="560" height="160">
+  <title>PlayMy — Wordmark on Dark</title>
+
+  <defs>
+    <!-- Background: cinematic dark with warm center glow -->
+    <radialGradient id="bgGlow" cx="38%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#0F0F1A"/>
+      <stop offset="100%" stop-color="#08080C"/>
+    </radialGradient>
+
+    <!-- Accent gradient for the play triangle -->
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F0C850"/>
+      <stop offset="50%" stop-color="#D4952A"/>
+      <stop offset="100%" stop-color="#A86C10"/>
+    </linearGradient>
+
+    <!-- Soft glow behind the triangle -->
+    <radialGradient id="triGlow" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#D4952A" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#D4952A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="560" height="160" fill="url(#bgGlow)"/>
+
+  <!-- ─── Wordmark: Pl▶y  My ─── -->
+
+  <!-- Ambient glow behind triangle -->
+  <ellipse cx="222" cy="82" rx="38" ry="34" fill="url(#triGlow)"/>
+
+  <!--
+    Layout anatomy (approximate for SF Pro Display / Inter Bold 72px):
+    "Pl"   → x=52,  bold 72px, white
+    ▶      → x=148, amber triangle replacing "a"
+    "y"    → x=192, bold 72px, white
+    "My"   → x=258, medium 48px, amber
+  -->
+
+  <!-- "Pl" -->
+  <text x="52" y="104"
+        font-family="'SF Pro Display', Inter, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="700"
+        font-size="76"
+        fill="#FAFAFA"
+        letter-spacing="-3">Pl</text>
+
+  <!-- Play triangle (replaces "a") — sized between x-height and cap-height -->
+  <polygon
+    points="148,46 148,104 188,75"
+    fill="url(#accent)"
+    stroke="url(#accent)"
+    stroke-width="7"
+    stroke-linejoin="round"/>
+
+  <!-- "y" -->
+  <text x="192" y="104"
+        font-family="'SF Pro Display', Inter, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="700"
+        font-size="76"
+        fill="#FAFAFA"
+        letter-spacing="-1">y</text>
+
+  <!-- "My" sub-brand — smaller, lighter weight, accent color -->
+  <text x="258" y="104"
+        font-family="'SF Pro Display', Inter, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="500"
+        font-size="50"
+        fill="#D4952A"
+        letter-spacing="2">My</text>
+
+  <!-- Subtle baseline accent line connecting the two word-parts -->
+  <line x1="148" y1="114" x2="330" y2="114"
+        stroke="#D4952A" stroke-opacity="0.12" stroke-width="1"/>
+</svg>

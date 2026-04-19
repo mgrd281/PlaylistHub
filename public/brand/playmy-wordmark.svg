@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" width="400" height="100">
+  <title>PlayMy — Wordmark (Transparent)</title>
+
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F0C850"/>
+      <stop offset="50%" stop-color="#D4952A"/>
+      <stop offset="100%" stop-color="#A86C10"/>
+    </linearGradient>
+  </defs>
+
+  <!--
+    Transparent-background wordmark for use in app headers, nav bars,
+    and dark UI surfaces. Text is white — swap to #09090B for light mode.
+
+    Structure:
+      Pl  [▶]  y    My
+      bold        medium
+      white       amber
+  -->
+
+  <!-- "Pl" -->
+  <text x="16" y="68"
+        font-family="'SF Pro Display', Inter, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="700"
+        font-size="52"
+        fill="#FAFAFA"
+        letter-spacing="-2">Pl</text>
+
+  <!-- Play triangle -->
+  <polygon
+    points="90,30 90,68 120,49"
+    fill="url(#accent)"
+    stroke="url(#accent)"
+    stroke-width="5"
+    stroke-linejoin="round"/>
+
+  <!-- "y" -->
+  <text x="124" y="68"
+        font-family="'SF Pro Display', Inter, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="700"
+        font-size="52"
+        fill="#FAFAFA"
+        letter-spacing="-0.5">y</text>
+
+  <!-- "My" sub-brand -->
+  <text x="168" y="68"
+        font-family="'SF Pro Display', Inter, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="500"
+        font-size="34"
+        fill="#D4952A"
+        letter-spacing="1.5">My</text>
+</svg>
