@@ -9,8 +9,6 @@ struct PlayerView: View {
     @StateObject var vm: PlayerViewModel
     @Environment(\.dismiss) private var dismiss
 
-    /// Secondary UI appears after playback starts
-    @State private var showSecondaryUI = false
     /// Controls overlay visibility (auto-hide)
     @State private var showControls = true
     @State private var controlsTimer: Timer?
@@ -92,7 +90,8 @@ struct PlayerView: View {
         .animation(.easeOut(duration: 0.2), value: showControls)
         .animation(.easeOut(duration: 0.2), value: vm.isBuffering)
         .animation(.easeOut(duration: 0.25), value: vm.showChannelFlash)
-        .statusBarHidden(showControls ? false : true)
+        .animation(.easeOut(duration: 0.2), value: vm.hasFirstFrame)
+        .statusBarHidden(!showControls)
         .preferredColorScheme(.dark)
         .onAppear {
             vm.startPlayback()
@@ -102,14 +101,9 @@ struct PlayerView: View {
             vm.saveWatchProgress()
             vm.teardown()
         }
-        .onChange(of: vm.hasFirstFrame) { _, ready in
-            if ready {
-                withAnimation(.easeIn(duration: 0.3)) { showSecondaryUI = true }
-            }
-        }
-        // Secondary panel slides up after playback starts
+        // Secondary panel (channel strip / series episodes) — tied to controls visibility
         .safeAreaInset(edge: .bottom) {
-            if showSecondaryUI {
+            if showControls && vm.hasFirstFrame {
                 secondaryPanel
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
