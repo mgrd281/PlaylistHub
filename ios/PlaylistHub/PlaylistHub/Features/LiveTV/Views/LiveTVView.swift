@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Playlist info from browse API
 
-private struct BrowsePlaylistInfo: Codable, Identifiable {
+struct BrowsePlaylistInfo: Codable, Identifiable {
     let id: String
     let name: String
     let channels_count: Int
