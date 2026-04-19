@@ -83,19 +83,19 @@ struct ProfilePickerView: View {
         }
     }
 
-    private let panelColor = Color(white: 0.11)
-
     private var cinematicOverlay: some View {
         ZStack {
-            // Gradient fades artwork into the panel color seamlessly — NO black gap
+            // Gradient: artwork fades to near-black that continues behind profiles
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: .clear, location: 0.38),
-                    .init(color: .black.opacity(0.20), location: 0.46),
-                    .init(color: .black.opacity(0.55), location: 0.53),
-                    .init(color: .black.opacity(0.85), location: 0.60),
-                    .init(color: .black, location: 0.66),
+                    .init(color: .clear, location: 0.35),
+                    .init(color: .black.opacity(0.15), location: 0.42),
+                    .init(color: .black.opacity(0.40), location: 0.48),
+                    .init(color: .black.opacity(0.70), location: 0.54),
+                    .init(color: .black.opacity(0.90), location: 0.60),
+                    .init(color: Color(white: 0.08), location: 0.66),
+                    .init(color: Color(white: 0.08), location: 1.0),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -103,7 +103,7 @@ struct ProfilePickerView: View {
 
             // Top edge darken for status bar readability
             LinearGradient(
-                colors: [.black.opacity(0.35), .clear],
+                colors: [.black.opacity(0.40), .clear],
                 startPoint: .top,
                 endPoint: .init(x: 0.5, y: 0.10)
             )
@@ -111,46 +111,33 @@ struct ProfilePickerView: View {
         .allowsHitTesting(false)
     }
 
-    // MARK: - Bottom Panel (blends with gradient — no visible edge)
+    // MARK: - Profile Area (no visible panel — seamless with gradient)
 
     private func bottomPanel(safeBottom: CGFloat) -> some View {
         VStack(spacing: 0) {
-            // Heading
+            // Heading — matches reference: small, understated
             Text("Who's watching?")
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(.white.opacity(0.70))
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(.white.opacity(0.55))
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 8)
                 .animation(.easeOut(duration: 0.6).delay(0.1), value: appeared)
-                .padding(.top, 24)
-                .padding(.bottom, 20)
+                .padding(.bottom, 16)
 
             // Profile grid
             profileGrid
-                .padding(.horizontal, 20)
-                .padding(.bottom, max(safeBottom, 16) + 8)
+                .padding(.horizontal, 24)
+                .padding(.bottom, max(safeBottom, 20) + 12)
         }
         .frame(maxWidth: .infinity)
-        .background(
-            // Subtle curved panel — slightly lighter than black, blends with gradient endpoint
-            UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24)
-                .fill(
-                    LinearGradient(
-                        colors: [panelColor.opacity(0.0), panelColor, panelColor],
-                        startPoint: .top,
-                        endPoint: .init(x: 0.5, y: 0.25)
-                    )
-                )
-                .ignoresSafeArea(edges: .bottom)
-        )
     }
 
     // MARK: - Profile Grid (profiles + add + edit, always 3 columns)
 
     private var profileGrid: some View {
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 14), count: 3)
 
-        return LazyVGrid(columns: cols, spacing: 16) {
+        return LazyVGrid(columns: cols, spacing: 12) {
             // Real profiles
             ForEach(Array(profileManager.profiles.enumerated()), id: \.element.id) { index, profile in
                 profileTile(profile, index: index)
@@ -178,11 +165,11 @@ struct ProfilePickerView: View {
                 }
             }
         }
-        .frame(maxWidth: 400)
+        .frame(maxWidth: .infinity)
     }
 
-    private let tileSize: CGFloat = 104
-    private let tileRadius: CGFloat = 14
+    private let tileSize: CGFloat = 100
+    private let tileRadius: CGFloat = 12
 
     private func profileTile(_ profile: UserProfile, index: Int) -> some View {
         let colors = UserProfile.avatarColors[profile.avatarColorIndex % UserProfile.avatarColors.count]
@@ -198,9 +185,9 @@ struct ProfilePickerView: View {
             }
             selectProfile(profile)
         } label: {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 ZStack {
-                    // Solid gradient fill — matches Netflix reference (no glass)
+                    // Solid gradient fill
                     RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
                         .fill(
                             LinearGradient(
@@ -213,9 +200,8 @@ struct ProfilePickerView: View {
 
                     // Avatar icon
                     Image(systemName: profile.isKids ? "teddybear.fill" : profile.avatarIcon)
-                        .font(.system(size: profile.isKids ? 36 : 38, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.95))
-                        .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                        .font(.system(size: profile.isKids ? 34 : 36, weight: .medium))
+                        .foregroundStyle(.white)
 
                     // Selection ring
                     if isSelected {
@@ -250,9 +236,9 @@ struct ProfilePickerView: View {
 
                 Text(profile.name)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.65))
+                    .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
-                    .frame(width: tileSize + 16)
+                    .frame(width: tileSize + 20)
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 16)
@@ -261,28 +247,28 @@ struct ProfilePickerView: View {
         .buttonStyle(.plain)
     }
 
-    /// Action tile for Add / Edit — solid dark gray, matches Netflix reference
+    /// Action tile for Add / Edit — solid dark gray
     private func actionTile(icon: String, label: String, index: Int, action: @escaping () -> Void) -> some View {
         let stagger = Double(index) * 0.06
 
         return Button(action: action) {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 ZStack {
-                    // Solid dark gray fill
+                    // Solid dark gray — matches reference
                     RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
-                        .fill(Color(white: 0.20))
+                        .fill(Color(white: 0.26))
                         .frame(width: tileSize, height: tileSize)
 
                     // Icon
                     Image(systemName: icon)
-                        .font(.system(size: 28, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.65))
+                        .font(.system(size: 26, weight: .light))
+                        .foregroundStyle(.white.opacity(0.55))
                 }
 
                 Text(label)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .frame(width: tileSize + 16)
+                    .foregroundStyle(.white.opacity(0.5))
+                    .frame(width: tileSize + 20)
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 16)
