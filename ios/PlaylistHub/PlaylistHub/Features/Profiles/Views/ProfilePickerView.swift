@@ -27,7 +27,7 @@ struct ProfilePickerView: View {
                     .ignoresSafeArea()
 
                 // Layer 3: Cinematic overlay
-                cinematicOverlay(height: geo.size.height)
+                cinematicOverlay
                     .ignoresSafeArea()
 
                 // Layer 4: Content
@@ -36,21 +36,17 @@ struct ProfilePickerView: View {
 
                     // Title
                     Text("Who's watching?")
-                        .font(.system(size: 20, weight: .medium))
-                        .tracking(1.2)
-                        .foregroundStyle(.white.opacity(0.95))
+                        .font(.system(size: 18, weight: .regular))
+                        .tracking(0.5)
+                        .foregroundStyle(.white.opacity(0.85))
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 14)
-                        .padding(.bottom, 36)
+                        .padding(.bottom, 30)
 
-                    // Profile grid (profiles + add tile inline)
+                    // Profile grid (profiles + add + edit tiles, always 3 cols)
                     profileGrid
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 28)
-
-                    // Manage profiles
-                    manageButton
-                        .padding(.bottom, geo.safeAreaInsets.bottom + 36)
+                        .padding(.horizontal, 32)
+                        .padding(.bottom, geo.safeAreaInsets.bottom + 28)
                 }
             }
         }
@@ -78,43 +74,43 @@ struct ProfilePickerView: View {
             ForEach(artworkVM.loadedImages.indices, id: \.self) { idx in
                 let entry = artworkVM.loadedImages[idx]
 
-                // Blurred ambient fill behind sharp image
+                // Blurred ambient fill — lets artwork color tint the whole screen
                 Image(uiImage: entry.image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: size.width, height: size.height)
-                    .blur(radius: 40)
-                    .opacity(artworkVM.activeIndex == idx ? 0.5 : 0)
+                    .blur(radius: 50)
+                    .opacity(artworkVM.activeIndex == idx ? 0.6 : 0)
                     .animation(.easeInOut(duration: 2.0), value: artworkVM.activeIndex)
                     .clipped()
 
-                // Sharp hero image — top-anchored, fills upper ~60%
+                // Sharp hero image — top-anchored, fills upper ~65%
                 Image(uiImage: entry.image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: size.width, height: size.height * 0.62)
+                    .frame(width: size.width, height: size.height * 0.65)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .scaleEffect(artworkVM.activeIndex == idx ? 1.06 : 1.0, anchor: .top)
-                    .animation(.easeInOut(duration: 10), value: artworkVM.activeIndex)
+                    .scaleEffect(artworkVM.activeIndex == idx ? 1.05 : 1.0, anchor: .top)
+                    .animation(.easeInOut(duration: 12), value: artworkVM.activeIndex)
                     .opacity(artworkVM.activeIndex == idx ? 1 : 0)
-                    .animation(.easeInOut(duration: 1.6), value: artworkVM.activeIndex)
+                    .animation(.easeInOut(duration: 1.4), value: artworkVM.activeIndex)
             }
         }
     }
 
-    private func cinematicOverlay(height: CGFloat) -> some View {
+    private var cinematicOverlay: some View {
         ZStack {
-            // Smooth bottom fade — artwork dissolves into solid dark lower area
+            // Bottom fade — artwork dissolves smoothly into dark lower section
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: .black.opacity(0.05), location: 0.20),
-                    .init(color: .black.opacity(0.30), location: 0.35),
-                    .init(color: .black.opacity(0.70), location: 0.48),
-                    .init(color: .black.opacity(0.90), location: 0.56),
-                    .init(color: .black.opacity(0.97), location: 0.64),
-                    .init(color: .black, location: 0.72),
+                    .init(color: .black.opacity(0.03), location: 0.25),
+                    .init(color: .black.opacity(0.20), location: 0.38),
+                    .init(color: .black.opacity(0.55), location: 0.48),
+                    .init(color: .black.opacity(0.82), location: 0.56),
+                    .init(color: .black.opacity(0.94), location: 0.63),
+                    .init(color: .black.opacity(0.98), location: 0.70),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -122,60 +118,53 @@ struct ProfilePickerView: View {
 
             // Top edge darken for status bar
             LinearGradient(
-                colors: [.black.opacity(0.5), .clear],
+                colors: [.black.opacity(0.4), .clear],
                 startPoint: .top,
-                endPoint: .init(x: 0.5, y: 0.15)
+                endPoint: .init(x: 0.5, y: 0.12)
             )
-
-            // Warm ambient glow from accent color
-            VStack {
-                Spacer()
-                Rectangle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                themeManager.accentColor.opacity(0.04),
-                                .clear
-                            ],
-                            center: .center,
-                            startRadius: 10,
-                            endRadius: 250
-                        )
-                    )
-                    .frame(height: height * 0.4)
-            }
         }
         .allowsHitTesting(false)
     }
 
-    // MARK: - Profile Grid (profiles + add tile inline)
+    // MARK: - Profile Grid (profiles + add + edit, always 3 columns)
 
     private var profileGrid: some View {
-        let allItems = profileManager.profiles.count + (profileManager.profiles.count < 5 ? 1 : 0)
-        let colCount = min(allItems, 3)
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 24), count: max(colCount, 1))
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 20), count: 3)
 
-        return LazyVGrid(columns: cols, spacing: 28) {
+        return LazyVGrid(columns: cols, spacing: 22) {
+            // Real profiles
             ForEach(Array(profileManager.profiles.enumerated()), id: \.element.id) { index, profile in
                 profileTile(profile, index: index)
             }
 
-            // Add Profile tile inline in grid
+            // Add tile (if room)
             if profileManager.profiles.count < 5 {
-                addTile(index: profileManager.profiles.count)
+                actionTile(
+                    icon: "plus",
+                    label: "Add",
+                    index: profileManager.profiles.count
+                ) {
+                    showAddSheet = true
+                }
+            }
+
+            // Edit tile (always present)
+            actionTile(
+                icon: "pencil",
+                label: "Edit",
+                index: profileManager.profiles.count + (profileManager.profiles.count < 5 ? 1 : 0)
+            ) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isEditing.toggle()
+                }
             }
         }
-        .frame(maxWidth: 340)
-    }
-
-    private var adaptiveColumns: [GridItem] {
-        let count = min(profileManager.profiles.count, 3)
-        return Array(repeating: GridItem(.flexible(), spacing: 20), count: max(count, 1))
+        .frame(maxWidth: 380)
     }
 
     private func profileTile(_ profile: UserProfile, index: Int) -> some View {
         let colors = UserProfile.avatarColors[profile.avatarColorIndex % UserProfile.avatarColors.count]
-        let stagger = Double(index) * 0.08
+        let stagger = Double(index) * 0.06
 
         return Button {
             guard !isEditing else {
@@ -186,7 +175,7 @@ struct ProfilePickerView: View {
         } label: {
             VStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
@@ -197,44 +186,43 @@ struct ProfilePickerView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 78, height: 78)
+                        .frame(width: 100, height: 100)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .fill(
                                     LinearGradient(
-                                        colors: [.white.opacity(0.15), .clear],
+                                        colors: [.white.opacity(0.12), .clear],
                                         startPoint: .topLeading,
                                         endPoint: .center
                                     )
                                 )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .strokeBorder(
                                     .white.opacity(selectedId == profile.id ? 1.0 : 0),
-                                    lineWidth: selectedId == profile.id ? 2 : 0
+                                    lineWidth: selectedId == profile.id ? 2.5 : 0
                                 )
                         )
-                        .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
 
                     Image(systemName: profile.isKids ? "teddybear.fill" : profile.avatarIcon)
-                        .font(.system(size: profile.isKids ? 30 : 32, weight: .medium))
+                        .font(.system(size: profile.isKids ? 36 : 38, weight: .medium))
                         .foregroundStyle(.white.opacity(0.95))
 
                     if isEditing {
                         ZStack {
                             Circle()
                                 .fill(.ultraThinMaterial)
-                                .frame(width: 26, height: 26)
+                                .frame(width: 28, height: 28)
                             Image(systemName: "pencil")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(.white)
                         }
-                        .offset(x: 30, y: -30)
+                        .offset(x: 36, y: -36)
                         .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .scaleEffect(selectedId == profile.id ? 1.08 : 1.0)
+                .scaleEffect(selectedId == profile.id ? 1.06 : 1.0)
                 .animation(.spring(response: 0.3, dampingFraction: 0.65), value: selectedId)
                 .rotationEffect(isEditing ? .degrees(index % 2 == 0 ? -1.2 : 1.2) : .zero)
                 .animation(
@@ -246,68 +234,45 @@ struct ProfilePickerView: View {
 
                 Text(profile.name)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(.white.opacity(0.75))
                     .lineLimit(1)
             }
             .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 20)
-            .animation(.easeOut(duration: 0.5).delay(0.2 + stagger), value: appeared)
+            .offset(y: appeared ? 0 : 18)
+            .animation(.easeOut(duration: 0.5).delay(0.15 + stagger), value: appeared)
         }
         .buttonStyle(.plain)
     }
 
-    private func addTile(index: Int) -> some View {
-        let stagger = Double(index) * 0.08
+    /// Uniform action tile for Add / Edit — matches profile tile size
+    private func actionTile(icon: String, label: String, index: Int, action: @escaping () -> Void) -> some View {
+        let stagger = Double(index) * 0.06
 
-        return Button { showAddSheet = true } label: {
+        return Button(action: action) {
             VStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(.white.opacity(0.04))
-                        .frame(width: 78, height: 78)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.white.opacity(0.08))
+                        .frame(width: 100, height: 100)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(.white.opacity(0.10), lineWidth: 0.5)
                         )
 
-                    Image(systemName: "plus")
-                        .font(.system(size: 28, weight: .thin))
-                        .foregroundStyle(.white.opacity(0.45))
+                    Image(systemName: icon)
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(.white.opacity(0.55))
                 }
 
-                Text("Add Profile")
+                Text(label)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(.white.opacity(0.5))
             }
             .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 20)
-            .animation(.easeOut(duration: 0.5).delay(0.2 + stagger), value: appeared)
+            .offset(y: appeared ? 0 : 18)
+            .animation(.easeOut(duration: 0.5).delay(0.15 + stagger), value: appeared)
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Manage Profiles
-
-    private var manageButton: some View {
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                isEditing.toggle()
-            }
-        } label: {
-            Text(isEditing ? "Done" : "Manage Profiles")
-                .font(.system(size: 15, weight: .medium))
-                .tracking(0.3)
-                .foregroundStyle(.white.opacity(0.5))
-                .padding(.horizontal, 24)
-                .padding(.vertical, 10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(.white.opacity(0.2), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-        .opacity(appeared ? 1 : 0)
-        .animation(.easeOut(duration: 0.4).delay(0.55), value: appeared)
     }
 
     // MARK: - Logic
@@ -500,7 +465,8 @@ final class BackdropViewModel: ObservableObject {
         }
     }
 
-    /// Multi-source artwork: movies → series (movies preferred for poster art)
+    /// Multi-source artwork: movies → series, filtered for premium international covers only.
+    /// Excludes Arabic, news, sports, religious, and low-quality IPTV content.
     private func gatherArtworkURLs() async -> [URL] {
         do {
             let supabase = SupabaseManager.shared.client
@@ -515,12 +481,16 @@ final class BackdropViewModel: ObservableObject {
 
             guard !playlists.isEmpty else { return [] }
 
-            struct PosterItem: Decodable {
+            struct ArtworkItem: Decodable {
                 let tvgLogo: String?
                 let logoUrl: String?
+                let name: String?
+                let groupTitle: String?
                 enum CodingKeys: String, CodingKey {
                     case tvgLogo = "tvg_logo"
                     case logoUrl = "logo_url"
+                    case name
+                    case groupTitle = "group_title"
                 }
                 var bestURL: URL? {
                     if let s = tvgLogo, !s.isEmpty, let u = URL(string: s) { return u }
@@ -529,37 +499,78 @@ final class BackdropViewModel: ObservableObject {
                 }
             }
 
+            // Patterns to exclude: Arabic, news, sports, religious, live TV
+            let excludePatterns: [String] = [
+                "arabic", "arab", "عرب", "مسلسل", "افلام", "قناة",
+                "news", "sport", "football", "cricket", "wrestling",
+                "religious", "quran", "islamic", "church",
+                "live", "tv ", " tv", "24/7",
+                "hindi", "bangla", "urdu", "pashto", "farsi", "persian",
+                "bein", "osn", "mbc", "rotana", "al jazeera", "al arabiya",
+                "nile", "abu dhabi", "dubai", "saudi",
+                "iptv", "catch-up", "catchup", "vod |"
+            ]
+
+            func isClean(_ item: ArtworkItem) -> Bool {
+                let combined = [item.name, item.groupTitle]
+                    .compactMap { $0?.lowercased() }
+                    .joined(separator: " ")
+
+                // Reject if any exclude pattern matches
+                for pattern in excludePatterns {
+                    if combined.contains(pattern) { return false }
+                }
+
+                // Reject if name contains Arabic/non-Latin script characters
+                if let name = item.name {
+                    let arabicRange = name.range(of: "\\p{Arabic}", options: .regularExpression)
+                    if arabicRange != nil { return false }
+                }
+
+                // Reject URLs from known IPTV/channel logo CDNs
+                if let url = item.bestURL?.absoluteString.lowercased() {
+                    let badDomains = ["logo", "icon", "channel", "epg", "xmltv", "picon"]
+                    for domain in badDomains {
+                        if url.contains(domain) { return false }
+                    }
+                }
+
+                return true
+            }
+
             var collected: [URL] = []
 
-            // Movies first — typically best poster art
+            // Movies first — best poster art
             for playlist in playlists.prefix(3) {
-                let items: [PosterItem] = try await supabase
+                let items: [ArtworkItem] = try await supabase
                     .from("playlist_items")
-                    .select("tvg_logo, logo_url")
+                    .select("tvg_logo, logo_url, name, group_title")
                     .eq("playlist_id", value: playlist.id.uuidString)
                     .eq("content_type", value: "movie")
                     .not("tvg_logo", operator: .is, value: "null")
-                    .limit(50)
+                    .limit(80)
                     .execute()
                     .value
 
-                collected.append(contentsOf: items.compactMap(\.bestURL))
+                let clean = items.filter(isClean)
+                collected.append(contentsOf: clean.compactMap(\.bestURL))
             }
 
-            // Series if not enough movies
-            if collected.count < 10 {
+            // Series if not enough
+            if collected.count < 12 {
                 for playlist in playlists.prefix(2) {
-                    let items: [PosterItem] = try await supabase
+                    let items: [ArtworkItem] = try await supabase
                         .from("playlist_items")
-                        .select("tvg_logo, logo_url")
+                        .select("tvg_logo, logo_url, name, group_title")
                         .eq("playlist_id", value: playlist.id.uuidString)
                         .eq("content_type", value: "series")
                         .not("tvg_logo", operator: .is, value: "null")
-                        .limit(30)
+                        .limit(40)
                         .execute()
                         .value
 
-                    collected.append(contentsOf: items.compactMap(\.bestURL))
+                    let clean = items.filter(isClean)
+                    collected.append(contentsOf: clean.compactMap(\.bestURL))
                 }
             }
 
@@ -567,7 +578,7 @@ final class BackdropViewModel: ObservableObject {
             let unique = Array(Set(collected.map(\.absoluteString)))
                 .compactMap(URL.init(string:))
                 .shuffled()
-                .prefix(18)
+                .prefix(20)
 
             return Array(unique)
         } catch {
