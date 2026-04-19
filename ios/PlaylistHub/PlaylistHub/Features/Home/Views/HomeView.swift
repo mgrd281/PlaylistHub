@@ -4,6 +4,7 @@ struct HomeView: View {
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var remoteConfig: RemoteConfigService
     @StateObject private var vm = HomeViewModel()
     @State private var showAddSheet = false
     @State private var selectedItem: PlaylistItem?
@@ -14,68 +15,10 @@ struct HomeView: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-
-                    // ── Hero / Welcome ──
-                    heroSection
-                        .padding(.bottom, 28)
-
-                    // ── Quick Actions ──
-                    quickActions
-                        .padding(.bottom, 28)
-
-                    // ── Stats Ribbon ──
-                    statsRibbon
-                        .padding(.bottom, 28)
-
-                    // ── Continue Watching ──
-                    if !vm.watchHistory.isEmpty {
-                        HStack {
-                            HStack(spacing: 6) {
-                                Image(systemName: "clock.fill")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(accent)
-                                Text("Continue Watching")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            Spacer()
-                            if vm.watchHistory.count > 3 {
-                                Button {
-                                    vm.clearHistory()
-                                } label: {
-                                    Text("Clear")
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 10)
-
-                        continueWatchingRail
-                            .padding(.bottom, 28)
+                    // Server-driven section ordering
+                    ForEach(remoteConfig.enabledHomeSections) { section in
+                        homeSectionView(for: section.id)
                     }
-
-                    // ── Featured Movies ──
-                    if !vm.featuredMovies.isEmpty {
-                        sectionHeader("Featured Movies", icon: "film.fill", action: {
-                            appState.selectedTab = .movies
-                        })
-                        featuredMoviesRail
-                            .padding(.bottom, 28)
-                    }
-
-                    // ── Featured Series ──
-                    if !vm.featuredSeries.isEmpty {
-                        sectionHeader("Popular Series", icon: "rectangle.stack.fill", action: {
-                            appState.selectedTab = .series
-                        })
-                        featuredSeriesRail
-                            .padding(.bottom, 28)
-                    }
-
-                    // ── Playlists ──
-                    playlistsSection
-                        .padding(.bottom, 40)
                 }
             }
             .background(Color(.systemBackground))
@@ -93,11 +36,11 @@ struct HomeView: View {
                 })
                 .presentationDetents([.medium])
             }
-            .alert("Delete Playlist?", isPresented: $vm.showDeleteConfirm, presenting: vm.deleteTarget) { playlist in
-                Button("Delete", role: .destructive) {
+            .alert(remoteConfig.strings.signOutTitle, isPresented: $vm.showDeleteConfirm, presenting: vm.deleteTarget) { playlist in
+                Button(remoteConfig.strings.deleteButton, role: .destructive) {
                     Task { await vm.delete(playlist) }
                 }
-                Button("Cancel", role: .cancel) {}
+                Button(remoteConfig.strings.cancelButton, role: .cancel) {}
             } message: { playlist in
                 Text("This will permanently delete \"\(playlist.name)\" and all its content.")
             }
@@ -108,6 +51,85 @@ struct HomeView: View {
             }
         }
         .task { await vm.load() }
+    }
+
+    // MARK: - Server-Driven Section Router
+
+    @ViewBuilder
+    private func homeSectionView(for id: String) -> some View {
+        switch id {
+        case "hero":
+            heroSection
+                .padding(.bottom, 28)
+
+        case "quickActions":
+            if remoteConfig.features.quickActionsEnabled {
+                quickActions
+                    .padding(.bottom, 28)
+            }
+
+        case "stats":
+            if remoteConfig.features.statsRibbonEnabled {
+                statsRibbon
+                    .padding(.bottom, 28)
+            }
+
+        case "continueWatching":
+            if remoteConfig.features.continueWatchingEnabled && !vm.watchHistory.isEmpty {
+                let sec = remoteConfig.homeSection("continueWatching")
+                HStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: sec?.icon ?? "clock.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(accent)
+                        Text(sec?.title ?? "Continue Watching")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    Spacer()
+                    if vm.watchHistory.count > 3 {
+                        Button {
+                            vm.clearHistory()
+                        } label: {
+                            Text("Clear")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
+
+                continueWatchingRail
+                    .padding(.bottom, 28)
+            }
+
+        case "featuredMovies":
+            if remoteConfig.features.featuredContentEnabled && !vm.featuredMovies.isEmpty {
+                let sec = remoteConfig.homeSection("featuredMovies")
+                sectionHeader(sec?.title ?? "Featured Movies", icon: sec?.icon ?? "film.fill", action: {
+                    appState.selectedTab = .movies
+                })
+                featuredMoviesRail
+                    .padding(.bottom, 28)
+            }
+
+        case "featuredSeries":
+            if remoteConfig.features.featuredContentEnabled && !vm.featuredSeries.isEmpty {
+                let sec = remoteConfig.homeSection("featuredSeries")
+                sectionHeader(sec?.title ?? "Popular Series", icon: sec?.icon ?? "rectangle.stack.fill", action: {
+                    appState.selectedTab = .series
+                })
+                featuredSeriesRail
+                    .padding(.bottom, 28)
+            }
+
+        case "playlists":
+            playlistsSection
+                .padding(.bottom, 40)
+
+        default:
+            EmptyView()
+        }
     }
 
     // MARK: - Hero Section
@@ -158,41 +180,45 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Quick Actions
+    // MARK: - Quick Actions (server-driven)
 
     private var quickActions: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                QuickActionCard(
-                    icon: "tv.fill",
-                    title: "Live TV",
-                    subtitle: "\(vm.totalChannels.abbreviated) channels",
-                    gradient: [.blue.opacity(0.8), .cyan.opacity(0.6)],
-                    action: { appState.selectedTab = .liveTV }
-                )
-                QuickActionCard(
-                    icon: "film.fill",
-                    title: "Movies",
-                    subtitle: "\(vm.totalMovies.abbreviated) titles",
-                    gradient: [.purple.opacity(0.8), .pink.opacity(0.6)],
-                    action: { appState.selectedTab = .movies }
-                )
-                QuickActionCard(
-                    icon: "rectangle.stack.fill",
-                    title: "Series",
-                    subtitle: "\(vm.totalSeries.abbreviated) shows",
-                    gradient: [.orange.opacity(0.8), .red.opacity(0.6)],
-                    action: { appState.selectedTab = .series }
-                )
-                QuickActionCard(
-                    icon: "plus.circle.fill",
-                    title: "Add",
-                    subtitle: "New playlist",
-                    gradient: [accent.opacity(0.7), accent.opacity(0.4)],
-                    action: { showAddSheet = true }
-                )
+                ForEach(remoteConfig.enabledQuickActions) { action in
+                    let gradient: [Color] = action.gradientColors.isEmpty
+                        ? [accent.opacity(0.7), accent.opacity(0.4)]
+                        : action.gradientColors.map { RemoteConfigService.color(from: $0) }
+                    QuickActionCard(
+                        icon: action.icon,
+                        title: action.title,
+                        subtitle: dynamicSubtitle(for: action) ?? action.subtitle ?? "",
+                        gradient: gradient,
+                        action: { handleQuickAction(action.destination) }
+                    )
+                }
             }
             .padding(.horizontal, 20)
+        }
+    }
+
+    private func dynamicSubtitle(for action: QuickActionConfig) -> String? {
+        switch action.id {
+        case "liveTV": return "\(vm.totalChannels.abbreviated) channels"
+        case "movies": return "\(vm.totalMovies.abbreviated) titles"
+        case "series": return "\(vm.totalSeries.abbreviated) shows"
+        default: return nil
+        }
+    }
+
+    private func handleQuickAction(_ destination: String) {
+        switch destination {
+        case "liveTV": appState.selectedTab = .liveTV
+        case "movies": appState.selectedTab = .movies
+        case "series": appState.selectedTab = .series
+        case "settings": appState.selectedTab = .settings
+        case "addPlaylist": showAddSheet = true
+        default: break
         }
     }
 

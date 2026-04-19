@@ -325,10 +325,14 @@ struct PlayerView: View {
                 liveBadge
             }
 
-            // PiP button
-            if AVPictureInPictureController.isPictureInPictureSupported() {
+            // AirPlay route picker — always available, system-provided
+            AirPlayButton()
+                .frame(width: 36, height: 36)
+
+            // PiP button — only shown when PiP is actually ready
+            if vm.pipController != nil {
                 Button { vm.togglePiP() } label: {
-                    Image(systemName: "pip.enter")
+                    Image(systemName: vm.isPiPActive ? "pip.exit" : "pip.enter")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 36, height: 36)
@@ -603,21 +607,14 @@ struct PiPVideoSurface: UIViewRepresentable {
     var gravity: AVLayerVideoGravity = .resizeAspect
     @Binding var pipController: AVPictureInPictureController?
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
         view.playerLayer.player = player
         view.playerLayer.videoGravity = gravity
         view.backgroundColor = .black
-
-        // Set up PiP if supported
-        if AVPictureInPictureController.isPictureInPictureSupported() {
-            let pip = AVPictureInPictureController(playerLayer: view.playerLayer)
-            pip?.canStartPictureInPictureAutomaticallyFromInline = true
-            DispatchQueue.main.async {
-                pipController = pip
-            }
-        }
-
+        // PiP controller is created later once player item is ready
         return view
     }
 
@@ -627,6 +624,40 @@ struct PiPVideoSurface: UIViewRepresentable {
         }
         if uiView.playerLayer.videoGravity != gravity {
             uiView.playerLayer.videoGravity = gravity
+        }
+
+        // Create PiP controller once player has an active item and is ready
+        if pipController == nil,
+           AVPictureInPictureController.isPictureInPictureSupported(),
+           player.currentItem?.status == .readyToPlay {
+            let pip = AVPictureInPictureController(playerLayer: uiView.playerLayer)
+            pip?.delegate = context.coordinator
+            pip?.canStartPictureInPictureAutomaticallyFromInline = false
+            DispatchQueue.main.async {
+                pipController = pip
+            }
+        }
+    }
+
+    class Coordinator: NSObject, AVPictureInPictureControllerDelegate {
+        func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
+            print("[PiP] Will start")
+        }
+        func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+            print("[PiP] ✓ Started")
+        }
+        func pictureInPictureController(_ controller: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+            print("[PiP] ✗ Failed: \(error.localizedDescription)")
+        }
+        func pictureInPictureControllerWillStopPictureInPicture(_ controller: AVPictureInPictureController) {
+            print("[PiP] Will stop")
+        }
+        func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+            print("[PiP] Stopped")
+        }
+        func pictureInPictureController(_ controller: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+            // Restore the player UI when user taps "return to app"
+            completionHandler(true)
         }
     }
 }
@@ -659,6 +690,24 @@ final class PlayerUIView: UIView {
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }
 
+// MARK: - AirPlay Route Picker (native system UI)
+
+/// Wraps `AVRoutePickerView` — the standard iOS control for AirPlay/external display routing.
+/// Styled to match the player's frosted glass controls.
+struct AirPlayButton: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let picker = AVRoutePickerView()
+        picker.tintColor = .white
+        picker.activeTintColor = UIColor(red: 0.92, green: 0.22, blue: 0.21, alpha: 1) // accent red
+        picker.prioritizesVideoDevices = true
+        // Remove default background so it blends with our UI
+        picker.backgroundColor = .clear
+        return picker
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+
 // MARK: - ViewModel — Persistent player, instant switching
 
 @MainActor
@@ -678,6 +727,7 @@ final class PlayerViewModel: ObservableObject {
 
     // PiP
     @Published var pipController: AVPictureInPictureController?
+    @Published var isPiPActive = false
 
     // Series
     @Published var seriesEpisodes: SeriesEpisodesResponse?
@@ -951,7 +1001,10 @@ final class PlayerViewModel: ObservableObject {
 
         if ownsPlayer {
             // Stop PiP if active
-            pipController?.stopPictureInPicture()
+            if pipController?.isPictureInPictureActive == true {
+                pipController?.stopPictureInPicture()
+            }
+            isPiPActive = false
             // We created this player — clean it up fully
             player.pause()
             player.replaceCurrentItem(with: nil)
@@ -1052,11 +1105,18 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func togglePiP() {
-        guard let pip = pipController else { return }
+        guard let pip = pipController else {
+            print("[PiP] Controller not ready — player item may still be loading")
+            return
+        }
         if pip.isPictureInPictureActive {
             pip.stopPictureInPicture()
-        } else {
+            isPiPActive = false
+        } else if pip.isPictureInPicturePossible {
             pip.startPictureInPicture()
+            isPiPActive = true
+        } else {
+            print("[PiP] Not possible right now (isPictureInPicturePossible = false)")
         }
     }
 

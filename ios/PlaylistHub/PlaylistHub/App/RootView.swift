@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var authManager: AuthManager
+    @EnvironmentObject private var remoteConfig: RemoteConfigService
     @State private var showSplash = true
 
     var body: some View {
@@ -20,8 +21,12 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.4), value: showSplash)
         .animation(.easeInOut(duration: 0.3), value: authManager.isAuthenticated)
         .task {
-            await authManager.restoreSession()
-            try? await Task.sleep(for: .seconds(1.2))
+            // Fetch remote config and restore session in parallel during splash
+            async let configTask: () = remoteConfig.fetchLatest()
+            async let authTask: () = authManager.restoreSession()
+            _ = await (configTask, authTask)
+            remoteConfig.startPeriodicRefresh()
+            try? await Task.sleep(for: .seconds(remoteConfig.config.splash.durationSeconds))
             withAnimation { showSplash = false }
         }
     }
@@ -30,41 +35,32 @@ struct RootView: View {
 struct MainTabView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var remoteConfig: RemoteConfigService
 
     var body: some View {
         TabView(selection: $appState.selectedTab) {
-            HomeView()
-                .tabItem {
-                    Label("Home", systemImage: "house.fill")
-                }
-                .tag(AppState.AppTab.home)
-
-            LiveTVView()
-                .tabItem {
-                    Label("Live TV", systemImage: "tv.fill")
-                }
-                .tag(AppState.AppTab.liveTV)
-
-            MoviesView()
-                .tabItem {
-                    Label("Movies", systemImage: "film.fill")
-                }
-                .tag(AppState.AppTab.movies)
-
-            SeriesView()
-                .tabItem {
-                    Label("Series", systemImage: "rectangle.stack.fill")
-                }
-                .tag(AppState.AppTab.series)
-
-            SettingsView()
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
-                }
-                .tag(AppState.AppTab.settings)
+            ForEach(remoteConfig.enabledTabs) { tab in
+                viewForTab(tab.id)
+                    .tabItem {
+                        Label(tab.label, systemImage: tab.icon)
+                    }
+                    .tag(AppState.AppTab(rawValue: AppState.AppTab.allCases.firstIndex(where: { $0.id == tab.id }) ?? 0) ?? .home)
+            }
         }
         .tint(themeManager.accentColor)
         .task { await prefetch() }
+    }
+
+    @ViewBuilder
+    private func viewForTab(_ id: String) -> some View {
+        switch id {
+        case "home": HomeView()
+        case "liveTV": LiveTVView()
+        case "movies": MoviesView()
+        case "series": SeriesView()
+        case "settings": SettingsView()
+        default: EmptyView()
+        }
     }
 
     /// Warm shared caches so first tab load is near-instant

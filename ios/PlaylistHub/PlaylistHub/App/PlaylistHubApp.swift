@@ -7,6 +7,7 @@ struct PlaylistHubApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var deviceManager = DeviceManager.shared
     @StateObject private var themeManager = ThemeManager.shared
+    @StateObject private var remoteConfig = RemoteConfigService.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -28,6 +29,7 @@ struct PlaylistHubApp: App {
                 .environmentObject(appState)
                 .environmentObject(deviceManager)
                 .environmentObject(themeManager)
+                .environmentObject(remoteConfig)
                 .preferredColorScheme(.dark)
                 .tint(themeManager.accentColor)
                 .onChange(of: scenePhase) { _, phase in
@@ -43,9 +45,13 @@ struct PlaylistHubApp: App {
                         }
                         // Notify all active players to resume
                         NotificationCenter.default.post(name: .appDidBecomeActive, object: nil)
+                        // Refresh remote config
+                        Task { await remoteConfig.fetchLatest() }
+                        remoteConfig.startPeriodicRefresh()
                     case .background:
                         // Keep audio session active for background playback
                         NotificationCenter.default.post(name: .appDidEnterBackground, object: nil)
+                        remoteConfig.stopPeriodicRefresh()
                     default:
                         break
                     }
@@ -65,7 +71,17 @@ extension Notification.Name {
 final class AppState: ObservableObject {
     @Published var selectedTab: AppTab = .home
 
-    enum AppTab: Int, CaseIterable {
+    enum AppTab: Int, CaseIterable, Identifiable {
         case home, liveTV, movies, series, settings
+
+        var id: String {
+            switch self {
+            case .home: return "home"
+            case .liveTV: return "liveTV"
+            case .movies: return "movies"
+            case .series: return "series"
+            case .settings: return "settings"
+            }
+        }
     }
 }

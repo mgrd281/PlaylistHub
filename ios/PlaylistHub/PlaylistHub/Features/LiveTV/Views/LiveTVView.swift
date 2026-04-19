@@ -910,7 +910,7 @@ private let categoryDefs: [CategoryDef] = {
         CategoryDef(key: "adult",        label: "18+",          icon: "🔞", pattern: rx(#"adult|18\+|xxx|eroti|playboy|hustle"#)),
 
         // Country / language categories
-        CategoryDef(key: "arabic",       label: "Arabic",       icon: "🌙", pattern: rx(#"arab|mbc\b|rotana|lbc\b|ldc\b|al[\s\-]|abu\s?dhabi|dubai\b|qatar|kuwait|oman|jordan|iraq|syria|leban|egypt|tunis|morocco|maroc|algeri|libya|sudan|yemen|saudi|bahrain|mashreq|maghreb|nile\s?sat|beur|شبكة|عربي"#)),
+        CategoryDef(key: "arabic",       label: "Arabic",       icon: "🪬", pattern: rx(#"arab|mbc\b|rotana|lbc\b|ldc\b|al[\s\-]|abu\s?dhabi|dubai\b|qatar|kuwait|oman|jordan|iraq|syria|leban|egypt|tunis|morocco|maroc|algeri|libya|sudan|yemen|saudi|bahrain|mashreq|maghreb|nile\s?sat|beur|شبكة|عربي"#)),
         CategoryDef(key: "turkish",      label: "Turkish",      icon: "🇹🇷", pattern: rx(#"turk|türk|trt\b|kanal\s?d|star\s?tv|atv\b|show\s?tv|fox\s?tv.*tr|teve2|tv8\b|beyaz|habert|cnn\s?turk|s\s?tv\b"#)),
         CategoryDef(key: "french",       label: "French",       icon: "🇫🇷", pattern: rx(#"franc|fran[çc]|tf1|france\s?\d|m6\b|canal\s?\+|arte\s?(fr)?|bfm|lci|rmc|c8\b|cstar|w9\b|nrj|tmcfr|chérie|planète"#)),
         CategoryDef(key: "german",       label: "German",       icon: "🇩🇪", pattern: rx(#"german|deutsch|ard\b|zdf\b|rtl\b|sat\.?1|pro\s?7|vox\b|kabel|n-tv|ntv\b|welt\b|phoenix|3sat|arte\s?de|servus|orf\b|srf\b|swiss"#)),
