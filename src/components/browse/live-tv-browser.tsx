@@ -19,6 +19,10 @@ interface BrowsePlaylist {
   channels_count: number;
 }
 
+/* Module-level caches (survive route changes) */
+let liveTvPlaylistCache: { playlists: BrowsePlaylist[]; ts: number } | null = null;
+const liveTvChannelCache = new Map<string, { sections: any[]; total: number; ts: number }>();
+
 /* ═══════════════════════════════════════════════
    Smart category classification
    ═══════════════════════════════════════════════ */
@@ -619,15 +623,21 @@ export function LiveTVBrowser() {
     return () => clearTimeout(t);
   }, [globalSearch]);
 
-  // Phase 1: Fetch playlists on mount
+  // Phase 1: Fetch playlists on mount (cached)
   useEffect(() => {
     let cancelled = false;
+    const cached = liveTvPlaylistCache;
+    if (cached) {
+      setPlaylists(cached.playlists);
+      if (cached.playlists.length === 1) setActivePlaylist(cached.playlists[0]);
+      setPlaylistsLoading(false);
+      if (Date.now() - cached.ts < 5 * 60 * 1000) return;
+    }
     async function loadPlaylists() {
-      setPlaylistsLoading(true);
+      if (!cached) setPlaylistsLoading(true);
       setPlaylistsError(null);
       try {
         const res = await fetch('/api/browse?mode=playlists');
-        // Detect redirect (session expired → middleware sent us to login page)
         if (res.redirected) {
           if (!cancelled) setPlaylistsError('Session expired. Please refresh the page.');
           if (!cancelled) setPlaylistsLoading(false);
@@ -642,10 +652,8 @@ export function LiveTVBrowser() {
         if (cancelled) return;
         const list: BrowsePlaylist[] = data.playlists || [];
         setPlaylists(list);
-        // Auto-select if only one playlist
-        if (list.length === 1) {
-          setActivePlaylist(list[0]);
-        }
+        liveTvPlaylistCache = { playlists: list, ts: Date.now() };
+        if (list.length === 1) setActivePlaylist(list[0]);
       } catch {
         if (!cancelled) setPlaylistsError('Network error loading playlists.');
       }
@@ -655,7 +663,7 @@ export function LiveTVBrowser() {
     return () => { cancelled = true; };
   }, []);
 
-  // Phase 2: Load channels when a playlist is selected
+  // Phase 2: Load channels when a playlist is selected (cached)
   useEffect(() => {
     if (!activePlaylist) {
       setSections([]);
@@ -663,8 +671,16 @@ export function LiveTVBrowser() {
       return;
     }
     let cancelled = false;
+    const cacheKey = activePlaylist.id;
+    const cached = liveTvChannelCache.get(cacheKey);
+    if (cached) {
+      setSections(cached.sections);
+      setTotalChannels(cached.total);
+      setChannelsLoading(false);
+      if (Date.now() - cached.ts < 5 * 60 * 1000) return;
+    }
     async function loadChannels() {
-      setChannelsLoading(true);
+      if (!cached) setChannelsLoading(true);
       setActiveCategory(null);
       setGlobalSearch('');
       const params = new URLSearchParams({
@@ -680,8 +696,11 @@ export function LiveTVBrowser() {
         }
         const data = await res.json();
         if (!cancelled) {
-          setSections(data.sections || []);
-          setTotalChannels(data.total || 0);
+          const s = data.sections || [];
+          const t = data.total || 0;
+          setSections(s);
+          setTotalChannels(t);
+          liveTvChannelCache.set(cacheKey, { sections: s, total: t, ts: Date.now() });
         }
       } catch { /* network error */ }
       if (!cancelled) setChannelsLoading(false);

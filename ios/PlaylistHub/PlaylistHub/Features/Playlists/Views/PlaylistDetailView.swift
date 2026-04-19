@@ -375,14 +375,10 @@ struct PosterCard: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             if let url = item.resolvedLogoURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    default:
-                        posterFallback
-                    }
+                CachedAsyncImage(url: url) {
+                    posterFallback
                 }
+                .aspectRatio(contentMode: .fill)
             } else {
                 posterFallback
             }
@@ -461,14 +457,10 @@ struct PosterCardSmall: View {
     var body: some View {
         ZStack {
             if let url = item.resolvedLogoURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    default:
-                        smallFallback
-                    }
+                CachedAsyncImage(url: url) {
+                    smallFallback
                 }
+                .aspectRatio(contentMode: .fill)
             } else {
                 smallFallback
             }
@@ -599,14 +591,10 @@ struct ChannelRow: View {
         HStack(spacing: 12) {
             Group {
                 if let logoURL = item.resolvedLogoURL {
-                    AsyncImage(url: logoURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            channelFallback
-                        }
+                    CachedAsyncImage(url: logoURL) {
+                        channelFallback
                     }
+                    .aspectRatio(contentMode: .fill)
                 } else {
                     channelFallback
                 }

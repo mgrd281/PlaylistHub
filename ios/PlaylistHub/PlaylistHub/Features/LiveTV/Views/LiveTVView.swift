@@ -630,14 +630,10 @@ private struct IPTVChannelRow: View {
                 // Channel logo
                 Group {
                     if let logoURL = item.resolvedLogoURL {
-                        AsyncImage(url: logoURL) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image.resizable().aspectRatio(contentMode: .fit)
-                            default:
-                                logoFallback
-                            }
+                        CachedAsyncImage(url: logoURL) {
+                            logoFallback
                         }
+                        .aspectRatio(contentMode: .fit)
                     } else {
                         logoFallback
                     }
@@ -1068,6 +1064,9 @@ final class LiveTVViewModel: ObservableObject {
     // MARK: - Playlist loading
 
     func loadPlaylists() async {
+        // Skip if already loaded — preserves player, categories, and scroll state
+        guard playlists.isEmpty else { return }
+
         playlistsLoading = true
         playlistsError = nil
         defer { playlistsLoading = false }

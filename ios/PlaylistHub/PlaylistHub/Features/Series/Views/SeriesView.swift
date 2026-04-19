@@ -186,15 +186,20 @@ final class SeriesViewModel: ObservableObject {
     @Published var hasMore = false
     private var page = 1
     private var searchTask: Task<Void, Never>?
+    private var hasLoaded = false
 
     func initialize() async {
+        // Skip if already loaded — preserves state across tab switches
+        guard !hasLoaded else { return }
+
         do {
-            playlists = try await DataService.shared.fetchPlaylists()
+            playlists = try await PlaylistCache.shared.fetchPlaylists()
             if let first = playlists.first(where: { $0.seriesCount > 0 }) ?? playlists.first {
                 selectedPlaylist = first
                 await loadContent()
             }
         } catch {}
+        hasLoaded = true
     }
 
     func selectPlaylist(_ playlist: Playlist) {

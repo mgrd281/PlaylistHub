@@ -33,6 +33,8 @@
 		EAB7DE81375B4DB6185C79C7 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19EF0021CCCFE128DD6232AB /* Models.swift */; };
 		ED3CE299AB2013DD8821CEF8 /* DataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF388B01C376C5E4B72CF928 /* DataService.swift */; };
 		FF4257811E55978FCC57C7B9 /* WatchHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */; };
+		AA11BB22CC33DD44EE55FF01 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF02 /* ImageCache.swift */; };
+		AA11BB22CC33DD44EE55FF03 /* PlaylistCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF04 /* PlaylistCache.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -62,6 +64,8 @@
 		EF388B01C376C5E4B72CF928 /* DataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataService.swift; sourceTree = "<group>"; };
 		F9B443990D0DE0D87C694B04 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		F1E2D3C4B5A60798A9B0C1D2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE55FF02 /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE55FF04 /* PlaylistCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistCache.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -245,7 +249,9 @@
 				44CD09BBC1D508CF1F26967D /* AuthManager.swift */,
 				EF388B01C376C5E4B72CF928 /* DataService.swift */,
 				02424ED07E2345E8FEE76928 /* DeviceManager.swift */,
+				AA11BB22CC33DD44EE55FF02 /* ImageCache.swift */,
 				8CDA21138AB82340B51337E1 /* KeychainHelper.swift */,
+				AA11BB22CC33DD44EE55FF04 /* PlaylistCache.swift */,
 				BB231FECDEB482DBE4A39EEB /* SupabaseManager.swift */,
 				B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */,
 			);
@@ -439,6 +445,8 @@
 				E94BE6D8FD123625648F4304 /* SupabaseManager.swift in Sources */,
 				5F592323645FD4855A57AFB1 /* ThemeManager.swift in Sources */,
 				FF4257811E55978FCC57C7B9 /* WatchHistoryManager.swift in Sources */,
+				AA11BB22CC33DD44EE55FF01 /* ImageCache.swift in Sources */,
+				AA11BB22CC33DD44EE55FF03 /* PlaylistCache.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

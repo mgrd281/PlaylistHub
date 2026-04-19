@@ -10,6 +10,28 @@ import {
   ChevronRight, X, LayoutGrid, List,
 } from 'lucide-react';
 
+/* ─── Module-level cache (survives route changes) ─── */
+
+interface CachedPage {
+  items: PlaylistItem[];
+  total: number;
+  totalPages: number;
+  ts: number;
+}
+
+interface CachedGroups {
+  groups: GroupInfo[];
+  ts: number;
+}
+
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const pageCache = new Map<string, CachedPage>();
+const groupCache = new Map<string, CachedGroups>();
+
+function pageCacheKey(type: string, page: number, limit: number, search: string, group: string) {
+  return `${type}|${page}|${limit}|${search}|${group}`;
+}
+
 const TYPE_ICON: Record<string, React.ElementType> = {
   channel: Tv,
   movie: Film,
@@ -204,24 +226,45 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
     setPage(1);
   }, [debouncedSearch, activeGroup]);
 
-  // Fetch groups
+  // Fetch groups (with cache)
   useEffect(() => {
+    const cached = groupCache.get(contentType);
+    if (cached) {
+      setGroups(cached.groups);
+      if (Date.now() - cached.ts < CACHE_TTL) return;
+    }
     async function fetchGroups() {
       try {
         const res = await fetch(`/api/browse?type=${contentType}&mode=groups`);
         if (!res.ok) return;
         const data = await res.json();
-        setGroups(data.groups || []);
+        const g = data.groups || [];
+        setGroups(g);
+        groupCache.set(contentType, { groups: g, ts: Date.now() });
       } catch {}
     }
     fetchGroups();
   }, [contentType]);
 
-  // Fetch items
+  // Fetch items (stale-while-revalidate)
   useEffect(() => {
     let cancelled = false;
-    async function fetchItems() {
+    const key = pageCacheKey(contentType, page, limit, debouncedSearch, activeGroup);
+    const cached = pageCache.get(key);
+
+    // Show cached data immediately
+    if (cached) {
+      setItems(cached.items);
+      setTotal(cached.total);
+      setTotalPages(cached.totalPages);
+      setLoading(false);
+      // If fresh enough, skip network
+      if (Date.now() - cached.ts < CACHE_TTL) return;
+    } else {
       setLoading(true);
+    }
+
+    async function fetchItems() {
       const params = new URLSearchParams({
         type: contentType,
         page: page.toString(),
@@ -235,9 +278,13 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) {
-          setItems(data.items || []);
-          setTotal(data.total || 0);
-          setTotalPages(data.totalPages || 0);
+          const newItems = data.items || [];
+          const newTotal = data.total || 0;
+          const newTotalPages = data.totalPages || 0;
+          setItems(newItems);
+          setTotal(newTotal);
+          setTotalPages(newTotalPages);
+          pageCache.set(key, { items: newItems, total: newTotal, totalPages: newTotalPages, ts: Date.now() });
         }
       } catch {}
       if (!cancelled) setLoading(false);

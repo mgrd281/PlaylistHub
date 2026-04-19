@@ -316,16 +316,12 @@ struct PlayerView: View {
                                             .frame(width: 5, height: 5)
                                     }
                                     if let logo = ch.resolvedLogoURL {
-                                        AsyncImage(url: logo) { phase in
-                                            switch phase {
-                                            case .success(let image):
-                                                image.resizable().aspectRatio(contentMode: .fit)
-                                                    .frame(width: 14, height: 14)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                                            default:
-                                                EmptyView()
-                                            }
+                                        CachedAsyncImage(url: logo) {
+                                            EmptyView()
                                         }
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 14, height: 14)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
                                     }
                                     Text(ch.name)
                                         .font(.system(size: 12, weight: isActive ? .bold : .regular))

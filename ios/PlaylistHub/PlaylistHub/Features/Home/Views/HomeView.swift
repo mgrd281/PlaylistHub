@@ -569,23 +569,10 @@ private struct ContinueWatchingCard: View {
     @ViewBuilder
     private var thumbnailLayer: some View {
         if let url = entry.resolvedLogoURL {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                case .failure:
-                    brandedFallback
-                default:
-                    // Loading state
-                    ZStack {
-                        brandedFallback
-                        ProgressView()
-                            .tint(.white.opacity(0.3))
-                    }
-                }
+            CachedAsyncImage(url: url) {
+                brandedFallback
             }
+            .aspectRatio(contentMode: .fill)
         } else {
             brandedFallback
         }
@@ -777,17 +764,27 @@ final class HomeViewModel: ObservableObject {
     @Published var showDeleteConfirm = false
     @Published var deleteTarget: Playlist?
 
+    private var hasLoaded = false
+
     var totalChannels: Int { playlists.reduce(0) { $0 + $1.channelsCount } }
     var totalMovies: Int { playlists.reduce(0) { $0 + $1.moviesCount } }
     var totalSeries: Int { playlists.reduce(0) { $0 + $1.seriesCount } }
     var totalContent: Int { playlists.reduce(0) { $0 + $1.totalItems } }
 
     func load() async {
-        isLoading = true
-        // Load real watch history
+        // On subsequent tab returns, only refresh watch history (instant)
         watchHistory = WatchHistoryManager.shared.continueWatchingItems
+        if hasLoaded {
+            // Refresh playlists from cache (no network if fresh)
+            if let cached = try? await PlaylistCache.shared.fetchPlaylists() {
+                playlists = cached
+            }
+            return
+        }
+
+        isLoading = true
         do {
-            playlists = try await DataService.shared.fetchPlaylists()
+            playlists = try await PlaylistCache.shared.fetchPlaylists()
             // Load featured content from first active playlist
             if let primary = playlists.first(where: { $0.status == .active }) ?? playlists.first {
                 async let moviesTask = DataService.shared.fetchItems(
@@ -803,6 +800,7 @@ final class HomeViewModel: ObservableObject {
             }
         } catch {}
         isLoading = false
+        hasLoaded = true
     }
 
     /// Convert a watch history entry back to a PlaylistItem for the player
