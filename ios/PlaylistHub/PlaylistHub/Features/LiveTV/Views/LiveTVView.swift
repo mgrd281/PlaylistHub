@@ -933,7 +933,8 @@ private let knownCountryCodes: Set<String> = [
     "tr",                                                              // Turkish
     "in", "pk", "bd",                                                  // South Asian
     "sa", "ae", "kw", "qa", "bh", "om", "iq", "jo", "lb", "sy",      // Arabic
-    "eg", "ma", "dz", "tn", "ly", "sd", "ye",                         // North African/Arabic
+    "eg", "ma", "dz", "tn", "ly", "sd", "ye", "ps", "mr",              // North African/Arabic + Palestine, Mauritania
+    "so", "dj", "km",                                                  // Somalia, Djibouti, Comoros (Arabic-speaking)
     "ru", "ua", "by", "kz",                                           // Russian-speaking
     "se", "no", "dk", "fi",                                           // Scandinavian
     "gr", "cy",                                                        // Greek
@@ -1031,7 +1032,7 @@ private let countryToCategory: [String: String] = {
     // Turkish
     m["tr"] = "turkish"
     // Arabic (note: "ar" is ISO for Argentina in some contexts, but in IPTV it's almost always Arabic)
-    for c in ["ar", "sa", "ae", "kw", "qa", "bh", "om", "iq", "jo", "lb", "sy", "eg", "ma", "dz", "tn", "ly", "sd", "ye"] { m[c] = "arabic" }
+    for c in ["ar", "sa", "ae", "kw", "qa", "bh", "om", "iq", "jo", "lb", "sy", "eg", "ma", "dz", "tn", "ly", "sd", "ye", "ps", "mr", "so", "dj", "km"] { m[c] = "arabic" }
     // Indian
     for c in ["in", "pk", "bd"] { m[c] = "indian" }
     // Russian
@@ -1059,6 +1060,7 @@ private struct ArabicCountryDef {
     let key: String
     let label: String
     let flag: String
+    let codes: Set<String>
     let pattern: NSRegularExpression
 }
 
@@ -1067,67 +1069,245 @@ private let arabicCountryDefs: [ArabicCountryDef] = {
         try! NSRegularExpression(pattern: p, options: .caseInsensitive)
     }
     return [
-        ArabicCountryDef(key: "sa", label: "Saudi Arabia", flag: "🇸🇦", pattern: rx(#"saudi|ksa\b|sbc\b|mbc\b|rotana|الس[عا]ودية|المملكة"#)),
-        ArabicCountryDef(key: "ae", label: "UAE",          flag: "🇦🇪", pattern: rx(#"emirates|uae\b|abu\s?dhabi|dubai|sharjah|ajman|الإمارات|أبو\s?ظبي|دبي"#)),
-        ArabicCountryDef(key: "eg", label: "Egypt",        flag: "🇪🇬", pattern: rx(#"egypt|misr|cairo|nile|cbc\b|on\s?e|dmc\b|ten\b|masra|مصر|القاهرة|النيل"#)),
-        ArabicCountryDef(key: "qa", label: "Qatar",        flag: "🇶🇦", pattern: rx(#"qatar|jazeera|al\s?kass|bein|قطر|الجزيرة|الكأس"#)),
-        ArabicCountryDef(key: "kw", label: "Kuwait",       flag: "🇰🇼", pattern: rx(#"kuwait|ktv\b|الكويت|كويت"#)),
-        ArabicCountryDef(key: "bh", label: "Bahrain",      flag: "🇧🇭", pattern: rx(#"bahrain|البحرين"#)),
-        ArabicCountryDef(key: "om", label: "Oman",         flag: "🇴🇲", pattern: rx(#"oman|عمان|سلطنة"#)),
-        ArabicCountryDef(key: "iq", label: "Iraq",         flag: "🇮🇶", pattern: rx(#"iraq|baghdad|kurdistan|العراق|بغداد"#)),
-        ArabicCountryDef(key: "jo", label: "Jordan",       flag: "🇯🇴", pattern: rx(#"jordan|amman|roya|الأردن|عمّان"#)),
-        ArabicCountryDef(key: "lb", label: "Lebanon",      flag: "🇱🇧", pattern: rx(#"leban|lbc\b|ldc\b|mtv\s?lb|otv\b|لبنان|بيروت"#)),
-        ArabicCountryDef(key: "sy", label: "Syria",        flag: "🇸🇾", pattern: rx(#"syria|سوريا|دمشق"#)),
-        ArabicCountryDef(key: "ps", label: "Palestine",    flag: "🇵🇸", pattern: rx(#"palest|فلسطين|القدس|غزة"#)),
-        ArabicCountryDef(key: "ye", label: "Yemen",        flag: "🇾🇪", pattern: rx(#"yemen|اليمن|صنعاء"#)),
-        ArabicCountryDef(key: "dz", label: "Algeria",      flag: "🇩🇿", pattern: rx(#"algeri|dzair|entv|الجزائر|جزائري"#)),
-        ArabicCountryDef(key: "ma", label: "Morocco",      flag: "🇲🇦", pattern: rx(#"morocco|maroc|2m\b|medi\s?1|snrt|المغرب|مغربي"#)),
-        ArabicCountryDef(key: "tn", label: "Tunisia",      flag: "🇹🇳", pattern: rx(#"tunis|nessma|تونس|تونسي"#)),
-        ArabicCountryDef(key: "ly", label: "Libya",        flag: "🇱🇾", pattern: rx(#"libya|ليبيا|طرابلس"#)),
-        ArabicCountryDef(key: "sd", label: "Sudan",        flag: "🇸🇩", pattern: rx(#"sudan|السودان|خرطوم"#)),
-        ArabicCountryDef(key: "mr", label: "Mauritania",   flag: "🇲🇷", pattern: rx(#"mauritan|موريتانيا"#)),
+        // Gulf
+        ArabicCountryDef(key: "sa", label: "Saudi Arabia", flag: "🇸🇦", codes: ["sa", "ksa"], pattern: rx(#"saudi|ksa\b|sbc\b|ssc\b|riyadh|jeddah|mecca|medina|السعودية|المملكة|الرياض|جدة|مكة|المدينة"#)),
+        ArabicCountryDef(key: "ae", label: "UAE", flag: "🇦🇪", codes: ["ae", "uae"], pattern: rx(#"uae\b|emirat|abu\s?dhabi|dubai|sharjah|ajman|fujairah|ras\s?al\s?khaimah|الإمارات|ابو\s?ظبي|دبي|الشارقة"#)),
+        ArabicCountryDef(key: "qa", label: "Qatar", flag: "🇶🇦", codes: ["qa", "qat"], pattern: rx(#"qatar|al\s?kass|alkass|bein|be\s?in|الجزيرة|قطر|الكاس|الكأس"#)),
+        ArabicCountryDef(key: "kw", label: "Kuwait", flag: "🇰🇼", codes: ["kw", "kuw"], pattern: rx(#"kuwait|ktv\b|funoon|scope|الكويت"#)),
+        ArabicCountryDef(key: "bh", label: "Bahrain", flag: "🇧🇭", codes: ["bh", "bhr"], pattern: rx(#"bahrain|البحرين"#)),
+        ArabicCountryDef(key: "om", label: "Oman", flag: "🇴🇲", codes: ["om", "omn"], pattern: rx(#"\boman\b|muscat|عمان|مسقط|السلطنة"#)),
+        // Mashreq
+        ArabicCountryDef(key: "iq", label: "Iraq", flag: "🇮🇶", codes: ["iq", "irq"], pattern: rx(#"iraq|iraqi|iraqia|baghdad|basra|العراق|عراقي|بغداد|البصرة"#)),
+        ArabicCountryDef(key: "sy", label: "Syria", flag: "🇸🇾", codes: ["sy", "syr"], pattern: rx(#"syria|syrian|damascus|aleppo|سوريا|سوري|دمشق|حلب"#)),
+        ArabicCountryDef(key: "lb", label: "Lebanon", flag: "🇱🇧", codes: ["lb", "lbn"], pattern: rx(#"leban|lbc\b|otv\b|tele\s?liban|لبنان|لبناني|بيروت"#)),
+        ArabicCountryDef(key: "jo", label: "Jordan", flag: "🇯🇴", codes: ["jo", "jor"], pattern: rx(#"jordan|amman|roya|الأردن|اردن|أردني|عمّ?ان"#)),
+        ArabicCountryDef(key: "ps", label: "Palestine", flag: "🇵🇸", codes: ["ps", "pse", "pal"], pattern: rx(#"palestin|gaza|ramallah|فلسطين|غزة|القدس|رام\s?الله"#)),
+        ArabicCountryDef(key: "ye", label: "Yemen", flag: "🇾🇪", codes: ["ye", "yem"], pattern: rx(#"yemen|sanaa|aden|اليمن|يمني|صنعاء|عدن"#)),
+        // North Africa
+        ArabicCountryDef(key: "eg", label: "Egypt", flag: "🇪🇬", codes: ["eg", "egy"], pattern: rx(#"egypt|misr|cairo|nile|cbc\b|dmc\b|onn?\b|النهار|مصر|مصري|القاهرة|النيل"#)),
+        ArabicCountryDef(key: "dz", label: "Algeria", flag: "🇩🇿", codes: ["dz", "dza", "alg"], pattern: rx(#"alger|algeri|dzair|entv|echourouk|ennahar|الجزائر|جزائري"#)),
+        ArabicCountryDef(key: "ma", label: "Morocco", flag: "🇲🇦", codes: ["ma", "mar", "mor"], pattern: rx(#"morocc|maroc|tele\s?maroc|2m\b|snrt|medi\s?1|المغرب|مغربي"#)),
+        ArabicCountryDef(key: "tn", label: "Tunisia", flag: "🇹🇳", codes: ["tn", "tun"], pattern: rx(#"tunisia|tunis|tunisna|nessma|watania|تونس|تونسي"#)),
+        ArabicCountryDef(key: "ly", label: "Libya", flag: "🇱🇾", codes: ["ly", "lby", "lib"], pattern: rx(#"libya|tripoli|benghazi|ليبيا|ليبي|طرابلس|بنغازي"#)),
+        ArabicCountryDef(key: "sd", label: "Sudan", flag: "🇸🇩", codes: ["sd", "sdn"], pattern: rx(#"sudan|khartoum|السودان|سوداني|الخرطوم|خرطوم"#)),
+        ArabicCountryDef(key: "mr", label: "Mauritania", flag: "🇲🇷", codes: ["mr", "mrt"], pattern: rx(#"mauritan|nouakchott|موريتان|موريتانيا|نواكشوط"#)),
+        // Additional Arab League states seen in some providers
+        ArabicCountryDef(key: "so", label: "Somalia", flag: "🇸🇴", codes: ["so", "som"], pattern: rx(#"somalia|mogadishu|الصومال|صومالي"#)),
+        ArabicCountryDef(key: "dj", label: "Djibouti", flag: "🇩🇯", codes: ["dj", "dji"], pattern: rx(#"djibouti|جيبوتي"#)),
+        ArabicCountryDef(key: "km", label: "Comoros", flag: "🇰🇲", codes: ["km", "com"], pattern: rx(#"comoros|القمر|جزر\s?القمر"#)),
+        // Thematic Arabic sub-categories
+        ArabicCountryDef(key: "ar_islamic", label: "Islamic", flag: "🕌", codes: [], pattern: rx(#"islam|islamic|quran|iqra|huda\s?tv|azhar|إسلام|اسلام|قرآن|قران|إقرأ|اقرأ|هدى|الأزهر"#)),
+        ArabicCountryDef(key: "ar_christian", label: "Christian", flag: "✝️", codes: [], pattern: rx(#"christ|coptic|church|gospel|evangel|jesus|مسيح|مسيحية|قبط|كنيسة|إنجيل|انجيل"#)),
+        ArabicCountryDef(key: "ar_religious", label: "Religious", flag: "🕊️", codes: [], pattern: rx(#"relig|faith|worship|دعوي|دينية|روحاني|روحي"#)),
     ]
 }()
 
-/// Country code → Arabic country key
-private let arabicCountryCodes: Set<String> = Set(["ar", "sa", "ae", "kw", "qa", "bh", "om", "iq", "jo", "lb", "sy", "eg", "ma", "dz", "tn", "ly", "sd", "ye", "ps", "mr"])
-
-/// Classify an Arabic channel/group into a specific country
-private func classifyArabicCountry(_ text: String, prefix: String? = nil) -> String {
-    // 1) Check prefix code directly
-    if let code = prefix, code != "ar" {
-        for def in arabicCountryDefs {
-            if def.key == code { return def.key }
+/// Country code → Arabic country key (built from country definitions)
+private let arabicCountryCodeMap: [String: String] = {
+    var map: [String: String] = ["ar": "ar_pan"]
+    for def in arabicCountryDefs {
+        for code in def.codes {
+            map[code] = def.key
         }
     }
-    // 2) Pattern match on text
+    return map
+}()
+
+/// Arabic-country codes and aliases used for high-priority routing.
+private let arabicCountryCodes: Set<String> = Set(arabicCountryCodeMap.keys)
+
+private let arabicScriptRegex = try! NSRegularExpression(
+    pattern: #"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]"#,
+    options: []
+)
+
+private let arabicBroadSignalRegex = try! NSRegularExpression(
+    pattern: #"arab|mbc\b|rotana|osn\b|be\s?in|jazeera|alkass|islam|quran|christ|egypt|misr|saudi|ksa\b|uae\b|kuwait|qatar|bahrain|oman|iraq|syria|leban|jordan|palestin|yemen|alger|morocc|maroc|tunisia|libya|sudan|mauritan|somalia|djibouti|comoros|عرب|مصر|السعود|الإمارات|الامارات|الكويت|قطر|البحرين|عمان|العراق|سوريا|لبنان|الأردن|فلسطين|اليمن|الجزائر|المغرب|تونس|ليبيا|السودان|موريتان"#,
+    options: .caseInsensitive
+)
+
+private let panArabicRegex = try! NSRegularExpression(
+    pattern: #"\b(arab|pan\s?arab|middle\s?east|mena|mbc|rotana|osn)\b|عرب|العربية"#,
+    options: .caseInsensitive
+)
+
+private let metadataCountryRegex = try! NSRegularExpression(
+    pattern: #"(?:tvg-country|country)\s*=\s*\"?([A-Za-z]{2,3})\"?"#,
+    options: .caseInsensitive
+)
+
+private func normalizeArabicText(_ text: String) -> String {
+    var s = text
+        .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        .lowercased()
+    let replacements: [(String, String)] = [
+        ("أ", "ا"), ("إ", "ا"), ("آ", "ا"),
+        ("ى", "ي"), ("ؤ", "و"), ("ئ", "ي"),
+        ("ة", "ه"), ("ـ", " "),
+    ]
+    for (from, to) in replacements {
+        s = s.replacingOccurrences(of: from, with: to)
+    }
+    s = s.replacingOccurrences(of: "_", with: " ")
+    return s
+}
+
+private func regexMatches(_ regex: NSRegularExpression, in text: String) -> Bool {
     let range = NSRange(text.startIndex..., in: text)
-    for def in arabicCountryDefs {
-        if def.pattern.firstMatch(in: text, range: range) != nil {
+    return regex.firstMatch(in: text, range: range) != nil
+}
+
+private func extractCountryCodeFromTvgId(_ tvgId: String?) -> String? {
+    guard let tvgId, let dot = tvgId.lastIndex(of: ".") else { return nil }
+    let code = String(tvgId[tvgId.index(after: dot)...]).lowercased()
+    return (2...3).contains(code.count) ? code : nil
+}
+
+private func metadataRaw(_ item: PlaylistItem) -> String {
+    (item.metadata?["raw"]?.value as? String) ?? ""
+}
+
+private func extractCountryCodesFromMetadata(_ item: PlaylistItem) -> [String] {
+    let raw = metadataRaw(item)
+    guard !raw.isEmpty else { return [] }
+    let range = NSRange(raw.startIndex..., in: raw)
+    return metadataCountryRegex.matches(in: raw, range: range).compactMap { match in
+        guard let codeRange = Range(match.range(at: 1), in: raw) else { return nil }
+        return String(raw[codeRange]).lowercased()
+    }
+}
+
+private func detectArabicCountryKey(item: PlaylistItem, sectionName: String) -> String? {
+    let (sectionPrefix, sectionRest) = extractPrefix(sectionName)
+    let (groupPrefix, groupRest) = extractPrefix(item.groupTitle ?? "")
+
+    let codeHints = [
+        sectionPrefix,
+        groupPrefix,
+        extractCountryCodeFromTvgId(item.tvgId),
+    ].compactMap { $0 } + extractCountryCodesFromMetadata(item)
+
+    for code in codeHints {
+        if let mapped = arabicCountryCodeMap[code] {
+            return mapped
+        }
+    }
+
+    let probeParts = [
+        sectionName,
+        sectionRest,
+        item.groupTitle ?? "",
+        groupRest,
+        item.name,
+        item.tvgName ?? "",
+        item.tvgId ?? "",
+        metadataRaw(item),
+    ]
+    let probe = probeParts.joined(separator: " ")
+    let normalized = normalizeArabicText(probe)
+
+    let hasArabicScript = regexMatches(arabicScriptRegex, in: probe)
+    let hasBroadArabicSignal = regexMatches(arabicBroadSignalRegex, in: normalized)
+    guard hasArabicScript || hasBroadArabicSignal else { return nil }
+
+    for def in arabicCountryDefs where !def.key.hasPrefix("ar_") {
+        if regexMatches(def.pattern, in: normalized) {
             return def.key
         }
     }
-    return "ar_general" // General Arabic (pan-Arab channels, unclassifiable)
+
+    if let def = arabicCountryDefs.first(where: { $0.key == "ar_christian" }), regexMatches(def.pattern, in: normalized) {
+        return "ar_christian"
+    }
+    if let def = arabicCountryDefs.first(where: { $0.key == "ar_islamic" }), regexMatches(def.pattern, in: normalized) {
+        return "ar_islamic"
+    }
+    if let def = arabicCountryDefs.first(where: { $0.key == "ar_religious" }), regexMatches(def.pattern, in: normalized) {
+        return "ar_religious"
+    }
+
+    if regexMatches(panArabicRegex, in: normalized) {
+        return "ar_pan"
+    }
+    return hasArabicScript ? "ar_general" : "ar_pan"
+}
+
+private func arabicCountryDisplayName(for key: String) -> String {
+    switch key {
+    case "ar_pan":
+        return "🌍 Pan-Arab"
+    case "ar_general":
+        return "🪬 Arabic Other"
+    default:
+        if let def = arabicCountryDefs.first(where: { $0.key == key }) {
+            return "\(def.flag) \(def.label)"
+        }
+        return "🏳️ \(key.uppercased())"
+    }
 }
 
 /// Smart classification: prefix extraction → content match → country match → channel name fallback
+///
+/// **Arabic priority rule**: If a group's prefix is a known Arabic country code,
+/// it is classified as "arabic" immediately — genre patterns are NOT checked first.
+/// This ensures Arabic channels don't leak into Sports, News, Entertainment, etc.
 private func classifyGroup(_ groupName: String, channelNames: [String] = []) -> String {
     let (prefix, suffix) = extractPrefix(groupName)
+    let normalizedGroup = normalizeArabicText(groupName)
 
-    // 1) Try matching the cleaned suffix against category patterns
+    // 0) ARABIC PRIORITY: If prefix is an Arabic country code, classify as Arabic immediately.
+    //    This prevents "SA | Sports" from being classified as "sports" instead of "arabic".
+    if let code = prefix, arabicCountryCodes.contains(code) {
+        return "arabic"
+    }
+
+    // Also catch groups with explicit Arabic text labels (no prefix).
+    if arabicGroupPrefixes.contains(where: { normalizedGroup.hasPrefix($0) }) ||
+        regexMatches(arabicScriptRegex, in: groupName) ||
+        regexMatches(arabicBroadSignalRegex, in: normalizedGroup) {
+        return "arabic"
+    }
+
+    // Numeric/raw provider groups (e.g. "492") need channel-name heuristics first.
+    let compact = normalizedGroup.trimmingCharacters(in: .whitespacesAndNewlines)
+    let numericOnly = !compact.isEmpty && compact.allSatisfy { $0.isNumber }
+    if numericOnly && !channelNames.isEmpty {
+        let sample = Array(channelNames.prefix(10))
+        let arabicVotes = sample.filter {
+            let normalizedName = normalizeArabicText($0)
+            return regexMatches(arabicScriptRegex, in: $0) || regexMatches(arabicBroadSignalRegex, in: normalizedName)
+        }.count
+        if arabicVotes >= max(2, sample.count / 3) {
+            return "arabic"
+        }
+    }
+
+    // If a significant part of channel samples look Arabic, classify as Arabic.
+    if !channelNames.isEmpty {
+        let sample = Array(channelNames.prefix(12))
+        let arabicVotes = sample.filter {
+            let normalizedName = normalizeArabicText($0)
+            return regexMatches(arabicScriptRegex, in: $0) || regexMatches(arabicBroadSignalRegex, in: normalizedName)
+        }.count
+        if arabicVotes >= max(3, sample.count / 2) {
+            return "arabic"
+        }
+    }
+
+    // 1) Try matching the cleaned suffix against category patterns.
     let suffixResult = matchCategoryPatterns(suffix)
     if suffixResult != "other" { return suffixResult }
 
-    // 2) Try matching the full group_title (in case prefix is part of the pattern)
+    // 2) Try matching the full group_title (in case prefix is part of the pattern).
     let fullResult = matchCategoryPatterns(groupName)
     if fullResult != "other" { return fullResult }
 
-    // 3) If we have a known country prefix, use country→category mapping
+    // 3) If we have a known country prefix, use country→category mapping.
     if let code = prefix, let cat = countryToCategory[code] {
         return cat
     }
 
-    // 4) Channel-name heuristics: sample up to 8 names, majority vote
+    // 4) Channel-name heuristics: sample up to 8 names, majority vote.
     if !channelNames.isEmpty {
         var votes: [String: Int] = [:]
         for name in channelNames.prefix(8) {
@@ -1143,6 +1323,13 @@ private func classifyGroup(_ groupName: String, channelNames: [String] = []) -> 
 
     return "other"
 }
+
+/// Common group-name prefixes that indicate Arabic content (without a 2-letter code)
+private let arabicGroupPrefixes: [String] = [
+    "arabic", "arab ", "arab|", "arab-", "arab:",
+    "arabe", "عربي", "عرب",
+    "ar |", "ar|", "ar -", "ar:",
+]
 
 private func matchCategoryPatterns(_ text: String) -> String {
     let range = NSRange(text.startIndex..., in: text)
@@ -1818,60 +2005,70 @@ private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCat
         }
     }
 
-    // ── Arabic country sub-classification ──
-    // Take all channels classified as "arabic" and re-organize by country
-    if let arabicBucket = buckets["arabic"] {
-        var countryBuckets: [String: [PlaylistItem]] = [:]
+    // Arabic detection must run at item-level as many providers use numeric/raw group names
+    // that hide country information (e.g. "492", "937").
+    var arabicBuckets: [String: [PlaylistItem]] = [:]
+    var arabicURLs = Set<String>()
 
-        for (sectionName, items) in arabicBucket {
-            let (prefix, _) = extractPrefix(sectionName)
-            for item in items {
-                let countryKey = classifyArabicCountry(
-                    "\(item.name) \(item.groupTitle ?? "") \(sectionName)",
-                    prefix: prefix
-                )
-                countryBuckets[countryKey, default: []].append(item)
+    for section in sections {
+        for item in section.items {
+            guard let key = detectArabicCountryKey(item: item, sectionName: section.name) else { continue }
+            if arabicURLs.insert(item.resolvedStreamURL).inserted {
+                arabicBuckets[key, default: []].append(item)
             }
         }
+    }
 
-        // Build country-level groups within Arabic
-        var arabicGroups: [LiveTVCategory.ChannelGroup] = []
-        for (countryKey, channels) in countryBuckets {
-            let def = arabicCountryDefs.first { $0.key == countryKey }
-            let label: String
-            if countryKey == "ar_general" {
-                label = "🌍 Pan-Arab"
+    if !arabicURLs.isEmpty {
+        // Remove Arabic channels from generic buckets to avoid duplicate rows.
+        for key in Array(buckets.keys) {
+            let filteredEntries = (buckets[key] ?? []).compactMap { entry -> (sectionName: String, items: [PlaylistItem])? in
+                let kept = entry.items.filter { !arabicURLs.contains($0.resolvedStreamURL) }
+                return kept.isEmpty ? nil : (entry.sectionName, kept)
+            }
+            if filteredEntries.isEmpty {
+                buckets.removeValue(forKey: key)
             } else {
-                label = "\(def?.flag ?? "🏳️") \(def?.label ?? countryKey.uppercased())"
+                buckets[key] = filteredEntries
             }
-            arabicGroups.append(LiveTVCategory.ChannelGroup(
-                name: countryKey,
-                displayName: label,
-                items: channels
-            ))
         }
 
-        // Sort: most channels first, "ar_general" last
+        var arabicGroups: [LiveTVCategory.ChannelGroup] = arabicBuckets
+            .map { countryKey, channels in
+                LiveTVCategory.ChannelGroup(
+                    name: countryKey,
+                    displayName: arabicCountryDisplayName(for: countryKey),
+                    items: channels
+                )
+            }
+
+        // Countries first, then Pan-Arab/thematic groups, with Arabic-other last.
+        func rank(_ key: String) -> Int {
+            if key == "ar_general" { return 3 }
+            if key == "ar_pan" { return 1 }
+            if key.hasPrefix("ar_") { return 2 }
+            return 0
+        }
+
         arabicGroups.sort {
-            if $0.name == "ar_general" { return false }
-            if $1.name == "ar_general" { return true }
-            return $0.items.count > $1.items.count
+            let r0 = rank($0.name)
+            let r1 = rank($1.name)
+            if r0 != r1 { return r0 < r1 }
+            if $0.items.count != $1.items.count { return $0.items.count > $1.items.count }
+            return $0.displayName < $1.displayName
         }
 
         let total = arabicGroups.reduce(0) { $0 + $1.items.count }
 
-        // Replace arabic bucket with country-organized version
-        buckets.removeValue(forKey: "arabic")
-        // We'll insert the Arabic category manually below
         var result = buildCategoryList(from: buckets)
-        result.insert(LiveTVCategory(
+        result.append(LiveTVCategory(
             id: "arabic",
             key: "arabic",
             label: "Arabic",
             icon: "🪬",
             groups: arabicGroups,
             totalCount: total
-        ), at: 0) // Arabic first for Arabic-heavy playlists, or it'll be sorted by count
+        ))
 
         return result.sorted {
             if $0.key == "other" { return false }
