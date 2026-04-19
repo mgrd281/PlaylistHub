@@ -30,24 +30,12 @@ struct ProfilePickerView: View {
                 cinematicOverlay
                     .ignoresSafeArea()
 
-                // Layer 4: Content — heading + profiles sit directly on dark zone
+                // Layer 4: Content — bottom panel + heading + grid
                 VStack(spacing: 0) {
                     Spacer()
 
-                    // Heading
-                    Text("Who's watching?")
-                        .font(.system(size: 18, weight: .regular))
-                        .tracking(0.3)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 10)
-                        .animation(.easeOut(duration: 0.6).delay(0.1), value: appeared)
-                        .padding(.bottom, 24)
-
-                    // Profile grid
-                    profileGrid
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, max(geo.safeAreaInsets.bottom, 16) + 8)
+                    // Bottom panel — dark charcoal surface behind tiles
+                    bottomPanel(safeBottom: geo.safeAreaInsets.bottom)
                 }
             }
         }
@@ -97,16 +85,16 @@ struct ProfilePickerView: View {
 
     private var cinematicOverlay: some View {
         ZStack {
-            // Bottom fade — matches Netflix: artwork visible top ~55%, smooth fade to solid black
+            // Bottom fade — artwork visible top ~50%, fades into dark
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: .clear, location: 0.35),
-                    .init(color: .black.opacity(0.15), location: 0.42),
-                    .init(color: .black.opacity(0.45), location: 0.50),
-                    .init(color: .black.opacity(0.75), location: 0.56),
-                    .init(color: .black.opacity(0.92), location: 0.62),
-                    .init(color: .black, location: 0.70),
+                    .init(color: .clear, location: 0.32),
+                    .init(color: .black.opacity(0.10), location: 0.40),
+                    .init(color: .black.opacity(0.35), location: 0.46),
+                    .init(color: .black.opacity(0.65), location: 0.52),
+                    .init(color: .black.opacity(0.88), location: 0.58),
+                    .init(color: .black, location: 0.65),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -122,12 +110,39 @@ struct ProfilePickerView: View {
         .allowsHitTesting(false)
     }
 
+    // MARK: - Bottom Panel (dark charcoal surface behind profiles)
+
+    private func bottomPanel(safeBottom: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            // Heading — small, centered, light gray
+            Text("Who's watching?")
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(.white.opacity(0.65))
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 8)
+                .animation(.easeOut(duration: 0.6).delay(0.1), value: appeared)
+                .padding(.top, 20)
+                .padding(.bottom, 18)
+
+            // Profile grid
+            profileGrid
+                .padding(.horizontal, 20)
+                .padding(.bottom, max(safeBottom, 16) + 4)
+        }
+        .frame(maxWidth: .infinity)
+        .background(
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
+                .fill(Color(white: 0.11))
+                .ignoresSafeArea(edges: .bottom)
+        )
+    }
+
     // MARK: - Profile Grid (profiles + add + edit, always 3 columns)
 
     private var profileGrid: some View {
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 20), count: 3)
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
 
-        return LazyVGrid(columns: cols, spacing: 22) {
+        return LazyVGrid(columns: cols, spacing: 16) {
             // Real profiles
             ForEach(Array(profileManager.profiles.enumerated()), id: \.element.id) { index, profile in
                 profileTile(profile, index: index)
@@ -155,11 +170,11 @@ struct ProfilePickerView: View {
                 }
             }
         }
-        .frame(maxWidth: 380)
+        .frame(maxWidth: 400)
     }
 
-    private let tileSize: CGFloat = 96
-    private let tileRadius: CGFloat = 16
+    private let tileSize: CGFloat = 104
+    private let tileRadius: CGFloat = 14
 
     private func profileTile(_ profile: UserProfile, index: Int) -> some View {
         let colors = UserProfile.avatarColors[profile.avatarColorIndex % UserProfile.avatarColors.count]
@@ -226,10 +241,10 @@ struct ProfilePickerView: View {
                 )
 
                 Text(profile.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.65))
                     .lineLimit(1)
-                    .frame(width: tileSize + 14)
+                    .frame(width: tileSize + 16)
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 16)
@@ -245,9 +260,9 @@ struct ProfilePickerView: View {
         return Button(action: action) {
             VStack(spacing: 10) {
                 ZStack {
-                    // Solid dark gray fill — matches Netflix Add/Edit tiles
+                    // Solid dark gray fill
                     RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
-                        .fill(Color(white: 0.22))
+                        .fill(Color(white: 0.20))
                         .frame(width: tileSize, height: tileSize)
 
                     // Icon
@@ -257,9 +272,9 @@ struct ProfilePickerView: View {
                 }
 
                 Text(label)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white.opacity(0.55))
-                    .frame(width: tileSize + 10)
+                    .frame(width: tileSize + 16)
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 16)
@@ -453,6 +468,7 @@ final class BackdropViewModel: ObservableObject {
     }
 
     private func loadArtwork() async {
+
         // Always start with curated posters (guaranteed to work)
         // Then add user playlist artwork on top
         var urls = Self.curatedPosterURLs.shuffled()
