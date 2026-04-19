@@ -538,6 +538,7 @@ final class BackdropViewModel: ObservableObject {
                 return true
             }
 
+            var allFetched: [ArtworkItem] = []
             var collected: [URL] = []
 
             // Movies first — best poster art
@@ -552,6 +553,7 @@ final class BackdropViewModel: ObservableObject {
                     .execute()
                     .value
 
+                allFetched.append(contentsOf: items)
                 let clean = items.filter(isClean)
                 collected.append(contentsOf: clean.compactMap(\.bestURL))
             }
@@ -569,9 +571,15 @@ final class BackdropViewModel: ObservableObject {
                         .execute()
                         .value
 
+                    allFetched.append(contentsOf: items)
                     let clean = items.filter(isClean)
                     collected.append(contentsOf: clean.compactMap(\.bestURL))
                 }
+            }
+
+            // Fallback: if filter removed everything, use unfiltered content
+            if collected.isEmpty {
+                collected = allFetched.compactMap(\.bestURL)
             }
 
             // Deduplicate, shuffle, fetch more than needed for quality scoring
