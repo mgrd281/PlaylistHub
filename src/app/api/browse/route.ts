@@ -103,7 +103,8 @@ export async function GET(request: Request) {
       .select('group_title')
       .in('playlist_id', playlistIds)
       .eq('content_type', contentType)
-      .not('group_title', 'is', null);
+      .not('group_title', 'is', null)
+      .limit(50000);
 
     const counts = new Map<string, number>();
     for (const item of groupData || []) {
@@ -127,7 +128,8 @@ export async function GET(request: Request) {
       .in('playlist_id', playlistIds)
       .eq('content_type', contentType)
       // Keep provider/source sequence (scan insert order) instead of re-sorting by name.
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(50000);
 
     if (searchParam) {
       gQuery = gQuery.or(`name.ilike.%${searchParam}%,group_title.ilike.%${searchParam}%`);
