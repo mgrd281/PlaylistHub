@@ -241,9 +241,26 @@ async function streamResponse(upstream: Response, targetUrl: string): Promise<Ne
   const cr = upstream.headers.get('content-range');
   if (cl) headers['Content-Length'] = cl;
   if (cr) headers['Content-Range'] = cr;
-  headers['Accept-Ranges'] = upstream.headers.get('accept-ranges') || 'bytes';
+  // Always emit standard 'bytes' — some providers send non-standard values
+  // (e.g. the byte count) which break browser range-seeking for MP4 moov atoms.
+  headers['Accept-Ranges'] = 'bytes';
 
   return new NextResponse(upstream.body, { status: upstream.status, headers });
+}
+
+/* ── CORS preflight ── */
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, Authorization',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
 }
 
 /* ── route handler ── */

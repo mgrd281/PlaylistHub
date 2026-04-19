@@ -352,11 +352,10 @@ const server = http.createServer(async (req, res) => {
       // Forward range-related headers for seeking
       const cl = upstream.headers.get('content-length');
       const cr = upstream.headers.get('content-range');
-      const ar = upstream.headers.get('accept-ranges');
       if (cl) responseHeaders['Content-Length'] = cl;
       if (cr) responseHeaders['Content-Range'] = cr;
-      if (ar) responseHeaders['Accept-Ranges'] = ar;
-      else responseHeaders['Accept-Ranges'] = 'bytes';
+      // Always emit standard 'bytes' — some providers send non-standard values
+      responseHeaders['Accept-Ranges'] = 'bytes';
       res.writeHead(upstream.status, responseHeaders);
       if (upstream.body) {
         const reader = upstream.body.getReader();

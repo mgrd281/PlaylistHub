@@ -241,7 +241,7 @@ export default {
         'Content-Type': contentType,
         ...corsHeaders(request),
         'Cache-Control': 'no-store',
-        'Accept-Ranges': upstream.headers.get('accept-ranges') || 'bytes',
+        'Accept-Ranges': 'bytes',
       };
       const cl = upstream.headers.get('content-length');
       const cr = upstream.headers.get('content-range');

@@ -858,14 +858,24 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
         return;
       }
 
-      // ── Xtream VOD: try HLS first, then MP4 container variants ──
+      // ── Xtream VOD: try MP4 direct first (fast), HLS conversion in parallel ──
       if (isXtreamVod) {
-        // Strategy 1: HLS (.m3u8) via hls.js — most Xtream servers support this
-        if (await attachHls(video, proxiedHls, { live: false, timeoutMs: 12000 })) return;
+        // The .mp4 URL via proxy should work immediately if Accept-Ranges
+        // is correct (browser needs range seeking for moov-at-end files).
+        const proxiedMp4 = proxyUrl(url.replace(/\.\w+$/, '.mp4'));
 
-        // Strategy 2: Safari native HLS
-        if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          if (await tryVideoUrl(video, proxiedHls, 10000)) {
+        // Strategy 1: Try .mp4 direct via proxy (fast — most common success path)
+        if (await tryVideoUrl(video, proxiedMp4, 15000)) {
+          try { await video.play(); } catch { /* user presses play */ }
+          setLoading(false);
+          setMainVideoLoaded(true);
+          initInProgressRef.current = false;
+          return;
+        }
+
+        // Strategy 2: Try original extension if different from .mp4
+        if (!url.endsWith('.mp4')) {
+          if (await tryVideoUrl(video, proxied, 12000)) {
             try { await video.play(); } catch { /* user presses play */ }
             setLoading(false);
             setMainVideoLoaded(true);
@@ -874,19 +884,12 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           }
         }
 
-        // Strategy 3: Try .mp4 extension (browsers can't play .mkv/.ts but can play .mp4)
-        const proxiedMp4 = proxyUrl(url.replace(/\.\w+$/, '.mp4'));
-        if (await tryVideoUrl(video, proxiedMp4, 12000)) {
-          try { await video.play(); } catch { /* user presses play */ }
-          setLoading(false);
-          setMainVideoLoaded(true);
-          initInProgressRef.current = false;
-          return;
-        }
+        // Strategy 3: HLS (.m3u8) fallback — some Xtream servers support this
+        if (await attachHls(video, proxiedHls, { live: false, timeoutMs: 8000 })) return;
 
-        // Strategy 4: Try original URL directly (might be .mp4 already)
-        if (!url.endsWith('.mp4')) {
-          if (await tryVideoUrl(video, proxied, 10000)) {
+        // Strategy 4: Safari native HLS
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          if (await tryVideoUrl(video, proxiedHls, 8000)) {
             try { await video.play(); } catch { /* user presses play */ }
             setLoading(false);
             setMainVideoLoaded(true);
