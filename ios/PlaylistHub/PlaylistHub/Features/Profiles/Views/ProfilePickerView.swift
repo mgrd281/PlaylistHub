@@ -463,9 +463,9 @@ final class BackdropViewModel: ObservableObject {
         }
     }
 
-    /// Multi-source artwork: movies → series, filtered for premium international covers only.
-    /// Excludes Arabic, news, sports, religious, and low-quality IPTV content.
-    private func gatherArtworkURLs() async -> [URL] {
+    /// Gather artwork URLs from user's playlists — movies first, then series.
+    /// Uses a simple approach: grab items that have any image URL.
+    nonisolated private func gatherArtworkURLs() async -> [URL] {
         do {
             let supabase = SupabaseManager.shared.client
             let session = try await supabase.auth.session
@@ -482,13 +482,9 @@ final class BackdropViewModel: ObservableObject {
             struct ArtworkItem: Decodable {
                 let tvgLogo: String?
                 let logoUrl: String?
-                let name: String?
-                let groupTitle: String?
                 enum CodingKeys: String, CodingKey {
                     case tvgLogo = "tvg_logo"
                     case logoUrl = "logo_url"
-                    case name
-                    case groupTitle = "group_title"
                 }
                 var bestURL: URL? {
                     if let s = tvgLogo, !s.isEmpty, let u = URL(string: s) { return u }
@@ -497,90 +493,35 @@ final class BackdropViewModel: ObservableObject {
                 }
             }
 
-            // Patterns to exclude: Arabic, news, sports, religious, live TV
-            let excludePatterns: [String] = [
-                "arabic", "arab", "عرب", "مسلسل", "افلام", "قناة",
-                "news", "sport", "football", "cricket", "wrestling",
-                "religious", "quran", "islamic", "church",
-                "live", "tv ", " tv", "24/7",
-                "hindi", "bangla", "urdu", "pashto", "farsi", "persian",
-                "bein", "osn", "mbc", "rotana", "al jazeera", "al arabiya",
-                "nile", "abu dhabi", "dubai", "saudi",
-                "iptv", "catch-up", "catchup", "vod |"
-            ]
-
-            func isClean(_ item: ArtworkItem) -> Bool {
-                let combined = [item.name, item.groupTitle]
-                    .compactMap { $0?.lowercased() }
-                    .joined(separator: " ")
-
-                // Reject if any exclude pattern matches
-                for pattern in excludePatterns {
-                    if combined.contains(pattern) { return false }
-                }
-
-                // Reject if name contains Arabic/non-Latin script characters
-                if let name = item.name {
-                    let arabicRange = name.range(of: "\\p{Arabic}", options: .regularExpression)
-                    if arabicRange != nil { return false }
-                }
-
-                // Reject URLs from known IPTV/channel logo CDNs
-                if let url = item.bestURL?.absoluteString.lowercased() {
-                    let badDomains = ["picon", "xmltv", "epg."]
-                    for domain in badDomains {
-                        if url.contains(domain) { return false }
-                    }
-                }
-
-                return true
-            }
-
-            var allFetched: [ArtworkItem] = []
             var collected: [URL] = []
 
-            // Movies first — best poster art
-            for playlist in playlists.prefix(3) {
-                let items: [ArtworkItem] = try await supabase
-                    .from("playlist_items")
-                    .select("tvg_logo, logo_url, name, group_title")
-                    .eq("playlist_id", value: playlist.id.uuidString)
-                    .eq("content_type", value: "movie")
-                    .not("tvg_logo", operator: .is, value: "null")
-                    .limit(80)
-                    .execute()
-                    .value
+            // Try movies first (best poster art), then series, then anything
+            let contentTypes = ["movie", "series", "channel"]
 
-                allFetched.append(contentsOf: items)
-                let clean = items.filter(isClean)
-                collected.append(contentsOf: clean.compactMap(\.bestURL))
-            }
+            for contentType in contentTypes {
+                guard collected.count < 20 else { break }
 
-            // Series if not enough
-            if collected.count < 12 {
-                for playlist in playlists.prefix(2) {
+                for playlist in playlists.prefix(3) {
+                    guard collected.count < 20 else { break }
+
+                    // Query: items with tvg_logo OR logo_url set
                     let items: [ArtworkItem] = try await supabase
                         .from("playlist_items")
-                        .select("tvg_logo, logo_url, name, group_title")
+                        .select("tvg_logo, logo_url")
                         .eq("playlist_id", value: playlist.id.uuidString)
-                        .eq("content_type", value: "series")
-                        .not("tvg_logo", operator: .is, value: "null")
-                        .limit(40)
+                        .eq("content_type", value: contentType)
+                        .limit(50)
                         .execute()
                         .value
 
-                    allFetched.append(contentsOf: items)
-                    let clean = items.filter(isClean)
-                    collected.append(contentsOf: clean.compactMap(\.bestURL))
+                    let urls = items.compactMap(\.bestURL)
+                    collected.append(contentsOf: urls)
                 }
             }
 
-            // Fallback: if filter removed everything, use unfiltered content
-            if collected.isEmpty {
-                collected = allFetched.compactMap(\.bestURL)
-            }
+            guard !collected.isEmpty else { return [] }
 
-            // Deduplicate, shuffle, fetch more than needed for quality scoring
+            // Deduplicate, shuffle, take up to 20
             let unique = Array(Set(collected.map(\.absoluteString)))
                 .compactMap(URL.init(string:))
                 .shuffled()

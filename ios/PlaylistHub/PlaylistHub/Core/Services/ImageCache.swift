@@ -3,7 +3,7 @@ import SwiftUI
 /// In-memory image cache backed by NSCache.
 /// Shared across the app so poster images survive tab switches,
 /// scroll recycling, and NavigationStack pushes.
-final class ImageCacheStore {
+final class ImageCacheStore: @unchecked Sendable {
     static let shared = ImageCacheStore()
 
     private let cache = NSCache<NSURL, UIImage>()
@@ -31,23 +31,26 @@ final class ImageCacheStore {
 
         // 2. Coalesce in-flight requests for the same URL
         return await withCheckedContinuation { continuation in
-            inflight.lock()
-            if var waiters = pending[url] {
-                waiters.append(continuation)
-                pending[url] = waiters
-                inflight.unlock()
-                return
+            var shouldStart = false
+            inflight.withLock {
+                if var waiters = pending[url] {
+                    waiters.append(continuation)
+                    pending[url] = waiters
+                } else {
+                    pending[url] = [continuation]
+                    shouldStart = true
+                }
             }
-            pending[url] = [continuation]
-            inflight.unlock()
+
+            guard shouldStart else { return }
 
             Task.detached(priority: .utility) { [weak self] in
                 guard let self else { return }
                 var result: UIImage?
                 defer {
-                    self.inflight.lock()
-                    let waiters = self.pending.removeValue(forKey: url) ?? []
-                    self.inflight.unlock()
+                    let waiters = self.inflight.withLock {
+                        self.pending.removeValue(forKey: url) ?? []
+                    }
                     for w in waiters { w.resume(returning: result) }
                 }
 
