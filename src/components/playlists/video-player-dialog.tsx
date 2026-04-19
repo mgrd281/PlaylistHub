@@ -272,10 +272,37 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
 
   const relatedChannels = useMemo(() => {
     if (!item || !channelList?.length) return [];
-    return channelList
-      .filter(ch => ch.id !== item.id && ch.group_title === item.group_title)
-      .slice(0, 20);
-  }, [item, channelList]);
+    const MAX = 40;
+
+    // 1) Same group_title first (excluding current)
+    const sameGroup = channelList.filter(
+      ch => ch.id !== item.id && ch.group_title === item.group_title
+    );
+
+    if (sameGroup.length >= MAX) return sameGroup.slice(0, MAX);
+
+    // 2) Fill with nearby channels from the full list (different group)
+    const sameGroupIds = new Set(sameGroup.map(ch => ch.id));
+    sameGroupIds.add(item.id);
+    const remaining = MAX - sameGroup.length;
+    const idx = currentIndex >= 0 ? currentIndex : 0;
+
+    // Take channels around the current index
+    const nearby: PlaylistItem[] = [];
+    let lo = idx - 1, hi = idx + 1;
+    while (nearby.length < remaining && (lo >= 0 || hi < channelList.length)) {
+      if (hi < channelList.length && !sameGroupIds.has(channelList[hi].id)) {
+        nearby.push(channelList[hi]);
+      }
+      if (lo >= 0 && !sameGroupIds.has(channelList[lo].id)) {
+        nearby.push(channelList[lo]);
+      }
+      hi++;
+      lo--;
+    }
+
+    return [...sameGroup, ...nearby].slice(0, MAX);
+  }, [item, channelList, currentIndex]);
 
   const [liveChannelSearch, setLiveChannelSearch] = useState('');
   const [liveSupportReady, setLiveSupportReady] = useState(false);
@@ -1127,7 +1154,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
   const displayName = activeEpisode?.title || item.name;
-  const hasLiveSide = hasNavigation && relatedChannels.length > 0;
+  const hasLiveSide = hasNavigation;
   const hasVodSide = isVod && (vodRecommendations.length > 0 || vodRecsLoading);
   const hasSideContent = !fullscreen && (hasLiveSide || hasVodSide);
   const sideVisible = hasSideContent && showSidePanel;
@@ -2249,9 +2276,9 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
         </div>
         </div>
 
-        {/* ═══════ SIDE PANEL — Live channels only (VOD has its own layout) ═══════ */}
+        {/* ═══════ SIDE PANEL — Live channels (desktop only, hidden on mobile) ═══════ */}
         {sideVisible && !isVod && (
-          <div className={`flex flex-col bg-card/70 border border-border/60 ${
+          <div className={`hidden md:flex flex-col bg-card/70 border border-border/60 ${
             viewMode === 'theater' ? 'w-[360px]' : 'w-[330px]'
           } rounded-2xl overflow-hidden backdrop-blur-sm`}>
             <div className="shrink-0 px-4 pt-4 pb-3">
@@ -2346,6 +2373,44 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           </div>
         )}
       </div>
+
+      {/* ═══════ MOBILE CHANNEL STRIP — horizontal scroll chips (md:hidden) ═══════ */}
+      {hasNavigation && !isVod && !fullscreen && liveSupportReady && (
+        <div className="md:hidden mt-2 px-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Tv className="h-3 w-3 text-muted-foreground" />
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              {item.group_title || 'Channels'}
+            </span>
+            <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+              {relatedChannels.length}
+            </span>
+          </div>
+          <div className="overflow-x-auto scrollbar-none -mx-4 px-4 pb-3">
+            <div className="flex gap-1.5 w-max">
+              {/* Current channel pinned first */}
+              <button
+                className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-primary-foreground text-[12px] font-semibold whitespace-nowrap shrink-0"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                {item.name}
+              </button>
+              {relatedChannels.map((ch) => (
+                <button
+                  key={ch.id}
+                  onClick={() => navigateChannel(ch)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-muted/80 hover:bg-muted text-[12px] font-medium text-foreground/80 whitespace-nowrap shrink-0 transition-colors"
+                >
+                  {ch.tvg_logo && (
+                    <img src={ch.tvg_logo} alt="" className="h-4 w-4 rounded-sm object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  )}
+                  {ch.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       </>
       )}
 

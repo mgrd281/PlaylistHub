@@ -277,8 +277,8 @@ struct PlayerView: View {
 
     @ViewBuilder
     private var secondaryPanel: some View {
-        if let list = vm.channelList, list.count > 1 {
-            channelStrip(list)
+        if vm.relatedChannels.count > 0 {
+            channelStrip(vm.relatedChannels)
         } else if vm.currentItem.contentType == .series {
             seriesPanel
         }
@@ -286,28 +286,53 @@ struct PlayerView: View {
 
     private func channelStrip(_ list: [PlaylistItem]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("CHANNELS")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.white.opacity(0.3))
-                .tracking(1.2)
-                .padding(.horizontal, 16)
+            HStack(spacing: 6) {
+                Text(vm.currentItem.groupTitle?.uppercased() ?? "CHANNELS")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .tracking(1.2)
+                Text("\(list.count)")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.2))
+            }
+            .padding(.horizontal, 16)
 
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 6) {
                         ForEach(list) { ch in
+                            let isActive = ch.id == vm.currentItem.id
                             Button {
                                 vm.switchTo(ch)
                                 scheduleControlsHide()
                             } label: {
-                                Text(ch.name)
-                                    .font(.caption2.weight(ch.id == vm.currentItem.id ? .bold : .regular))
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .background(ch.id == vm.currentItem.id ? .red : .white.opacity(0.08))
-                                    .foregroundStyle(ch.id == vm.currentItem.id ? .white : .white.opacity(0.6))
-                                    .clipShape(Capsule())
+                                HStack(spacing: 5) {
+                                    if isActive {
+                                        Circle()
+                                            .fill(.red)
+                                            .frame(width: 5, height: 5)
+                                    }
+                                    if let logo = ch.resolvedLogoURL {
+                                        AsyncImage(url: logo) { phase in
+                                            switch phase {
+                                            case .success(let image):
+                                                image.resizable().aspectRatio(contentMode: .fit)
+                                                    .frame(width: 14, height: 14)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                            default:
+                                                EmptyView()
+                                            }
+                                        }
+                                    }
+                                    Text(ch.name)
+                                        .font(.system(size: 12, weight: isActive ? .bold : .regular))
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(isActive ? .red : .white.opacity(0.08))
+                                .foregroundStyle(isActive ? .white : .white.opacity(0.7))
+                                .clipShape(Capsule())
                             }
                             .id(ch.id)
                         }
@@ -479,6 +504,42 @@ final class PlayerViewModel: ObservableObject {
     var positionText: String? {
         guard hasNavigation else { return nil }
         return "\(currentIndex + 1)/\(channelList!.count)"
+    }
+
+    /// Related channels: same group first, then nearby from full list
+    var relatedChannels: [PlaylistItem] {
+        guard let list = channelList, list.count > 1 else { return [] }
+        let maxCount = 40
+
+        // Same group_title first (excluding current)
+        let sameGroup = list.filter {
+            $0.id != currentItem.id && $0.groupTitle == currentItem.groupTitle
+        }
+
+        if sameGroup.count >= maxCount { return Array(sameGroup.prefix(maxCount)) }
+
+        // Fill with nearby channels from different groups
+        var usedIds = Set(sameGroup.map { $0.id })
+        usedIds.insert(currentItem.id)
+        let remaining = maxCount - sameGroup.count
+        let idx = currentIndex >= 0 ? currentIndex : 0
+
+        var nearby: [PlaylistItem] = []
+        var lo = idx - 1
+        var hi = idx + 1
+        while nearby.count < remaining && (lo >= 0 || hi < list.count) {
+            if hi < list.count && !usedIds.contains(list[hi].id) {
+                nearby.append(list[hi])
+            }
+            if lo >= 0 && !usedIds.contains(list[lo].id) {
+                nearby.append(list[lo])
+            }
+            hi += 1
+            lo -= 1
+        }
+
+        // Current item at front for highlight, then same-group, then nearby
+        return [currentItem] + sameGroup + nearby
     }
 
     var currentTimeFormatted: String { Self.formatTime(currentTime) }
