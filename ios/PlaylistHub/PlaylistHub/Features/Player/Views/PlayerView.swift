@@ -758,6 +758,8 @@ final class PlayerViewModel: ObservableObject {
 
     /// Timeout per source in cascade (seconds)
     private static let sourceTimeout: TimeInterval = 6
+    /// Longer timeout for VOD (MP4 files need more time for moov atom + buffering)
+    private static let vodSourceTimeout: TimeInterval = 12
 
     var prevChannel: PlaylistItem? {
         guard currentIndex > 0 else { return nil }
@@ -885,7 +887,14 @@ final class PlayerViewModel: ObservableObject {
 
     /// Build URL cascade and start with the fastest source (direct → CF → Vercel)
     private func loadStream(for item: PlaylistItem) {
-        let cascade = AppConfig.streamCascade(for: item.resolvedStreamURL)
+        let cascade: [URL]
+        if item.isXtreamVod {
+            // VOD: original format first (.mp4), then .m3u8 as fallback
+            cascade = AppConfig.vodStreamCascade(for: item.resolvedStreamURL, hlsFallback: item.hlsFallbackURL)
+        } else {
+            // Live TV: .m3u8 only (resolvedStreamURL already converts)
+            cascade = AppConfig.streamCascade(for: item.resolvedStreamURL)
+        }
         guard let first = cascade.first else {
             error = "Invalid stream URL"
             isBuffering = false
@@ -909,7 +918,7 @@ final class PlayerViewModel: ObservableObject {
             AVURLAssetPreferPreciseDurationAndTimingKey: false
         ])
         let playerItem = AVPlayerItem(asset: asset)
-        playerItem.preferredForwardBufferDuration = 2
+        playerItem.preferredForwardBufferDuration = currentItem.isLive ? 2 : 10
 
         // Cancel previous observers
         statusObserver?.invalidate()
@@ -937,15 +946,16 @@ final class PlayerViewModel: ObservableObject {
         }
 
         // Timeout: if this source doesn't resolve within limit, try next
+        let timeoutDuration = currentItem.isLive ? Self.sourceTimeout : Self.vodSourceTimeout
         let timeout = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self, !self.hasFirstFrame else { return }
-                print("[Player] ⏱ Timeout (\(Self.sourceTimeout)s) for \(host)")
+                print("[Player] ⏱ Timeout (\(timeoutDuration)s) for \(host)")
                 self.advanceToNextSource(lastError: "Timeout — source too slow")
             }
         }
         fallbackTimer = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sourceTimeout, execute: timeout)
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeoutDuration, execute: timeout)
 
         player.replaceCurrentItem(with: playerItem)
         player.play()
@@ -1136,13 +1146,15 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func playEpisode(_ episode: EpisodeData) {
-        // Convert to HLS (.m3u8) — Xtream servers support HLS for all content types
-        let hlsUrl = episode.streamUrl.replacingOccurrences(
+        // Try original format first (.mp4/.mkv), fall back to .m3u8
+        let originalUrl = episode.streamUrl
+        let ext = originalUrl.components(separatedBy: ".").last ?? ""
+        let hlsFallback: String? = (ext != "m3u8") ? originalUrl.replacingOccurrences(
             of: "\\.[a-zA-Z0-9]+$",
             with: ".m3u8",
             options: .regularExpression
-        )
-        let cascade = AppConfig.streamCascade(for: hlsUrl)
+        ) : nil
+        let cascade = AppConfig.vodStreamCascade(for: originalUrl, hlsFallback: hlsFallback)
         guard let first = cascade.first else { return }
         fallbackURLs = Array(cascade.dropFirst())
         loadStartTime = CFAbsoluteTimeGetCurrent()

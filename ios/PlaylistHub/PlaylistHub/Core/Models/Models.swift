@@ -136,10 +136,17 @@ struct PlaylistItem: Codable, Identifiable {
         streamUrl.contains("/live/") || streamUrl.contains("/movie/") || streamUrl.contains("/series/")
     }
 
+    /// Whether this is an Xtream VOD item (movie or series — NOT live)
+    var isXtreamVod: Bool {
+        guard streamUrl.contains("/movie/") || streamUrl.contains("/series/") else { return false }
+        return streamUrl.range(of: #"/(?:movie|series)/[^/]+/[^/]+/\d+\.\w+$"#, options: .regularExpression) != nil
+    }
+
     var resolvedStreamURL: String {
-        // Xtream-codes servers serve HLS for any content type when requested as .m3u8
-        // AVPlayer cannot play MKV/TS containers directly, so we always convert
-        if isXtreamURL {
+        // Only force .m3u8 for LIVE channels — Xtream always serves /live/ as HLS.
+        // Movies & series: keep original container (.mp4/.mkv/.ts) — most Xtream
+        // servers do NOT support HLS conversion for VOD content.
+        if isLive && isXtreamURL {
             let ext = streamUrl.components(separatedBy: ".").last ?? ""
             if ext != "m3u8" {
                 return streamUrl.replacingOccurrences(
@@ -150,6 +157,18 @@ struct PlaylistItem: Codable, Identifiable {
             }
         }
         return streamUrl
+    }
+
+    /// HLS version of the URL — used as fallback for VOD when original format fails
+    var hlsFallbackURL: String? {
+        guard isXtreamVod else { return nil }
+        let ext = streamUrl.components(separatedBy: ".").last ?? ""
+        guard ext != "m3u8" else { return nil }
+        return streamUrl.replacingOccurrences(
+            of: "\\.[a-zA-Z0-9]+$",
+            with: ".m3u8",
+            options: .regularExpression
+        )
     }
 }
 

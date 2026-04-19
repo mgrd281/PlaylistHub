@@ -34,6 +34,24 @@ enum AppConfig {
         return urls
     }
 
+    /// VOD cascade: tries original format through all proxies first,
+    /// then falls back to HLS (.m3u8) conversion through all proxies.
+    /// Most Xtream servers serve VOD as the original container — .m3u8 is a last resort.
+    static func vodStreamCascade(for streamURL: String, hlsFallback: String?) -> [URL] {
+        var urls: [URL] = []
+        // Phase 1: Original format (e.g. .mp4) — direct, CF, Vercel
+        if let direct = URL(string: streamURL) { urls.append(direct) }
+        urls.append(cfWorkerStreamURL(for: streamURL))
+        urls.append(streamProxyURL(for: streamURL))
+        // Phase 2: HLS conversion fallback (if available)
+        if let hls = hlsFallback {
+            if let direct = URL(string: hls) { urls.append(direct) }
+            urls.append(cfWorkerStreamURL(for: hls))
+            urls.append(streamProxyURL(for: hls))
+        }
+        return urls
+    }
+
     static func seriesEpisodesURL(for streamURL: String) -> URL {
         var components = URLComponents(url: webAppBaseURL.appendingPathComponent("/api/series-episodes"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "url", value: streamURL)]
