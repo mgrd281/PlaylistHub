@@ -64,5 +64,11 @@ struct MainTabView: View {
                 .tag(AppState.AppTab.settings)
         }
         .tint(themeManager.accentColor)
+        .task { await prefetch() }
+    }
+
+    /// Warm shared caches so first tab load is near-instant
+    private func prefetch() async {
+        _ = try? await PlaylistCache.shared.fetchPlaylists()
     }
 }

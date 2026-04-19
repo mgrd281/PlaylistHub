@@ -22,6 +22,7 @@ interface BrowsePlaylist {
 /* Module-level caches (survive route changes) */
 let liveTvPlaylistCache: { playlists: BrowsePlaylist[]; ts: number } | null = null;
 const liveTvChannelCache = new Map<string, { sections: any[]; total: number; ts: number }>();
+let liveTvActivePlaylistId: string | null = null;
 
 /* ═══════════════════════════════════════════════
    Smart category classification
@@ -602,7 +603,13 @@ export function LiveTVBrowser() {
   const [playlists, setPlaylists] = useState<BrowsePlaylist[]>([]);
   const [playlistsLoading, setPlaylistsLoading] = useState(true);
   const [playlistsError, setPlaylistsError] = useState<string | null>(null);
-  const [activePlaylist, setActivePlaylist] = useState<BrowsePlaylist | null>(null);
+  const [activePlaylist, setActivePlaylistRaw] = useState<BrowsePlaylist | null>(null);
+
+  // Wrap setActivePlaylist to persist selection in module cache
+  const setActivePlaylist = useCallback((p: BrowsePlaylist | null) => {
+    setActivePlaylistRaw(p);
+    liveTvActivePlaylistId = p?.id ?? null;
+  }, []);
 
   // Channel state (scoped to selected playlist)
   const [sections, setSections] = useState<GroupedSection[]>([]);
@@ -629,7 +636,11 @@ export function LiveTVBrowser() {
     const cached = liveTvPlaylistCache;
     if (cached) {
       setPlaylists(cached.playlists);
-      if (cached.playlists.length === 1) setActivePlaylist(cached.playlists[0]);
+      // Restore previously active playlist or auto-select single
+      const restored = liveTvActivePlaylistId
+        ? cached.playlists.find((p) => p.id === liveTvActivePlaylistId) ?? null
+        : cached.playlists.length === 1 ? cached.playlists[0] : null;
+      if (restored) setActivePlaylist(restored);
       setPlaylistsLoading(false);
       if (Date.now() - cached.ts < 5 * 60 * 1000) return;
     }

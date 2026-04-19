@@ -1,11 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
 import { ContentBrowser } from '@/components/browse/content-browser';
 
-export default async function SeriesPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
-
+export default function SeriesPage() {
   return <ContentBrowser contentType="series" />;
 }

@@ -32,6 +32,9 @@ function pageCacheKey(type: string, page: number, limit: number, search: string,
   return `${type}|${page}|${limit}|${search}|${group}`;
 }
 
+/* Module-level UI state (survives route changes) */
+const uiStateCache = new Map<string, { group: string; page: number; layout: 'poster' | 'wide' }>();
+
 const TYPE_ICON: Record<string, React.ElementType> = {
   channel: Tv,
   movie: Film,
@@ -198,22 +201,28 @@ function BrowseCard({
 /* ─── Main Export ─── */
 
 export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movie' | 'series' }) {
+  const savedUi = uiStateCache.get(contentType);
   const [items, setItems] = useState<PlaylistItem[]>([]);
   const [groups, setGroups] = useState<GroupInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [activeGroup, setActiveGroup] = useState('');
-  const [page, setPage] = useState(1);
+  const [activeGroup, setActiveGroup] = useState(savedUi?.group ?? '');
+  const [page, setPage] = useState(savedUi?.page ?? 1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [playerItem, setPlayerItem] = useState<PlaylistItem | null>(null);
-  const [layout, setLayout] = useState<'poster' | 'wide'>(contentType === 'channel' ? 'wide' : 'poster');
+  const [layout, setLayout] = useState<'poster' | 'wide'>(savedUi?.layout ?? (contentType === 'channel' ? 'wide' : 'poster'));
   const groupScrollRef = useRef<HTMLDivElement>(null);
   const limit = 60;
 
   const Icon = TYPE_ICON[contentType] || Layers;
   const label = TYPE_LABEL[contentType] || contentType;
+
+  // Persist UI state for restoration on route return
+  useEffect(() => {
+    uiStateCache.set(contentType, { group: activeGroup, page, layout });
+  }, [contentType, activeGroup, page, layout]);
 
   // Debounce search
   useEffect(() => {
