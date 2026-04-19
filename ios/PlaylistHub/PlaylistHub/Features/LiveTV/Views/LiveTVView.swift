@@ -442,10 +442,17 @@ struct LiveTVView: View {
     // MARK: - Category Tabs
 
     private var categoryTabs: some View {
-        ScrollViewReader { proxy in
+        let sortedCats = vm.categories.sorted { a, b in
+            let sA = BrowsingMemory.shared.categoryScore(a.key)
+            let sB = BrowsingMemory.shared.categoryScore(b.key)
+            if sA != sB { return sA > sB }
+            return a.totalCount > b.totalCount
+        }
+
+        return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    ForEach(vm.categories) { cat in
+                    ForEach(sortedCats) { cat in
                         let isSelected = vm.activeCategory?.id == cat.id
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -485,23 +492,44 @@ struct LiveTVView: View {
     // MARK: - Sub-Group Pills
 
     private func subGroupPills(_ category: LiveTVCategory) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        let sortedGroups = category.groups.sorted { a, b in
+            let scoreA = BrowsingMemory.shared.groupScore(category: category.key, group: a.name)
+            let scoreB = BrowsingMemory.shared.groupScore(category: category.key, group: b.name)
+            if scoreA != scoreB { return scoreA > scoreB }
+            return a.items.count > b.items.count
+        }
+
+        return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 5) {
+                // Favorites pill (only when there are favorites)
+                if !vm.favoriteItems.isEmpty {
+                    IPTVPill(
+                        name: "❤️ Favorites",
+                        count: vm.favoriteItems.count,
+                        isSelected: vm.showFavorites
+                    ) {
+                        vm.showFavorites.toggle()
+                        if vm.showFavorites { vm.activeGroup = nil }
+                    }
+                }
+
                 IPTVPill(
                     name: "All",
                     count: category.totalCount,
-                    isSelected: vm.activeGroup == nil
+                    isSelected: vm.activeGroup == nil && !vm.showFavorites
                 ) {
-                    vm.activeGroup = nil
+                    vm.showFavorites = false
+                    vm.selectGroup(nil)
                 }
 
-                ForEach(category.groups) { group in
+                ForEach(sortedGroups) { group in
                     IPTVPill(
                         name: group.displayName,
                         count: group.items.count,
-                        isSelected: vm.activeGroup == group.name
+                        isSelected: vm.activeGroup == group.name && !vm.showFavorites
                     ) {
-                        vm.activeGroup = vm.activeGroup == group.name ? nil : group.name
+                        vm.showFavorites = false
+                        vm.selectGroup(group.name)
                     }
                 }
             }
@@ -512,33 +540,41 @@ struct LiveTVView: View {
     // MARK: - Channel List
 
     private var channelList: some View {
-        Group {
-            if vm.displayItems.isEmpty {
+        let items = vm.showFavorites ? vm.favoriteItems : vm.displayItems
+        return Group {
+            if items.isEmpty {
                 VStack(spacing: 10) {
                     Spacer()
-                    Image(systemName: "tv.slash")
+                    Image(systemName: vm.showFavorites ? "heart.slash" : "tv.slash")
                         .font(.system(size: 24, weight: .light))
                         .foregroundStyle(.quaternary)
-                    Text("No channels in this group")
+                    Text(vm.showFavorites ? "No favorites yet" : "No channels in this group")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if vm.showFavorites {
+                        Text("Tap ❤️ on channels to add them here")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                     Spacer()
                 }
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(vm.displayItems) { item in
+                            ForEach(items) { item in
                                 IPTVChannelRow(
                                     item: item,
                                     isPlaying: item.id == vm.playingItem?.id,
-                                    healthStatus: vm.channelHealth(for: item)
+                                    healthStatus: vm.channelHealth(for: item),
+                                    isFavorite: vm.isFavorite(item),
+                                    onFavorite: { vm.toggleFavorite(item) }
                                 ) {
                                     vm.playChannel(item)
                                 }
                                 .id(item.id)
 
-                                if item.id != vm.displayItems.last?.id {
+                                if item.id != items.last?.id {
                                     Divider().padding(.leading, 56)
                                 }
                             }
@@ -591,7 +627,9 @@ struct LiveTVView: View {
                                 IPTVChannelRow(
                                     item: item,
                                     isPlaying: item.id == vm.playingItem?.id,
-                                    healthStatus: vm.channelHealth(for: item)
+                                    healthStatus: vm.channelHealth(for: item),
+                                    isFavorite: vm.isFavorite(item),
+                                    onFavorite: { vm.toggleFavorite(item) }
                                 ) {
                                     vm.playChannel(item)
                                 }
@@ -664,86 +702,102 @@ private struct IPTVChannelRow: View {
     let item: PlaylistItem
     let isPlaying: Bool
     let healthStatus: ChannelHealthManager.ChannelStatus
+    var isFavorite: Bool = false
+    var onFavorite: (() -> Void)? = nil
     let onTap: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 10) {
-                // Channel logo with health dot overlay
-                Group {
-                    if let logoURL = item.resolvedLogoURL {
-                        CachedAsyncImage(url: logoURL) {
+        HStack(spacing: 0) {
+            Button(action: onTap) {
+                HStack(spacing: 10) {
+                    // Channel logo with health dot overlay
+                    Group {
+                        if let logoURL = item.resolvedLogoURL {
+                            CachedAsyncImage(url: logoURL) {
+                                logoFallback
+                            }
+                            .aspectRatio(contentMode: .fit)
+                        } else {
                             logoFallback
                         }
-                        .aspectRatio(contentMode: .fit)
-                    } else {
-                        logoFallback
                     }
-                }
-                .frame(width: 38, height: 38)
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(isPlaying ? Color.red.opacity(0.5) : .clear, lineWidth: 1.5)
-                )
-                .overlay(alignment: .bottomTrailing) {
-                    // Health status dot
-                    if healthStatus != .unknown {
-                        Circle()
-                            .fill(healthStatus == .working ? Color.green : Color.red.opacity(0.7))
-                            .frame(width: 8, height: 8)
-                            .overlay(
-                                Circle().stroke(Color(.systemBackground), lineWidth: 1.5)
-                            )
-                            .offset(x: 2, y: 2)
-                    }
-                }
-
-                // Channel info
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Text(item.name)
-                            .font(.subheadline.weight(isPlaying ? .semibold : .regular))
-                            .foregroundStyle(isPlaying ? .red : healthStatus == .failed ? .secondary : .primary)
-                            .lineLimit(1)
-                    }
-                    if let group = item.groupTitle {
-                        Text(group)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: 4)
-
-                // Playing indicator or play icon
-                if isPlaying {
-                    HStack(spacing: 2) {
-                        ForEach(0..<3, id: \.self) { i in
-                            Capsule()
-                                .fill(Color.red)
-                                .frame(width: 3, height: CGFloat([10, 15, 8][i]))
+                    .frame(width: 38, height: 38)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(isPlaying ? Color.red.opacity(0.5) : .clear, lineWidth: 1.5)
+                    )
+                    .overlay(alignment: .bottomTrailing) {
+                        // Health status dot
+                        if healthStatus != .unknown {
+                            Circle()
+                                .fill(healthStatus == .working ? Color.green : Color.red.opacity(0.7))
+                                .frame(width: 8, height: 8)
+                                .overlay(
+                                    Circle().stroke(Color(.systemBackground), lineWidth: 1.5)
+                                )
+                                .offset(x: 2, y: 2)
                         }
                     }
-                    .frame(width: 18)
-                } else {
-                    Image(systemName: healthStatus == .failed ? "xmark.circle" : "play.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(healthStatus == .failed ? .red.opacity(0.4) : .secondary)
-                        .frame(width: 26, height: 26)
-                        .background(Color(.systemGray6))
-                        .clipShape(Circle())
+
+                    // Channel info
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Text(item.name)
+                                .font(.subheadline.weight(isPlaying ? .semibold : .regular))
+                                .foregroundStyle(isPlaying ? .red : healthStatus == .failed ? .secondary : .primary)
+                                .lineLimit(1)
+                        }
+                        if let group = item.groupTitle {
+                            Text(group)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer(minLength: 4)
+
+                    // Playing indicator or play icon
+                    if isPlaying {
+                        HStack(spacing: 2) {
+                            ForEach(0..<3, id: \.self) { i in
+                                Capsule()
+                                    .fill(Color.red)
+                                    .frame(width: 3, height: CGFloat([10, 15, 8][i]))
+                            }
+                        }
+                        .frame(width: 18)
+                    } else {
+                        Image(systemName: healthStatus == .failed ? "xmark.circle" : "play.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(healthStatus == .failed ? .red.opacity(0.4) : .secondary)
+                            .frame(width: 26, height: 26)
+                            .background(Color(.systemGray6))
+                            .clipShape(Circle())
+                    }
                 }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(isPlaying ? Color.red.opacity(0.06) : .clear)
-            .opacity(healthStatus == .failed ? 0.6 : 1.0)
-            .contentShape(Rectangle())
+            .buttonStyle(IPTVRowButtonStyle())
+
+            // Favorite heart button
+            if let onFav = onFavorite {
+                Button(action: onFav) {
+                    Image(systemName: isFavorite ? "heart.fill" : "heart")
+                        .font(.system(size: 14))
+                        .foregroundStyle(isFavorite ? Color.red : Color(.tertiaryLabel))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(IPTVRowButtonStyle())
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(isPlaying ? Color.red.opacity(0.06) : .clear)
+        .opacity(healthStatus == .failed ? 0.6 : 1.0)
     }
 
     private var logoFallback: some View {
@@ -999,6 +1053,63 @@ private let countryToCategory: [String: String] = {
     return m
 }()
 
+// ── Arabic Country Sub-Classification ──
+
+private struct ArabicCountryDef {
+    let key: String
+    let label: String
+    let flag: String
+    let pattern: NSRegularExpression
+}
+
+private let arabicCountryDefs: [ArabicCountryDef] = {
+    func rx(_ p: String) -> NSRegularExpression {
+        try! NSRegularExpression(pattern: p, options: .caseInsensitive)
+    }
+    return [
+        ArabicCountryDef(key: "sa", label: "Saudi Arabia", flag: "🇸🇦", pattern: rx(#"saudi|ksa\b|sbc\b|mbc\b|rotana|الس[عا]ودية|المملكة"#)),
+        ArabicCountryDef(key: "ae", label: "UAE",          flag: "🇦🇪", pattern: rx(#"emirates|uae\b|abu\s?dhabi|dubai|sharjah|ajman|الإمارات|أبو\s?ظبي|دبي"#)),
+        ArabicCountryDef(key: "eg", label: "Egypt",        flag: "🇪🇬", pattern: rx(#"egypt|misr|cairo|nile|cbc\b|on\s?e|dmc\b|ten\b|masra|مصر|القاهرة|النيل"#)),
+        ArabicCountryDef(key: "qa", label: "Qatar",        flag: "🇶🇦", pattern: rx(#"qatar|jazeera|al\s?kass|bein|قطر|الجزيرة|الكأس"#)),
+        ArabicCountryDef(key: "kw", label: "Kuwait",       flag: "🇰🇼", pattern: rx(#"kuwait|ktv\b|الكويت|كويت"#)),
+        ArabicCountryDef(key: "bh", label: "Bahrain",      flag: "🇧🇭", pattern: rx(#"bahrain|البحرين"#)),
+        ArabicCountryDef(key: "om", label: "Oman",         flag: "🇴🇲", pattern: rx(#"oman|عمان|سلطنة"#)),
+        ArabicCountryDef(key: "iq", label: "Iraq",         flag: "🇮🇶", pattern: rx(#"iraq|baghdad|kurdistan|العراق|بغداد"#)),
+        ArabicCountryDef(key: "jo", label: "Jordan",       flag: "🇯🇴", pattern: rx(#"jordan|amman|roya|الأردن|عمّان"#)),
+        ArabicCountryDef(key: "lb", label: "Lebanon",      flag: "🇱🇧", pattern: rx(#"leban|lbc\b|ldc\b|mtv\s?lb|otv\b|لبنان|بيروت"#)),
+        ArabicCountryDef(key: "sy", label: "Syria",        flag: "🇸🇾", pattern: rx(#"syria|سوريا|دمشق"#)),
+        ArabicCountryDef(key: "ps", label: "Palestine",    flag: "🇵🇸", pattern: rx(#"palest|فلسطين|القدس|غزة"#)),
+        ArabicCountryDef(key: "ye", label: "Yemen",        flag: "🇾🇪", pattern: rx(#"yemen|اليمن|صنعاء"#)),
+        ArabicCountryDef(key: "dz", label: "Algeria",      flag: "🇩🇿", pattern: rx(#"algeri|dzair|entv|الجزائر|جزائري"#)),
+        ArabicCountryDef(key: "ma", label: "Morocco",      flag: "🇲🇦", pattern: rx(#"morocco|maroc|2m\b|medi\s?1|snrt|المغرب|مغربي"#)),
+        ArabicCountryDef(key: "tn", label: "Tunisia",      flag: "🇹🇳", pattern: rx(#"tunis|nessma|تونس|تونسي"#)),
+        ArabicCountryDef(key: "ly", label: "Libya",        flag: "🇱🇾", pattern: rx(#"libya|ليبيا|طرابلس"#)),
+        ArabicCountryDef(key: "sd", label: "Sudan",        flag: "🇸🇩", pattern: rx(#"sudan|السودان|خرطوم"#)),
+        ArabicCountryDef(key: "mr", label: "Mauritania",   flag: "🇲🇷", pattern: rx(#"mauritan|موريتانيا"#)),
+    ]
+}()
+
+/// Country code → Arabic country key
+private let arabicCountryCodes: Set<String> = Set(["ar", "sa", "ae", "kw", "qa", "bh", "om", "iq", "jo", "lb", "sy", "eg", "ma", "dz", "tn", "ly", "sd", "ye", "ps", "mr"])
+
+/// Classify an Arabic channel/group into a specific country
+private func classifyArabicCountry(_ text: String, prefix: String? = nil) -> String {
+    // 1) Check prefix code directly
+    if let code = prefix, code != "ar" {
+        for def in arabicCountryDefs {
+            if def.key == code { return def.key }
+        }
+    }
+    // 2) Pattern match on text
+    let range = NSRange(text.startIndex..., in: text)
+    for def in arabicCountryDefs {
+        if def.pattern.firstMatch(in: text, range: range) != nil {
+            return def.key
+        }
+    }
+    return "ar_general" // General Arabic (pan-Arab channels, unclassifiable)
+}
+
 /// Smart classification: prefix extraction → content match → country match → channel name fallback
 private func classifyGroup(_ groupName: String, channelNames: [String] = []) -> String {
     let (prefix, suffix) = extractPrefix(groupName)
@@ -1061,6 +1172,7 @@ final class LiveTVViewModel: ObservableObject {
     @Published var activeCategory: LiveTVCategory?
     @Published var activeGroup: String?
     @Published var searchQuery = ""
+    @Published var showFavorites = false
 
     // Inline player state
     @Published var playingItem: PlaylistItem?
@@ -1091,6 +1203,12 @@ final class LiveTVViewModel: ObservableObject {
 
     /// Channel health manager
     private let health = ChannelHealthManager.shared
+
+    /// Favorites manager
+    let favorites = ChannelFavoritesManager.shared
+
+    /// Browsing memory
+    private let memory = BrowsingMemory.shared
 
     /// In-memory cache: playlistId → (categories, allChannels, timestamp)
     static var channelCache: [String: (categories: [LiveTVCategory], channels: [PlaylistItem], ts: CFAbsoluteTime)] = [:]
@@ -1325,6 +1443,40 @@ final class LiveTVViewModel: ObservableObject {
     func selectCategory(_ cat: LiveTVCategory) {
         activeCategory = cat
         activeGroup = nil
+        showFavorites = false
+        memory.visitCategory(cat.key)
+    }
+
+    func selectGroup(_ groupName: String?) {
+        activeGroup = activeGroup == groupName ? nil : groupName
+        if let g = groupName, let cat = activeCategory {
+            memory.visitGroup(category: cat.key, group: g)
+        }
+    }
+
+    // MARK: - Favorites
+
+    func toggleFavorite(_ item: PlaylistItem) {
+        favorites.toggle(
+            streamURL: item.resolvedStreamURL,
+            channelName: item.name,
+            groupTitle: item.groupTitle,
+            logoURL: item.tvgLogo ?? item.logoUrl
+        )
+        objectWillChange.send()
+    }
+
+    func isFavorite(_ item: PlaylistItem) -> Bool {
+        favorites.isFavorite(item.resolvedStreamURL)
+    }
+
+    /// Channels the user has favorited that exist in the current channel list
+    var favoriteItems: [PlaylistItem] {
+        let favURLs = favorites.favorites.keys
+        return allChannels.filter { favURLs.contains($0.resolvedStreamURL) }
+            .sorted { a, b in
+                health.sortScore(for: a.resolvedStreamURL) > health.sortScore(for: b.resolvedStreamURL)
+            }
     }
 
     // MARK: - Fullscreen
@@ -1666,6 +1818,77 @@ private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCat
         }
     }
 
+    // ── Arabic country sub-classification ──
+    // Take all channels classified as "arabic" and re-organize by country
+    if let arabicBucket = buckets["arabic"] {
+        var countryBuckets: [String: [PlaylistItem]] = [:]
+
+        for (sectionName, items) in arabicBucket {
+            let (prefix, _) = extractPrefix(sectionName)
+            for item in items {
+                let countryKey = classifyArabicCountry(
+                    "\(item.name) \(item.groupTitle ?? "") \(sectionName)",
+                    prefix: prefix
+                )
+                countryBuckets[countryKey, default: []].append(item)
+            }
+        }
+
+        // Build country-level groups within Arabic
+        var arabicGroups: [LiveTVCategory.ChannelGroup] = []
+        for (countryKey, channels) in countryBuckets {
+            let def = arabicCountryDefs.first { $0.key == countryKey }
+            let label: String
+            if countryKey == "ar_general" {
+                label = "🌍 Pan-Arab"
+            } else {
+                label = "\(def?.flag ?? "🏳️") \(def?.label ?? countryKey.uppercased())"
+            }
+            arabicGroups.append(LiveTVCategory.ChannelGroup(
+                name: countryKey,
+                displayName: label,
+                items: channels
+            ))
+        }
+
+        // Sort: most channels first, "ar_general" last
+        arabicGroups.sort {
+            if $0.name == "ar_general" { return false }
+            if $1.name == "ar_general" { return true }
+            return $0.items.count > $1.items.count
+        }
+
+        let total = arabicGroups.reduce(0) { $0 + $1.items.count }
+
+        // Replace arabic bucket with country-organized version
+        buckets.removeValue(forKey: "arabic")
+        // We'll insert the Arabic category manually below
+        var result = buildCategoryList(from: buckets)
+        result.insert(LiveTVCategory(
+            id: "arabic",
+            key: "arabic",
+            label: "Arabic",
+            icon: "🪬",
+            groups: arabicGroups,
+            totalCount: total
+        ), at: 0) // Arabic first for Arabic-heavy playlists, or it'll be sorted by count
+
+        return result.sorted {
+            if $0.key == "other" { return false }
+            if $1.key == "other" { return true }
+            return $0.totalCount > $1.totalCount
+        }
+    }
+
+    return buildCategoryList(from: buckets).sorted {
+        if $0.key == "other" { return false }
+        if $1.key == "other" { return true }
+        return $0.totalCount > $1.totalCount
+    }
+}
+
+/// Build category list from non-Arabic buckets
+private func buildCategoryList(from buckets: [String: [(sectionName: String, items: [PlaylistItem])]]) -> [LiveTVCategory] {
     var result: [LiveTVCategory] = []
     for (key, entries) in buckets {
         let def = categoryDefs.first(where: { $0.key == key })
@@ -1693,12 +1916,7 @@ private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCat
             totalCount: total
         ))
     }
-
-    return result.sorted {
-        if $0.key == "other" { return false }
-        if $1.key == "other" { return true }
-        return $0.totalCount > $1.totalCount
-    }
+    return result
 }
 
 /// Deep classification using majority vote on ALL channel names.
