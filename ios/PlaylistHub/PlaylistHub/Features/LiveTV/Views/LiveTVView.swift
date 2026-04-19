@@ -60,10 +60,11 @@ struct LiveTVView: View {
             }
             .task { await vm.loadPlaylists() }
         }
-        .fullScreenCover(isPresented: $vm.showFullscreen) {
-            if let item = vm.playingItem {
-                let list = vm.displayItems.isEmpty ? nil : vm.displayItems
-                PlayerView(item: item, channelList: list)
+        .fullScreenCover(isPresented: $vm.showFullscreen, onDismiss: {
+            vm.reclaimPlayerAfterFullscreen()
+        }) {
+            if let item = vm.playingItem, let player = vm.inlinePlayer {
+                PlayerView(item: item, channelList: nil, existingPlayer: player)
             }
         }
     }
@@ -1285,10 +1286,16 @@ final class LiveTVViewModel: ObservableObject {
     // MARK: - Fullscreen
 
     func openFullscreen() {
-        guard playingItem != nil else { return }
-        // Pause inline player before opening fullscreen (PlayerView creates its own)
-        inlinePlayer?.pause()
+        guard playingItem != nil, inlinePlayer != nil else { return }
+        // Hand off the live player to fullscreen — no pause, no re-buffer
         showFullscreen = true
+    }
+
+    /// Called when fullscreen cover dismisses — reclaim the shared player for inline use
+    func reclaimPlayerAfterFullscreen() {
+        guard let player = inlinePlayer else { return }
+        // Player is still alive and playing — just ensure we track state
+        isPlaying = player.timeControlStatus == .playing
     }
 
     // MARK: - Inline player

@@ -13,8 +13,8 @@ struct PlayerView: View {
     @State private var showControls = true
     @State private var controlsTimer: Timer?
 
-    init(item: PlaylistItem, channelList: [PlaylistItem]?) {
-        _vm = StateObject(wrappedValue: PlayerViewModel(item: item, channelList: channelList))
+    init(item: PlaylistItem, channelList: [PlaylistItem]?, existingPlayer: AVPlayer? = nil) {
+        _vm = StateObject(wrappedValue: PlayerViewModel(item: item, channelList: channelList, existingPlayer: existingPlayer))
     }
 
     var body: some View {
@@ -465,12 +465,13 @@ final class PlayerViewModel: ObservableObject {
     @Published var selectedSeason = 1
     @Published var activeEpisodeId: String?
 
-    /// Single persistent AVPlayer — reused across channel switches
-    let player: AVPlayer = {
-        let p = AVPlayer()
-        p.automaticallyWaitsToMinimizeStalling = false
-        return p
-    }()
+    /// Single persistent AVPlayer — reused across channel switches.
+    /// When `existingPlayer` is provided (e.g. from Live TV inline), we reuse it
+    /// instead of creating a new one — zero re-buffering.
+    let player: AVPlayer
+
+    /// Whether we own the player (created it) or are borrowing it from another view
+    private let ownsPlayer: Bool
 
     private var timeObserver: Any?
     private var statusObserver: NSKeyValueObservation?
@@ -543,11 +544,20 @@ final class PlayerViewModel: ObservableObject {
     var currentTimeFormatted: String { Self.formatTime(currentTime) }
     var durationFormatted: String { Self.formatTime(duration) }
 
-    init(item: PlaylistItem, channelList: [PlaylistItem]?) {
+    init(item: PlaylistItem, channelList: [PlaylistItem]?, existingPlayer: AVPlayer? = nil) {
         self.currentItem = item
         self.channelList = channelList
         self.displayName = item.name
         self.currentIndex = channelList?.firstIndex(where: { $0.id == item.id }) ?? -1
+        if let existing = existingPlayer {
+            self.player = existing
+            self.ownsPlayer = false
+        } else {
+            let p = AVPlayer()
+            p.automaticallyWaitsToMinimizeStalling = false
+            self.player = p
+            self.ownsPlayer = true
+        }
     }
 
     // MARK: - Playback
@@ -555,7 +565,17 @@ final class PlayerViewModel: ObservableObject {
     func startPlayback() {
         // Ensure audio session is active (handles mute switch, route changes)
         try? AVAudioSession.sharedInstance().setActive(true)
-        loadStream(for: currentItem)
+
+        if ownsPlayer {
+            // Fresh player — load stream from scratch
+            loadStream(for: currentItem)
+        } else {
+            // Borrowed player — already playing, just sync state
+            hasFirstFrame = player.currentItem?.status == .readyToPlay
+            isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+            isPlaying = player.timeControlStatus == .playing
+        }
+
         setupTimeObserver()
         setupLifecycleObservers()
         if currentItem.contentType == .series { loadEpisodes() }
@@ -705,11 +725,16 @@ final class PlayerViewModel: ObservableObject {
 
     func teardown() {
         fallbackTimer?.cancel()
-        player.pause()
-        player.replaceCurrentItem(with: nil)
         if let obs = timeObserver { player.removeTimeObserver(obs) }
         statusObserver?.invalidate()
         removeLifecycleObservers()
+
+        if ownsPlayer {
+            // We created this player — clean it up fully
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+        }
+        // Borrowed player: leave it alone — the owner (LiveTVViewModel) reclaims it
     }
 
     // MARK: - Lifecycle (background/foreground)
