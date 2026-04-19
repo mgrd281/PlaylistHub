@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AVFoundation
 
 // MARK: - Playlist info from browse API
 
@@ -58,6 +59,12 @@ struct LiveTVView: View {
                 }
             }
             .task { await vm.loadPlaylists() }
+        }
+        .fullScreenCover(isPresented: $vm.showFullscreen) {
+            if let item = vm.playingItem {
+                let list = vm.displayItems.isEmpty ? nil : vm.displayItems
+                PlayerView(item: item, channelList: list)
+            }
         }
     }
 
@@ -298,6 +305,11 @@ struct LiveTVView: View {
         }
         .aspectRatio(16/9, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 0))
+        .onTapGesture(count: 2) {
+            if vm.playingItem != nil {
+                vm.openFullscreen()
+            }
+        }
         .onTapGesture {
             if vm.playingItem != nil {
                 vm.togglePlayerControls()
@@ -334,6 +346,17 @@ struct LiveTVView: View {
                         .frame(width: 28, height: 28)
                         .background(.white.opacity(0.15), in: Circle())
                 }
+
+                // Fullscreen button
+                Button {
+                    vm.openFullscreen()
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                        .background(.white.opacity(0.15), in: Circle())
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -345,7 +368,22 @@ struct LiveTVView: View {
 
     private var playerControlsOverlay: some View {
         VStack {
+            // Top row — fullscreen button
+            HStack {
+                Spacer()
+                Button { vm.openFullscreen() } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .padding(12)
+            }
+
             Spacer()
+
+            // Center row — prev/play/next
             HStack(spacing: 32) {
                 Button { vm.playPrevChannel() } label: {
                     Image(systemName: "backward.end.fill")
@@ -864,7 +902,8 @@ private let categoryDefs: [CategoryDef] = {
         CategoryDef(key: "movies",       label: "Cinema",       icon: "🎬", pattern: rx(#"movie|cinema|film|hbo|showtime|starz|paramount|amc\b|tcm\b|cinemax|kino\b|cine\b|pelicul|netflix|prime\s?video|hallmark|lifetime"#)),
         CategoryDef(key: "music",        label: "Music",        icon: "🎵", pattern: rx(#"music|musik|musique|mtv\b|vh1|trace|melody|muzz|rotana\s?(music|clip)|radio|hit\s?(tv|music)|club\b.*tv|ibiza|deluxe\s?music|viva\b"#)),
         CategoryDef(key: "documentary",  label: "Documentary",  icon: "🌍", pattern: rx(#"document|discovery|nat\s?geo|national\s?geo|history|animal\s?planet|science|planet\s?earth|bbc\s?earth|love\s?nature|doku|natuur|wildlife|travel|adventure|explore"#)),
-        CategoryDef(key: "religious",    label: "Religious",    icon: "🕌", pattern: rx(#"relig|quran|islam|christian|church|gospel|prayer|bible|catholic|faith|iqra|kanal\s?7|trt\s?diyanet|huda|god\s?tv|daystar|ewtn"#)),
+        CategoryDef(key: "religious",    label: "Religious",    icon: "🕌", pattern: rx(#"relig|quran|islam|muslim|mosque|ramadan|iqra|kanal\s?7|trt\s?diyanet|huda|masjid"#)),
+        CategoryDef(key: "christian",    label: "Christian",    icon: "✝️", pattern: rx(#"christian|church|gospel|prayer|bible|catholic|faith|god\s?tv|daystar|ewtn|tbn\b|cbn\b|ctv\b|worship|hillsong|bethel|joel\s?osteen|trinity|bless|salvation|preach|ministry|pastoral|devotion|hymn|praise|jesus|christ|divine|miracle|angel|holy|spiritual|apostol|evangel|risen|redeemer|pentecost"#)),
         CategoryDef(key: "entertainment",label: "Entertainment",icon: "🎭", pattern: rx(#"entertain|general|variety|comedy|drama|lifestyle|reality|tlc|bravo|e!\b|fx\b|usa\s?network|tbs|tnt\b|food|cooking|cuisine|hgtv|diy\b"#)),
         CategoryDef(key: "education",    label: "Education",    icon: "📚", pattern: rx(#"educat|learn|school|university|lecture|class|wissen|ted\b|pbs\b|knowledge"#)),
         CategoryDef(key: "adult",        label: "18+",          icon: "🔞", pattern: rx(#"adult|18\+|xxx|eroti|playboy|hustle"#)),
@@ -1012,13 +1051,24 @@ final class LiveTVViewModel: ObservableObject {
     @Published var playerError: String?
     @Published var showPlayerControls = false
 
+    // Fullscreen
+    @Published var showFullscreen = false
+
     private var allChannels: [PlaylistItem] = []
     private var statusObserver: NSKeyValueObservation?
     private var controlsTimer: Timer?
+    private var hasLoadedPlaylists = false
 
     /// Cascade fallback state
     private var fallbackURLs: [URL] = []
     private var fallbackTimer: DispatchWorkItem?
+
+    /// In-memory cache: playlistId → (categories, allChannels, timestamp)
+    private static var channelCache: [String: (categories: [LiveTVCategory], channels: [PlaylistItem], ts: CFAbsoluteTime)] = [:]
+    private static let cacheTTL: CFAbsoluteTime = 300 // 5 minutes
+
+    /// Faster cascade timeout for live TV (4s instead of 6s)
+    private static let sourceTimeout: TimeInterval = 4
 
     var isSearching: Bool { !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -1028,14 +1078,10 @@ final class LiveTVViewModel: ObservableObject {
     var displayItems: [PlaylistItem] {
         guard let cat = activeCategory else { return [] }
 
-        var items: [PlaylistItem]
         if let g = activeGroup, let group = cat.groups.first(where: { $0.name == g }) {
-            items = group.items
-        } else {
-            items = cat.groups.flatMap(\.items)
+            return group.items
         }
-
-        return items
+        return cat.groups.flatMap(\.items)
     }
 
     var searchResults: [PlaylistItem] {
@@ -1065,7 +1111,7 @@ final class LiveTVViewModel: ObservableObject {
 
     func loadPlaylists() async {
         // Skip if already loaded — preserves player, categories, and scroll state
-        guard playlists.isEmpty else { return }
+        guard !hasLoadedPlaylists else { return }
 
         playlistsLoading = true
         playlistsError = nil
@@ -1093,6 +1139,7 @@ final class LiveTVViewModel: ObservableObject {
             struct Resp: Codable { let playlists: [BrowsePlaylistInfo] }
             let decoded = try JSONDecoder().decode(Resp.self, from: data)
             self.playlists = decoded.playlists
+            hasLoadedPlaylists = true
 
             if decoded.playlists.count == 1 {
                 selectPlaylist(decoded.playlists[0])
@@ -1103,9 +1150,9 @@ final class LiveTVViewModel: ObservableObject {
     }
 
     func selectPlaylist(_ playlist: BrowsePlaylistInfo) {
-        // Tear down current player
-        teardownPlayer()
+        guard playlist.id != activePlaylist?.id else { return }
 
+        // Don't tear down player on playlist switch — keep playback going
         activePlaylist = playlist
         categories = []
         allChannels = []
@@ -1116,9 +1163,22 @@ final class LiveTVViewModel: ObservableObject {
         Task { await loadChannels(playlistId: playlist.id) }
     }
 
-    // MARK: - Channel loading & classification
+    // MARK: - Channel loading & classification (with cache)
 
     private func loadChannels(playlistId: String) async {
+        // Check in-memory cache first
+        if let cached = Self.channelCache[playlistId],
+           CFAbsoluteTimeGetCurrent() - cached.ts < Self.cacheTTL {
+            self.categories = cached.categories
+            self.allChannels = cached.channels
+            if let first = categories.first {
+                activeCategory = first
+            }
+            // Auto-play first channel if nothing is playing
+            autoPlayFirstChannelIfNeeded()
+            return
+        }
+
         isLoading = true
         defer { isLoading = false }
 
@@ -1127,12 +1187,31 @@ final class LiveTVViewModel: ObservableObject {
             self.allChannels = sections.flatMap(\.items)
             self.categories = buildCategories(from: sections)
 
+            // Cache the result
+            Self.channelCache[playlistId] = (
+                categories: self.categories,
+                channels: self.allChannels,
+                ts: CFAbsoluteTimeGetCurrent()
+            )
+
             // Auto-select first category
             if let first = categories.first {
                 activeCategory = first
             }
+
+            // Auto-play first channel if nothing is playing
+            autoPlayFirstChannelIfNeeded()
         } catch {
             // Empty state shown
+        }
+    }
+
+    /// Auto-play the first channel in the active category if no channel is currently playing
+    private func autoPlayFirstChannelIfNeeded() {
+        guard playingItem == nil else { return }
+        let items = displayItems
+        if let first = items.first {
+            playChannel(first)
         }
     }
 
@@ -1257,6 +1336,15 @@ final class LiveTVViewModel: ObservableObject {
         activeGroup = nil
     }
 
+    // MARK: - Fullscreen
+
+    func openFullscreen() {
+        guard playingItem != nil else { return }
+        // Pause inline player before opening fullscreen (PlayerView creates its own)
+        inlinePlayer?.pause()
+        showFullscreen = true
+    }
+
     // MARK: - Inline player
 
     func playChannel(_ item: PlaylistItem) {
@@ -1276,14 +1364,32 @@ final class LiveTVViewModel: ObservableObject {
 
         fallbackURLs = Array(cascade.dropFirst())
 
+        // Ensure audio session is active for playback
+        try? AVAudioSession.sharedInstance().setActive(true)
+
         if inlinePlayer == nil {
             let p = AVPlayer()
             p.automaticallyWaitsToMinimizeStalling = false
             inlinePlayer = p
         }
 
-        let playerItem = AVPlayerItem(url: first)
+        playStreamURL(first)
+    }
+
+    /// Play a single URL through the inline player with status observation
+    private func playStreamURL(_ url: URL) {
+        let asset = AVURLAsset(url: url, options: [
+            "AVURLAssetHTTPHeaderFieldsKey": [
+                "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
+            ],
+            AVURLAssetPreferPreciseDurationAndTimingKey: false
+        ])
+        let playerItem = AVPlayerItem(asset: asset)
+        playerItem.preferredForwardBufferDuration = 2
+
         statusObserver?.invalidate()
+        fallbackTimer?.cancel()
+
         statusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -1293,6 +1399,7 @@ final class LiveTVViewModel: ObservableObject {
                     self.isPlaying = true
                     self.inlinePlayer?.play()
                     self.fallbackTimer?.cancel()
+                    self.fallbackURLs = [] // Success — discard remaining fallbacks
                 case .failed:
                     self.tryNextFallback()
                 default:
@@ -1304,14 +1411,14 @@ final class LiveTVViewModel: ObservableObject {
         inlinePlayer?.replaceCurrentItem(with: playerItem)
         inlinePlayer?.play()
 
-        // Fallback timeout
+        // Fallback timeout — shorter for live TV
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
                 self?.tryNextFallback()
             }
         }
         fallbackTimer = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sourceTimeout, execute: work)
     }
 
     private func tryNextFallback() {
@@ -1326,36 +1433,7 @@ final class LiveTVViewModel: ObservableObject {
         }
 
         let next = fallbackURLs.removeFirst()
-        let playerItem = AVPlayerItem(url: next)
-
-        statusObserver?.invalidate()
-        statusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                switch item.status {
-                case .readyToPlay:
-                    self.playerBuffering = false
-                    self.isPlaying = true
-                    self.inlinePlayer?.play()
-                    self.fallbackTimer?.cancel()
-                case .failed:
-                    self.tryNextFallback()
-                default:
-                    break
-                }
-            }
-        }
-
-        inlinePlayer?.replaceCurrentItem(with: playerItem)
-        inlinePlayer?.play()
-
-        let work = DispatchWorkItem { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.tryNextFallback()
-            }
-        }
-        fallbackTimer = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
+        playStreamURL(next)
     }
 
     func retryCurrentChannel() {

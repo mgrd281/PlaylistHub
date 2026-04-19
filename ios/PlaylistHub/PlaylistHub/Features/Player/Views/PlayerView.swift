@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AVFoundation
 import Combine
 
 // MARK: - PlayerView — Instant playback, seamless channel switching
@@ -555,6 +556,8 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Playback
 
     func startPlayback() {
+        // Ensure audio session is active (handles mute switch, route changes)
+        try? AVAudioSession.sharedInstance().setActive(true)
         loadStream(for: currentItem)
         setupTimeObserver()
         if currentItem.contentType == .series { loadEpisodes() }
