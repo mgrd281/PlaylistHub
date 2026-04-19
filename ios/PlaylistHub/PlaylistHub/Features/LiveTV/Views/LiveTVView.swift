@@ -1246,6 +1246,44 @@ private func arabicCountryDisplayName(for key: String) -> String {
     }
 }
 
+private func isMeaningfulProviderGroupName(_ raw: String) -> Bool {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+
+    let letters = trimmed.unicodeScalars.filter {
+        CharacterSet.letters.contains($0)
+    }.count
+    let digits = trimmed.unicodeScalars.filter {
+        CharacterSet.decimalDigits.contains($0)
+    }.count
+
+    if letters >= 2 { return true }
+    if digits > 0 && letters == 0 { return false }
+
+    // Keep short code-like labels such as "AR News" but reject pure symbol noise.
+    let alnumCount = trimmed.unicodeScalars.filter {
+        CharacterSet.alphanumerics.contains($0)
+    }.count
+    return alnumCount >= 2
+}
+
+private func canonicalArabicGroupKey(_ rawName: String) -> String {
+    let (_, cleaned) = extractPrefix(rawName)
+    let base = cleaned.isEmpty ? rawName : cleaned
+    let normalized = normalizeArabicText(base)
+        .replacingOccurrences(of: #"[^\p{L}\p{N}]"#, with: " ", options: .regularExpression)
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+    return normalized.isEmpty ? rawName.lowercased() : normalized
+}
+
+private func providerDisplayName(_ rawName: String) -> String {
+    let (_, cleaned) = extractPrefix(rawName)
+    let picked = cleaned.isEmpty ? rawName : cleaned
+    return picked.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 /// Smart classification: prefix extraction → content match → country match → channel name fallback
 ///
 /// **Arabic priority rule**: If a group's prefix is a known Arabic country code,
@@ -2005,55 +2043,69 @@ private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCat
         }
     }
 
-    // Arabic detection must run at item-level as many providers use numeric/raw group names
-    // that hide country information (e.g. "492", "937").
-    var arabicBuckets: [String: [PlaylistItem]] = [:]
-    var arabicURLs = Set<String>()
+    if let arabicBucket = buckets["arabic"] {
+        // Remove existing Arabic bucket before rebuilding it to avoid duplicate Arabic top-level pills.
+        buckets.removeValue(forKey: "arabic")
 
-    for section in sections {
-        for item in section.items {
-            guard let key = detectArabicCountryKey(item: item, sectionName: section.name) else { continue }
-            if arabicURLs.insert(item.resolvedStreamURL).inserted {
-                arabicBuckets[key, default: []].append(item)
-            }
-        }
-    }
+        var providerGroups: [String: (displayName: String, items: [PlaylistItem])] = [:]
+        var fallbackGroups: [String: [PlaylistItem]] = [:]
 
-    if !arabicURLs.isEmpty {
-        // Remove Arabic channels from generic buckets to avoid duplicate rows.
-        for key in Array(buckets.keys) {
-            let filteredEntries = (buckets[key] ?? []).compactMap { entry -> (sectionName: String, items: [PlaylistItem])? in
-                let kept = entry.items.filter { !arabicURLs.contains($0.resolvedStreamURL) }
-                return kept.isEmpty ? nil : (entry.sectionName, kept)
-            }
-            if filteredEntries.isEmpty {
-                buckets.removeValue(forKey: key)
+        for (sectionName, items) in arabicBucket {
+            if isMeaningfulProviderGroupName(sectionName) {
+                let key = canonicalArabicGroupKey(sectionName)
+                let displayName = providerDisplayName(sectionName)
+                if var existing = providerGroups[key] {
+                    existing.items.append(contentsOf: items)
+                    providerGroups[key] = existing
+                } else {
+                    providerGroups[key] = (displayName: displayName, items: items)
+                }
             } else {
-                buckets[key] = filteredEntries
+                // Fallback only for raw/noisy provider groups (e.g. numeric ids).
+                for item in items {
+                    let fallbackKey = detectArabicCountryKey(item: item, sectionName: sectionName) ?? "ar_general"
+                    fallbackGroups[fallbackKey, default: []].append(item)
+                }
             }
         }
 
-        var arabicGroups: [LiveTVCategory.ChannelGroup] = arabicBuckets
-            .map { countryKey, channels in
-                LiveTVCategory.ChannelGroup(
-                    name: countryKey,
-                    displayName: arabicCountryDisplayName(for: countryKey),
-                    items: channels
-                )
-            }
-
-        // Countries first, then Pan-Arab/thematic groups, with Arabic-other last.
-        func rank(_ key: String) -> Int {
-            if key == "ar_general" { return 3 }
-            if key == "ar_pan" { return 1 }
-            if key.hasPrefix("ar_") { return 2 }
-            return 0
+        var arabicGroups: [LiveTVCategory.ChannelGroup] = providerGroups.map { key, value in
+            LiveTVCategory.ChannelGroup(
+                name: key,
+                displayName: value.displayName,
+                items: value.items
+            )
         }
 
-        arabicGroups.sort {
-            let r0 = rank($0.name)
-            let r1 = rank($1.name)
-            if r0 != r1 { return r0 < r1 }
+        for (fallbackKey, channels) in fallbackGroups {
+            var seen = Set<String>()
+            let deduped = channels.filter { seen.insert($0.resolvedStreamURL).inserted }
+            guard !deduped.isEmpty else { continue }
+            arabicGroups.append(LiveTVCategory.ChannelGroup(
+                name: fallbackKey,
+                displayName: arabicCountryDisplayName(for: fallbackKey),
+                items: deduped
+            ))
+        }
+
+        // Merge any duplicate group keys that might still collide after normalization/fallback.
+        var merged: [String: (displayName: String, items: [PlaylistItem])] = [:]
+        for group in arabicGroups {
+            if var existing = merged[group.name] {
+                existing.items.append(contentsOf: group.items)
+                merged[group.name] = existing
+            } else {
+                merged[group.name] = (displayName: group.displayName, items: group.items)
+            }
+        }
+
+        arabicGroups = merged.map { key, value in
+            var seen = Set<String>()
+            let deduped = value.items.filter { seen.insert($0.resolvedStreamURL).inserted }
+            return LiveTVCategory.ChannelGroup(name: key, displayName: value.displayName, items: deduped)
+        }
+        .filter { !$0.items.isEmpty }
+        .sorted {
             if $0.items.count != $1.items.count { return $0.items.count > $1.items.count }
             return $0.displayName < $1.displayName
         }
@@ -2061,14 +2113,16 @@ private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCat
         let total = arabicGroups.reduce(0) { $0 + $1.items.count }
 
         var result = buildCategoryList(from: buckets)
-        result.append(LiveTVCategory(
-            id: "arabic",
-            key: "arabic",
-            label: "Arabic",
-            icon: "🪬",
-            groups: arabicGroups,
-            totalCount: total
-        ))
+        if !arabicGroups.isEmpty {
+            result.append(LiveTVCategory(
+                id: "arabic",
+                key: "arabic",
+                label: "Arabic",
+                icon: "🪬",
+                groups: arabicGroups,
+                totalCount: total
+            ))
+        }
 
         return result.sorted {
             if $0.key == "other" { return false }
