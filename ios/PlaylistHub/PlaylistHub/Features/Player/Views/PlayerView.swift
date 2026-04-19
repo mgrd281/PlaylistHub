@@ -22,8 +22,8 @@ struct PlayerView: View {
             // 1) Black canvas — renders immediately
             Color.black.ignoresSafeArea()
 
-            // 2) Video layer — full screen behind everything
-            VideoSurface(player: vm.player)
+            // 2) Video layer — fills entire screen for live content
+            VideoSurface(player: vm.player, gravity: vm.currentItem.isLive ? .resizeAspectFill : .resizeAspect)
                 .ignoresSafeArea()
                 .onTapGesture { toggleControlsVisibility() }
                 .gesture(
@@ -70,15 +70,8 @@ struct PlayerView: View {
 
             // 5) Controls overlay — fades in/out
             if showControls {
-                VStack(spacing: 0) {
-                    headerBar
-                    Spacer()
-                    if !vm.currentItem.isLive && vm.duration > 0 {
-                        progressBar
-                    }
-                    controlsBar
-                }
-                .transition(.opacity)
+                controlsOverlay
+                    .transition(.opacity)
             }
 
             // 6) Channel name flash on switch
@@ -93,6 +86,7 @@ struct PlayerView: View {
         .animation(.easeOut(duration: 0.2), value: vm.hasFirstFrame)
         .statusBarHidden(!showControls)
         .preferredColorScheme(.dark)
+        .persistentSystemOverlays(.hidden)
         .onAppear {
             vm.startPlayback()
             scheduleControlsHide()
@@ -106,6 +100,68 @@ struct PlayerView: View {
             if showControls && vm.hasFirstFrame {
                 secondaryPanel
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    // MARK: - Controls Overlay (unified)
+
+    private var controlsOverlay: some View {
+        ZStack {
+            // Subtle scrim for readability
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
+                headerBar
+                Spacer()
+                if !vm.currentItem.isLive && vm.duration > 0 {
+                    progressBar
+                        .padding(.bottom, 12)
+                }
+                bottomBar
+            }
+
+            // Center play/pause — premium frosted glass
+            centerPlayPause
+        }
+    }
+
+    // MARK: - Center Play/Pause
+
+    private var centerPlayPause: some View {
+        HStack(spacing: 48) {
+            if vm.hasNavigation {
+                Button { vm.goPrev() } label: {
+                    Image(systemName: "backward.end.fill")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(vm.prevChannel != nil ? .white : .white.opacity(0.2))
+                        .frame(width: 48, height: 48)
+                }
+                .disabled(vm.prevChannel == nil)
+            }
+
+            Button { vm.togglePlayPause() } label: {
+                Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 64, height: 64)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(
+                        Circle()
+                            .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
+                    )
+            }
+
+            if vm.hasNavigation {
+                Button { vm.goNext() } label: {
+                    Image(systemName: "forward.end.fill")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(vm.nextChannel != nil ? .white : .white.opacity(0.2))
+                        .frame(width: 48, height: 48)
+                }
+                .disabled(vm.nextChannel == nil)
             }
         }
     }
@@ -216,41 +272,29 @@ struct PlayerView: View {
 
     // MARK: - Controls
 
-    private var controlsBar: some View {
-        HStack(spacing: 0) {
+    private var bottomBar: some View {
+        HStack(spacing: 12) {
             if !vm.currentItem.isLive {
                 Button { vm.seekRelative(-10) } label: {
                     Image(systemName: "gobackward.10")
-                        .font(.title3)
-                        .frame(width: 48, height: 48)
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 40, height: 40)
                 }
-            }
 
-            Spacer()
+                Spacer()
 
-            Button { vm.togglePlayPause() } label: {
-                Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 32))
-                    .frame(width: 64, height: 64)
-            }
-
-            Spacer()
-
-            if !vm.currentItem.isLive {
                 Button { vm.seekRelative(10) } label: {
                     Image(systemName: "goforward.10")
-                        .font(.title3)
-                        .frame(width: 48, height: 48)
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 40, height: 40)
                 }
+            } else {
+                Spacer()
             }
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 20)
         .padding(.bottom, 8)
-        .background(
-            LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea(edges: .bottom)
-        )
     }
 
     // MARK: - Channel Flash
@@ -421,11 +465,12 @@ struct PlayerView: View {
 
 struct VideoSurface: UIViewRepresentable {
     let player: AVPlayer
+    var gravity: AVLayerVideoGravity = .resizeAspect
 
     func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspect
+        view.playerLayer.videoGravity = gravity
         view.backgroundColor = .black
         return view
     }
@@ -433,6 +478,9 @@ struct VideoSurface: UIViewRepresentable {
     func updateUIView(_ uiView: PlayerUIView, context: Context) {
         if uiView.playerLayer.player !== player {
             uiView.playerLayer.player = player
+        }
+        if uiView.playerLayer.videoGravity != gravity {
+            uiView.playerLayer.videoGravity = gravity
         }
     }
 }
