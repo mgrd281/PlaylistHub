@@ -500,6 +500,7 @@ export function LiveTVBrowser() {
   // Playlist state
   const [playlists, setPlaylists] = useState<BrowsePlaylist[]>([]);
   const [playlistsLoading, setPlaylistsLoading] = useState(true);
+  const [playlistsError, setPlaylistsError] = useState<string | null>(null);
   const [activePlaylist, setActivePlaylist] = useState<BrowsePlaylist | null>(null);
 
   // Channel state (scoped to selected playlist)
@@ -526,9 +527,19 @@ export function LiveTVBrowser() {
     let cancelled = false;
     async function loadPlaylists() {
       setPlaylistsLoading(true);
+      setPlaylistsError(null);
       try {
         const res = await fetch('/api/browse?mode=playlists');
-        if (!res.ok) return;
+        if (!res.ok) {
+          // Check if redirected to login (auth expired)
+          if (res.redirected || res.url.includes('/login')) {
+            if (!cancelled) setPlaylistsError('Session expired. Please refresh the page.');
+          } else {
+            if (!cancelled) setPlaylistsError('Failed to load playlists.');
+          }
+          if (!cancelled) setPlaylistsLoading(false);
+          return;
+        }
         const data = await res.json();
         if (cancelled) return;
         const list: BrowsePlaylist[] = data.playlists || [];
@@ -537,7 +548,9 @@ export function LiveTVBrowser() {
         if (list.length === 1) {
           setActivePlaylist(list[0]);
         }
-      } catch { /* network error */ }
+      } catch {
+        if (!cancelled) setPlaylistsError('Network error loading playlists.');
+      }
       if (!cancelled) setPlaylistsLoading(false);
     }
     loadPlaylists();
@@ -563,7 +576,10 @@ export function LiveTVBrowser() {
       });
       try {
         const res = await fetch(`/api/browse?${params}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setChannelsLoading(false);
+          return;
+        }
         const data = await res.json();
         if (!cancelled) {
           setSections(data.sections || []);
@@ -662,16 +678,24 @@ export function LiveTVBrowser() {
     );
   }
 
-  /* ── Phase 0b: No playlists at all ── */
-  if (playlists.length === 0) {
+  /* ── Phase 0b: Error or no playlists ── */
+  if (playlistsError || playlists.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50 mb-4">
           <Radio className="h-6 w-6 text-muted-foreground/30" />
         </div>
         <p className="text-sm text-muted-foreground font-medium">
-          No active playlists. Add a playlist to start watching Live TV.
+          {playlistsError || 'No active playlists. Add a playlist to start watching Live TV.'}
         </p>
+        {playlistsError && (
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-3 text-xs text-primary hover:underline"
+          >
+            Retry
+          </button>
+        )}
       </div>
     );
   }

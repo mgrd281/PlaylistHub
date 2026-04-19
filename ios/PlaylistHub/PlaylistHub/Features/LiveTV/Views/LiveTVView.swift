@@ -19,7 +19,7 @@ struct LiveTVView: View {
             Group {
                 if vm.playlistsLoading {
                     playlistLoadingSkeleton
-                } else if vm.playlists.isEmpty {
+                } else if vm.playlists.isEmpty || vm.playlistsError != nil {
                     noPlaylistsState
                 } else if vm.activePlaylist == nil {
                     playlistPickerPhase
@@ -84,12 +84,20 @@ struct LiveTVView: View {
             Image(systemName: "antenna.radiowaves.left.and.right")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(.quaternary)
-            Text("No active playlists")
+            Text(vm.playlistsError ?? "No active playlists")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
-            Text("Add a playlist to start watching Live TV")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            if vm.playlistsError != nil {
+                Button("Retry") {
+                    Task { await vm.loadPlaylists() }
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.red)
+            } else {
+                Text("Add a playlist to start watching Live TV")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
             Spacer()
         }
     }
@@ -735,6 +743,7 @@ final class LiveTVViewModel: ObservableObject {
     // Playlist state
     @Published var playlists: [BrowsePlaylistInfo] = []
     @Published var playlistsLoading = true
+    @Published var playlistsError: String?
     @Published var activePlaylist: BrowsePlaylistInfo?
 
     // Channel state (scoped to selected playlist)
@@ -787,6 +796,7 @@ final class LiveTVViewModel: ObservableObject {
     // Phase 1: Load playlists
     func loadPlaylists() async {
         playlistsLoading = true
+        playlistsError = nil
         defer { playlistsLoading = false }
 
         do {
@@ -800,7 +810,15 @@ final class LiveTVViewModel: ObservableObject {
             request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode < 300 else { return }
+            guard let http = response as? HTTPURLResponse, http.statusCode < 300 else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if statusCode == 401 || statusCode == 307 {
+                    playlistsError = "Session expired. Please sign in again."
+                } else {
+                    playlistsError = "Failed to load playlists."
+                }
+                return
+            }
 
             struct PlaylistsResponse: Codable {
                 let playlists: [BrowsePlaylistInfo]
@@ -813,7 +831,7 @@ final class LiveTVViewModel: ObservableObject {
                 selectPlaylist(decoded.playlists[0])
             }
         } catch {
-            // Silent — empty state shown
+            playlistsError = "Network error: \(error.localizedDescription)"
         }
     }
 

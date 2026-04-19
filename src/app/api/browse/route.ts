@@ -1,8 +1,22 @@
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
-  const supabase = await createClient();
+  // Support both cookie auth (web) and Bearer token auth (iOS)
+  const authHeader = request.headers.get('authorization');
+  let supabase;
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    supabase = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: `Bearer ${token}` } } }
+    );
+  } else {
+    supabase = await createClient();
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -23,19 +37,29 @@ export async function GET(request: Request) {
   const requestedPlaylistId = url.searchParams.get('playlist_id');
 
   // Get user's playlist IDs (or verify ownership of requested one)
+  // Include active + scanning playlists (scanning playlists already have channels being inserted)
   const { data: playlists } = await supabase
     .from('playlists')
-    .select('id, name, channels_count')
+    .select('id, name, channels_count, status')
     .eq('user_id', user.id)
-    .eq('status', 'active');
+    .in('status', ['active', 'scanning']);
 
   const userPlaylists = playlists || [];
   let playlistIds: string[];
 
   if (requestedPlaylistId) {
-    // Verify ownership
+    // Verify ownership — check active/scanning playlists first, then any owned playlist
     if (!userPlaylists.find(p => p.id === requestedPlaylistId)) {
-      return NextResponse.json({ error: 'Playlist not found' }, { status: 404 });
+      // Could be a fallback playlist (e.g. pending with channels) — verify ownership directly
+      const { data: ownedPlaylist } = await supabase
+        .from('playlists')
+        .select('id')
+        .eq('id', requestedPlaylistId)
+        .eq('user_id', user.id)
+        .single();
+      if (!ownedPlaylist) {
+        return NextResponse.json({ error: 'Playlist not found' }, { status: 404 });
+      }
     }
     playlistIds = [requestedPlaylistId];
   } else {
@@ -43,10 +67,21 @@ export async function GET(request: Request) {
   }
 
   // Mode: playlists — return the user's playlists with channel counts (for playlist picker)
+  // If no active/scanning playlists, also check for any playlist that has channels (e.g. errored scans)
   const mode = url.searchParams.get('mode');
   if (mode === 'playlists') {
+    let returnPlaylists = userPlaylists;
+    if (returnPlaylists.length === 0) {
+      // Fallback: find ANY playlist with channels_count > 0 regardless of status
+      const { data: fallbackPlaylists } = await supabase
+        .from('playlists')
+        .select('id, name, channels_count, status')
+        .eq('user_id', user.id)
+        .gt('channels_count', 0);
+      returnPlaylists = fallbackPlaylists || [];
+    }
     return NextResponse.json({
-      playlists: userPlaylists.map(p => ({ id: p.id, name: p.name, channels_count: p.channels_count })),
+      playlists: returnPlaylists.map(p => ({ id: p.id, name: p.name, channels_count: p.channels_count })),
     });
   }
 
