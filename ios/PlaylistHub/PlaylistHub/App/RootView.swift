@@ -3,23 +3,33 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var remoteConfig: RemoteConfigService
+    @StateObject private var profileManager = ProfileManager.shared
     @State private var showSplash = true
+    @State private var showProfilePicker = false
 
     var body: some View {
         ZStack {
             if showSplash {
                 SplashView()
                     .transition(.opacity)
-            } else if authManager.isAuthenticated {
-                MainTabView()
-                    .transition(.opacity)
-            } else {
+            } else if !authManager.isAuthenticated {
                 LoginView()
+                    .transition(.opacity)
+            } else if showProfilePicker {
+                ProfilePickerView {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        showProfilePicker = false
+                    }
+                }
+                .transition(.opacity)
+            } else {
+                MainTabView()
                     .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.4), value: showSplash)
         .animation(.easeInOut(duration: 0.3), value: authManager.isAuthenticated)
+        .animation(.easeInOut(duration: 0.5), value: showProfilePicker)
         .task {
             // Fetch remote config and restore session in parallel during splash
             async let configTask: () = remoteConfig.fetchLatest()
@@ -28,6 +38,24 @@ struct RootView: View {
             remoteConfig.startPeriodicRefresh()
             try? await Task.sleep(for: .seconds(remoteConfig.config.splash.durationSeconds))
             withAnimation { showSplash = false }
+            // Show profile picker after splash if authenticated
+            if authManager.isAuthenticated {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showProfilePicker = true
+                }
+            }
+        }
+        .onChange(of: authManager.isAuthenticated) {
+            if authManager.isAuthenticated {
+                // Show profile picker on fresh login
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showProfilePicker = true
+                }
+            } else {
+                // Logged out — reset profile selection
+                profileManager.reset()
+                showProfilePicker = false
+            }
         }
     }
 }

@@ -15,6 +15,7 @@
 		3265A6DF09766AF47A4634A5 /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02424ED07E2345E8FEE76928 /* DeviceManager.swift */; };
 		3565DED5B5F677EFDC63CB34 /* ChannelHealthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 982D7813C33AD3CD1F313FAD /* ChannelHealthManager.swift */; };
 		384CF2625095CDA17466588F /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E54D16CFBEA2671A756307 /* Extensions.swift */; };
+		3DB514BF85F7328F7CCCECBC /* ProfilePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79483C4D9354238377BC4B18 /* ProfilePickerView.swift */; };
 		4070AE18279C2693AAE32266 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44CD09BBC1D508CF1F26967D /* AuthManager.swift */; };
 		432D8F57ED08184F94952F3A /* MoviesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521BB1FB92D63A0234B463F2 /* MoviesView.swift */; };
 		4C83593F06AEC0A781D5352B /* PlaylistHubApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBD14A7EF24BBA3499A6C92 /* PlaylistHubApp.swift */; };
@@ -24,6 +25,7 @@
 		5115F334B1C32441F1B2184F /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E46E374DE46C6DD0B85877 /* DashboardView.swift */; };
 		58D66EC37D7D00C076F46C1E /* BuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D70EF0595F56F8702826DA /* BuildInfo.swift */; };
 		5F592323645FD4855A57AFB1 /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CEE276D84134D7B9A8B893B /* ThemeManager.swift */; };
+		64541CBBEC9AFC638A6CA863 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93BC1FCA187ABB8E7620396B /* ProfileManager.swift */; };
 		7A493F8893D1A1E127ABAD32 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C3149B3D0FB1ED1D81315FD /* ImageCache.swift */; };
 		89E3B44B9C2F67987FF448A7 /* RemoteConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF1BC6C8F9C244DB7CBE879 /* RemoteConfig.swift */; };
 		B7C169D965E864F99B184B92 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B03BB81AD4CB797EB55479 /* PlayerView.swift */; };
@@ -59,9 +61,11 @@
 		521BB1FB92D63A0234B463F2 /* MoviesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviesView.swift; sourceTree = "<group>"; };
 		5B0966A498372E5FF2DEC1A7 /* PlaylistCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistCache.swift; sourceTree = "<group>"; };
 		678583869343B62DE3381494 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		79483C4D9354238377BC4B18 /* ProfilePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePickerView.swift; sourceTree = "<group>"; };
 		79D87095ABF15472C7518312 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		8CDA21138AB82340B51337E1 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		8CEE276D84134D7B9A8B893B /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
+		93BC1FCA187ABB8E7620396B /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		982D7813C33AD3CD1F313FAD /* ChannelHealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelHealthManager.swift; sourceTree = "<group>"; };
 		A16A13EF96F0187ACFC70B2A /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		B00FC575C15D1FC08C386E3E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -106,6 +110,7 @@
 				EFBD7C05393BACB0B3016D50 /* Movies */,
 				8E0C03F6FCA444C52FB07479 /* Player */,
 				083E981A8D55C1AF6E974205 /* Playlists */,
+				A709C65073A722CE9877A13F /* Profiles */,
 				AF59A71CFEA3519E69C8135A /* Series */,
 				AA0338013C7420CA9BBA4664 /* Settings */,
 			);
@@ -275,6 +280,15 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		A709C65073A722CE9877A13F /* Profiles */ = {
+			isa = PBXGroup;
+			children = (
+				E5826BA36259A5F801367AB8 /* Views */,
+				93BC1FCA187ABB8E7620396B /* ProfileManager.swift */,
+			);
+			path = Profiles;
+			sourceTree = "<group>";
+		};
 		AA0338013C7420CA9BBA4664 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
@@ -321,6 +335,14 @@
 			isa = PBXGroup;
 			children = (
 				03B03BB81AD4CB797EB55479 /* PlayerView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		E5826BA36259A5F801367AB8 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				79483C4D9354238377BC4B18 /* ProfilePickerView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -445,6 +467,8 @@
 				4CB89FBAEBDE54A750B46237 /* PlaylistDetailView.swift in Sources */,
 				4C83593F06AEC0A781D5352B /* PlaylistHubApp.swift in Sources */,
 				C924E28DAF04FC3EFB6A2D4A /* PlaylistsView.swift in Sources */,
+				64541CBBEC9AFC638A6CA863 /* ProfileManager.swift in Sources */,
+				3DB514BF85F7328F7CCCECBC /* ProfilePickerView.swift in Sources */,
 				89E3B44B9C2F67987FF448A7 /* RemoteConfig.swift in Sources */,
 				068136FA7853A2251574FF31 /* RootView.swift in Sources */,
 				4EA15259EB6BDA9E89BDF160 /* SeriesView.swift in Sources */,
