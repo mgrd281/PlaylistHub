@@ -1,6 +1,7 @@
 import SwiftUI
 import AVKit
 import AVFoundation
+import MediaPlayer
 import Combine
 
 // MARK: - PlayerView — Instant playback, seamless channel switching
@@ -13,31 +14,32 @@ struct PlayerView: View {
     @State private var showControls = true
     @State private var controlsTimer: Timer?
 
+    // Brightness / volume gesture state
+    @State private var gestureKind: GestureKind?
+    @State private var gestureBrightness: CGFloat = UIScreen.main.brightness
+    @State private var gestureVolume: CGFloat = PlayerView.systemVolume
+
+    private enum GestureKind { case brightness, volume }
+
     init(item: PlaylistItem, channelList: [PlaylistItem]?, existingPlayer: AVPlayer? = nil) {
         _vm = StateObject(wrappedValue: PlayerViewModel(item: item, channelList: channelList, existingPlayer: existingPlayer))
     }
 
     var body: some View {
         ZStack {
-            // 1) Black canvas — renders immediately
+            // 1) Black canvas
             Color.black.ignoresSafeArea()
 
-            // 2) Video layer — fills entire screen for live content
-            VideoSurface(player: vm.player, gravity: vm.currentItem.isLive ? .resizeAspectFill : .resizeAspect)
+            // 2) Video layer
+            PiPVideoSurface(player: vm.player,
+                            gravity: vm.currentItem.isLive ? .resizeAspectFill : .resizeAspect,
+                            pipController: $vm.pipController)
                 .ignoresSafeArea()
-                .onTapGesture { toggleControlsVisibility() }
-                .gesture(
-                    DragGesture(minimumDistance: 50)
-                        .onEnded { value in
-                            let horizontal = value.translation.width
-                            if abs(horizontal) > abs(value.translation.height) {
-                                if horizontal < -50 { vm.goNext() }
-                                else if horizontal > 50 { vm.goPrev() }
-                            }
-                        }
-                )
 
-            // 3) Buffering spinner — centered, minimal
+            // 3) Gesture layer — handles tap, swipe, brightness/volume drag
+            gestureLayer
+
+            // 4) Buffering spinner
             if vm.isBuffering && vm.error == nil {
                 ProgressView()
                     .scaleEffect(1.3)
@@ -45,7 +47,7 @@ struct PlayerView: View {
                     .transition(.opacity)
             }
 
-            // 4) Error overlay
+            // 5) Error overlay
             if let error = vm.error {
                 VStack(spacing: 14) {
                     Image(systemName: "wifi.exclamationmark")
@@ -68,13 +70,19 @@ struct PlayerView: View {
                 .padding(32)
             }
 
-            // 5) Controls overlay — fades in/out
+            // 6) Controls overlay
             if showControls {
                 controlsOverlay
                     .transition(.opacity)
             }
 
-            // 6) Channel name flash on switch
+            // 7) Brightness/volume HUD
+            if let kind = gestureKind {
+                gestureHUD(kind: kind)
+                    .transition(.opacity)
+            }
+
+            // 8) Channel name flash on switch
             if vm.showChannelFlash {
                 channelFlashOverlay
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -83,19 +91,20 @@ struct PlayerView: View {
         .animation(.easeOut(duration: 0.2), value: showControls)
         .animation(.easeOut(duration: 0.2), value: vm.isBuffering)
         .animation(.easeOut(duration: 0.25), value: vm.showChannelFlash)
-        .animation(.easeOut(duration: 0.2), value: vm.hasFirstFrame)
+        .animation(.easeOut(duration: 0.15), value: gestureKind == nil)
         .statusBarHidden(!showControls)
         .preferredColorScheme(.dark)
         .persistentSystemOverlays(.hidden)
         .onAppear {
             vm.startPlayback()
+            gestureBrightness = UIScreen.main.brightness
+            gestureVolume = PlayerView.systemVolume
             scheduleControlsHide()
         }
         .onDisappear {
             vm.saveWatchProgress()
             vm.teardown()
         }
-        // Secondary panel (channel strip / series episodes) — tied to controls visibility
         .safeAreaInset(edge: .bottom) {
             if showControls && vm.hasFirstFrame {
                 secondaryPanel
@@ -104,14 +113,133 @@ struct PlayerView: View {
         }
     }
 
+    // MARK: - System volume helper
+
+    private static var systemVolume: CGFloat {
+        CGFloat(AVAudioSession.sharedInstance().outputVolume)
+    }
+
+    // Hidden volume slider — the only way to set system volume programmatically
+    private static let volumeView: MPVolumeView = {
+        let v = MPVolumeView(frame: .init(x: -1000, y: -1000, width: 1, height: 1))
+        v.isHidden = true
+        return v
+    }()
+
+    private static func setSystemVolume(_ value: Float) {
+        // Find the hidden UISlider inside MPVolumeView and set its value
+        if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
+            DispatchQueue.main.async {
+                slider.value = max(0, min(1, value))
+            }
+        }
+    }
+
+    // MARK: - Gesture Layer
+
+    private var gestureLayer: some View {
+        GeometryReader { geo in
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { toggleControlsVisibility() }
+                .onTapGesture(count: 2) {
+                    // Double-tap left/right to seek ±10s
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            let isLeft = value.startLocation.x < geo.size.width / 2
+                            let verticalDelta = -value.translation.height / geo.size.height
+
+                            if gestureKind == nil {
+                                // Only activate if gesture is more vertical than horizontal
+                                guard abs(value.translation.height) > abs(value.translation.width) else { return }
+                                gestureKind = isLeft ? .brightness : .volume
+                                gestureBrightness = UIScreen.main.brightness
+                                gestureVolume = PlayerView.systemVolume
+                            }
+
+                            switch gestureKind {
+                            case .brightness:
+                                let newVal = max(0, min(1, gestureBrightness + verticalDelta))
+                                UIScreen.main.brightness = newVal
+                            case .volume:
+                                let newVal = max(0, min(1, gestureVolume + verticalDelta))
+                                PlayerView.setSystemVolume(Float(newVal))
+                            case .none:
+                                break
+                            }
+                        }
+                        .onEnded { _ in
+                            gestureKind = nil
+                        }
+                )
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 50)
+                        .onEnded { value in
+                            // Horizontal swipe for channel switching (only when not in brightness/volume mode)
+                            guard gestureKind == nil else { return }
+                            let horizontal = value.translation.width
+                            if abs(horizontal) > abs(value.translation.height) {
+                                if horizontal < -50 { vm.goNext() }
+                                else if horizontal > 50 { vm.goPrev() }
+                            }
+                        }
+                )
+        }
+    }
+
+    // MARK: - Brightness / Volume HUD
+
+    private func gestureHUD(kind: GestureKind) -> some View {
+        let icon: String
+        let value: CGFloat
+        switch kind {
+        case .brightness:
+            icon = "sun.max.fill"
+            value = UIScreen.main.brightness
+        case .volume:
+            icon = gestureVolume > 0.5 ? "speaker.wave.3.fill" : (gestureVolume > 0 ? "speaker.wave.1.fill" : "speaker.slash.fill")
+            value = PlayerView.systemVolume
+        }
+
+        return VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.white)
+
+            // Vertical progress bar
+            GeometryReader { geo in
+                ZStack(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(.white.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(.white)
+                        .frame(height: geo.size.height * value)
+                }
+            }
+            .frame(width: 4, height: 100)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
     // MARK: - Controls Overlay (unified)
 
     private var controlsOverlay: some View {
         ZStack {
-            // Subtle scrim for readability
-            Color.black.opacity(0.35)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+            // Cinematic scrim: stronger at edges, clear in center
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.black.opacity(0.7), .black.opacity(0.1), .clear],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 120)
+                Spacer()
+                LinearGradient(colors: [.clear, .black.opacity(0.15), .black.opacity(0.7)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 140)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
 
             VStack(spacing: 0) {
                 headerBar
@@ -197,6 +325,17 @@ struct PlayerView: View {
                 liveBadge
             }
 
+            // PiP button
+            if AVPictureInPictureController.isPictureInPictureSupported() {
+                Button { vm.togglePiP() } label: {
+                    Image(systemName: "pip.enter")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+            }
+
             if vm.hasNavigation {
                 channelNavButtons
             }
@@ -204,10 +343,6 @@ struct PlayerView: View {
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 12)
-        .background(
-            LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea(edges: .top)
-        )
     }
 
     private var liveBadge: some View {
@@ -461,8 +596,42 @@ struct PlayerView: View {
     }
 }
 
-// MARK: - Lightweight AVPlayer UIView (not UIViewController — faster)
+// MARK: - PiP-Capable Video Surface
 
+struct PiPVideoSurface: UIViewRepresentable {
+    let player: AVPlayer
+    var gravity: AVLayerVideoGravity = .resizeAspect
+    @Binding var pipController: AVPictureInPictureController?
+
+    func makeUIView(context: Context) -> PlayerUIView {
+        let view = PlayerUIView()
+        view.playerLayer.player = player
+        view.playerLayer.videoGravity = gravity
+        view.backgroundColor = .black
+
+        // Set up PiP if supported
+        if AVPictureInPictureController.isPictureInPictureSupported() {
+            let pip = AVPictureInPictureController(playerLayer: view.playerLayer)
+            pip?.canStartPictureInPictureAutomaticallyFromInline = true
+            DispatchQueue.main.async {
+                pipController = pip
+            }
+        }
+
+        return view
+    }
+
+    func updateUIView(_ uiView: PlayerUIView, context: Context) {
+        if uiView.playerLayer.player !== player {
+            uiView.playerLayer.player = player
+        }
+        if uiView.playerLayer.videoGravity != gravity {
+            uiView.playerLayer.videoGravity = gravity
+        }
+    }
+}
+
+/// Backward-compatible simple surface (used by LiveTV inline player)
 struct VideoSurface: UIViewRepresentable {
     let player: AVPlayer
     var gravity: AVLayerVideoGravity = .resizeAspect
@@ -506,6 +675,9 @@ final class PlayerViewModel: ObservableObject {
     @Published var displayName: String
     @Published var hasFirstFrame = false
     @Published var showChannelFlash = false
+
+    // PiP
+    @Published var pipController: AVPictureInPictureController?
 
     // Series
     @Published var seriesEpisodes: SeriesEpisodesResponse?
@@ -778,6 +950,8 @@ final class PlayerViewModel: ObservableObject {
         removeLifecycleObservers()
 
         if ownsPlayer {
+            // Stop PiP if active
+            pipController?.stopPictureInPicture()
             // We created this player — clean it up fully
             player.pause()
             player.replaceCurrentItem(with: nil)
@@ -875,6 +1049,15 @@ final class PlayerViewModel: ObservableObject {
     func togglePlayPause() {
         if isPlaying { player.pause() } else { player.play() }
         isPlaying.toggle()
+    }
+
+    func togglePiP() {
+        guard let pip = pipController else { return }
+        if pip.isPictureInPictureActive {
+            pip.stopPictureInPicture()
+        } else {
+            pip.startPictureInPicture()
+        }
     }
 
     func seek(to time: Double) {
