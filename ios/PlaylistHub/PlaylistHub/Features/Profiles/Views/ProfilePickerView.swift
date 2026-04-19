@@ -367,8 +367,8 @@ final class BackdropViewModel: ObservableObject {
 
     private var rotationTask: Task<Void, Never>?
 
-    /// High-res loader at up to 1000px for crisp full-screen backdrops.
-    private static func loadHighResImage(from url: URL) async -> UIImage? {
+    /// High-res loader — runs off main actor for concurrent downloads
+    nonisolated private static func loadHighResImage(from url: URL) async -> UIImage? {
         do {
             let config = URLSessionConfiguration.default
             config.timeoutIntervalForRequest = 12
@@ -380,8 +380,8 @@ final class BackdropViewModel: ObservableObject {
                   (200..<400).contains(http.statusCode),
                   let img = UIImage(data: data) else { return nil }
 
-            // Reject tiny images
-            guard img.size.width >= 200 && img.size.height >= 200 else { return nil }
+            // Reject tiny images (lowered threshold for IPTV poster art)
+            guard img.size.width >= 80 && img.size.height >= 80 else { return nil }
 
             // Scale to max 1000px for crisp display
             let maxDim: CGFloat = 1000
@@ -429,13 +429,14 @@ final class BackdropViewModel: ObservableObject {
     }
 
     private func loadArtwork() async {
+        // Gather URLs (involves Supabase queries)
         let urls = await gatherArtworkURLs()
         guard !urls.isEmpty else { return }
 
-        // Load images concurrently, score each
-        var candidates: [(image: UIImage, score: Int)] = await withTaskGroup(of: (UIImage?, Int).self) { group in
+        // Download & score images concurrently OFF the main actor
+        let candidates: [(image: UIImage, score: Int)] = await withTaskGroup(of: (UIImage?, Int).self) { group in
             for url in urls {
-                group.addTask {
+                group.addTask(priority: .userInitiated) { [self] in
                     guard let img = await Self.loadHighResImage(from: url) else { return (nil, 0) }
                     let score = Self.scoreImage(img)
                     return (img, score)
@@ -445,20 +446,17 @@ final class BackdropViewModel: ObservableObject {
             for await (img, score) in group {
                 if let img { results.append((img, score)) }
             }
-            return results
+            return results.sorted(by: { $0.1 > $1.1 })
         }
 
         guard !candidates.isEmpty else { return }
 
-        // Sort by quality score descending — best images first
-        candidates.sort(by: { $0.score > $1.score })
-
-        // Take top 6 best-quality images
+        // Take top 6 best-quality images — update on main actor
         let best = candidates.prefix(6)
-        loadedImages = best.enumerated().map { idx, pair in
+        self.loadedImages = best.enumerated().map { idx, pair in
             LoadedImage(id: idx, image: pair.image, score: pair.score)
         }
-        activeIndex = 0
+        self.activeIndex = 0
 
         if loadedImages.count > 1 {
             startRotation()
@@ -529,7 +527,7 @@ final class BackdropViewModel: ObservableObject {
 
                 // Reject URLs from known IPTV/channel logo CDNs
                 if let url = item.bestURL?.absoluteString.lowercased() {
-                    let badDomains = ["logo", "icon", "channel", "epg", "xmltv", "picon"]
+                    let badDomains = ["picon", "xmltv", "epg."]
                     for domain in badDomains {
                         if url.contains(domain) { return false }
                     }
