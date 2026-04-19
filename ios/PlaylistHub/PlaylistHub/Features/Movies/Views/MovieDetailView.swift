@@ -1,16 +1,17 @@
 import SwiftUI
 
-// MARK: - Movie Detail View (cinematic full-screen)
+// MARK: - Netflix-Style Detail View (Movies & Series)
 
 struct MovieDetailView: View {
     let item: PlaylistItem
-    /// Optional channel list context for live TV scrubbing
     var channelList: [PlaylistItem]?
     @Environment(\.dismiss) private var dismiss
-    @State private var appeared = false
     @State private var showPlayer = false
+    @State private var selectedTab = 0
+    @State private var relatedItems: [PlaylistItem] = []
+    @State private var isLoadingRelated = true
 
-    // Extract genre from groupTitle (e.g. "EN | Action" → "Action")
+    // Parse metadata from groupTitle
     private var genre: String? {
         guard let group = item.groupTitle else { return nil }
         let cleaned = group
@@ -19,216 +20,364 @@ struct MovieDetailView: View {
         return cleaned?.isEmpty == true ? nil : cleaned
     }
 
+    private var categoryTag: String? {
+        guard let group = item.groupTitle else { return nil }
+        let parts = group.components(separatedBy: "|")
+        if parts.count > 1 {
+            return parts.first?.trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
+
     private var typeLabel: String {
         switch item.contentType {
-        case .movie: return "MOVIE"
-        case .series: return "SERIES"
-        case .channel: return "LIVE"
-        case .uncategorized: return "VIDEO"
+        case .movie: return "Film"
+        case .series: return "Series"
+        case .channel: return "Live"
+        case .uncategorized: return "Video"
         }
+    }
+
+    private var metadataPills: [String] {
+        var pills: [String] = []
+        if let cat = categoryTag { pills.append(cat) }
+        pills.append(typeLabel)
+        if let genre { pills.append(genre) }
+        return pills
     }
 
     var body: some View {
-        ZStack {
-            // Layer 0: Solid black base
+        ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
 
-            // Layer 1: Full-bleed poster backdrop
-            backdrop
-
-            // Layer 2: Gradient overlays for readability
-            gradientOverlays
-
-            // Layer 3: Content
-            VStack(spacing: 0) {
-                // Top bar
-                topBar
-                    .padding(.top, 8)
-
-                Spacer()
-
-                // Bottom content area
-                bottomContent
-                    .padding(.bottom, 40)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    heroSection
+                    contentSection
+                        .padding(.horizontal, 16)
+                }
             }
-            .padding(.horizontal, 24)
+            .ignoresSafeArea(edges: .top)
+
+            floatingTopBar
         }
         .statusBarHidden()
+        .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $showPlayer) {
             PlayerView(item: item, channelList: channelList)
         }
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.8)) {
-                appeared = true
-            }
-        }
+        .task { await loadRelated() }
     }
 
-    // MARK: - Backdrop
+    // MARK: - Hero Section
 
-    private var backdrop: some View {
+    private var heroSection: some View {
         GeometryReader { geo in
-            if let url = item.resolvedLogoURL {
-                CachedAsyncImage(url: url) {
-                    backdropFallback
+            let width = geo.size.width
+            let heroHeight: CGFloat = width * 1.3
+
+            ZStack(alignment: .bottom) {
+                if let url = item.resolvedLogoURL {
+                    CachedAsyncImage(url: url) {
+                        heroFallback(width: width, height: heroHeight)
+                    }
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: width, height: heroHeight)
+                    .clipped()
+                } else {
+                    heroFallback(width: width, height: heroHeight)
                 }
-                .aspectRatio(contentMode: .fill)
-                .frame(width: geo.size.width, height: geo.size.height)
-                .clipped()
-                .scaleEffect(appeared ? 1.03 : 1.08)
-                .animation(.easeOut(duration: 1.2), value: appeared)
-            } else {
-                backdropFallback
+
+                // Bottom gradient fade to black
+                VStack(spacing: 0) {
+                    Spacer()
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.6), .black],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: heroHeight * 0.45)
+                }
             }
+            .frame(width: width, height: heroHeight)
         }
-        .ignoresSafeArea()
+        .aspectRatio(1 / 1.3, contentMode: .fit)
     }
 
-    private var backdropFallback: some View {
+    private func heroFallback(width: CGFloat, height: CGFloat) -> some View {
         ZStack {
             LinearGradient(
                 colors: PosterCard.gradientColors(for: item.name) + [.black],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            Image(systemName: item.contentType == .movie ? "film.fill" : "rectangle.stack.fill")
-                .font(.system(size: 60, weight: .ultraLight))
-                .foregroundStyle(.white.opacity(0.08))
+            VStack(spacing: 12) {
+                Image(systemName: item.contentType == .series ? "rectangle.stack.fill" : "film.fill")
+                    .font(.system(size: 48, weight: .ultraLight))
+                    .foregroundStyle(.white.opacity(0.12))
+                Text(item.name)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, 40)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: width, height: height)
     }
 
-    // MARK: - Gradient Overlays
+    // MARK: - Floating Top Bar
 
-    private var gradientOverlays: some View {
-        ZStack {
-            // Top fade for navigation bar area
-            VStack {
-                LinearGradient(
-                    colors: [.black.opacity(0.7), .black.opacity(0.3), .clear],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 160)
-                Spacer()
-            }
-
-            // Bottom fade for title & buttons
-            VStack {
-                Spacer()
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.5), .black.opacity(0.85), .black.opacity(0.95)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 380)
-            }
-
-            // Subtle vignette edges
-            LinearGradient(
-                colors: [.black.opacity(0.3), .clear, .clear, .black.opacity(0.3)],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        }
-        .ignoresSafeArea()
-    }
-
-    // MARK: - Top Bar
-
-    private var topBar: some View {
+    private var floatingTopBar: some View {
         HStack {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial.opacity(0.5), in: Circle())
+                    .frame(width: 32, height: 32)
+                    .background(.black.opacity(0.5), in: Circle())
             }
-
             Spacer()
-
-            // Content type badge
-            Text(typeLabel)
-                .font(.system(size: 10, weight: .heavy))
-                .tracking(1.5)
-                .foregroundStyle(.white.opacity(0.7))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(.ultraThinMaterial.opacity(0.4), in: Capsule())
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 54)
     }
 
-    // MARK: - Bottom Content
+    // MARK: - Content Section
 
-    private var bottomContent: some View {
-        VStack(spacing: 0) {
-            // Genre / Category pill
-            if let genre {
-                Text(genre.uppercased())
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(2)
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.bottom, 12)
-            }
-
+    private var contentSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
             // Title
             Text(item.name)
-                .font(.system(size: 32, weight: .black, design: .default))
+                .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
                 .lineLimit(3)
-                .minimumScaleFactor(0.6)
-                .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
                 .padding(.bottom, 8)
 
-            // Tagline / group info
-            if let group = item.groupTitle, !group.isEmpty {
-                Text(group)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .lineLimit(1)
-                    .padding(.bottom, 24)
+            // Metadata row
+            if !metadataPills.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(metadataPills, id: \.self) { pill in
+                        Text(pill)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.6))
+                        if pill != metadataPills.last {
+                            Circle()
+                                .fill(.white.opacity(0.3))
+                                .frame(width: 3, height: 3)
+                        }
+                    }
+                }
+                .padding(.bottom, 16)
             } else {
-                Spacer().frame(height: 24)
+                Spacer().frame(height: 16)
             }
 
             // Play button
             Button { showPlayer = true } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: 18))
                     Text("Play")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 17, weight: .bold))
                 }
                 .foregroundStyle(.black)
                 .frame(maxWidth: .infinity)
-                .frame(height: 52)
-                .background(.white, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(height: 48)
+                .background(.white, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             .buttonStyle(.plain)
-            .padding(.bottom, 12)
+            .padding(.bottom, 10)
 
-            // Secondary actions row
-            HStack(spacing: 32) {
-                secondaryButton(icon: "plus", label: "My List")
-                secondaryButton(icon: "hand.thumbsup", label: "Rate")
-                secondaryButton(icon: "square.and.arrow.up", label: "Share")
+            // Download button (dark variant)
+            Button {} label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Download")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Color(white: 0.18), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
-            .padding(.top, 4)
+            .buttonStyle(.plain)
+            .padding(.bottom, 16)
+
+            // Synopsis / category info
+            if let group = item.groupTitle, !group.isEmpty {
+                Text(group)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(4)
+                    .lineSpacing(3)
+                    .padding(.bottom, 16)
+            }
+
+            // Secondary actions
+            secondaryActionsRow
+                .padding(.bottom, 20)
+
+            // Divider
+            Rectangle()
+                .fill(.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.bottom, 6)
+
+            // Tabs
+            tabSection
+
+            // Related content
+            relatedContentGrid
+                .padding(.top, 12)
+                .padding(.bottom, 40)
+        }
+        .padding(.top, -20)
+    }
+
+    // MARK: - Secondary Actions Row
+
+    private var secondaryActionsRow: some View {
+        HStack(spacing: 40) {
+            actionButton(icon: "plus", label: "My List")
+            actionButton(icon: "hand.thumbsup", label: "Rate")
+            actionButton(icon: "paperplane", label: "Share")
+            Spacer()
         }
     }
 
-    private func secondaryButton(icon: String, label: String) -> some View {
+    private func actionButton(icon: String, label: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .light))
-                .foregroundStyle(.white.opacity(0.7))
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(.white.opacity(0.65))
             Text(label)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(.white.opacity(0.4))
         }
+    }
+
+    // MARK: - Tabs
+
+    private var tabSection: some View {
+        HStack(spacing: 0) {
+            tabButton(title: "More Like This", index: 0)
+            if item.contentType == .series {
+                tabButton(title: "Episodes", index: 1)
+            }
+            Spacer()
+        }
+    }
+
+    private func tabButton(title: String, index: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { selectedTab = index }
+        } label: {
+            VStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 14, weight: selectedTab == index ? .bold : .medium))
+                    .foregroundStyle(selectedTab == index ? .white : .white.opacity(0.4))
+                Rectangle()
+                    .fill(selectedTab == index ? .red : .clear)
+                    .frame(height: 2.5)
+                    .clipShape(Capsule())
+            }
+            .padding(.trailing, 24)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Related Content Grid
+
+    private var relatedContentGrid: some View {
+        Group {
+            if isLoadingRelated {
+                HStack { Spacer(); ProgressView().tint(.white.opacity(0.3)); Spacer() }
+                    .padding(.vertical, 30)
+            } else if relatedItems.isEmpty {
+                Text("No related titles found")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.25))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 30)
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8),
+                ], spacing: 8) {
+                    ForEach(relatedItems) { relatedItem in
+                        relatedPoster(relatedItem)
+                    }
+                }
+            }
+        }
+    }
+
+    private func relatedPoster(_ relatedItem: PlaylistItem) -> some View {
+        Button {} label: {
+            ZStack(alignment: .bottomLeading) {
+                if let url = relatedItem.resolvedLogoURL {
+                    CachedAsyncImage(url: url) {
+                        relatedFallback(relatedItem)
+                    }
+                    .aspectRatio(contentMode: .fill)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .frame(height: 160)
+                    .clipped()
+                } else {
+                    relatedFallback(relatedItem)
+                }
+            }
+            .frame(height: 160)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(alignment: .bottomLeading) {
+                Text(relatedItem.name)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .padding(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        LinearGradient(colors: [.black.opacity(0.7), .clear],
+                                       startPoint: .bottom, endPoint: .top)
+                    )
+                    .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 6, bottomTrailingRadius: 6))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func relatedFallback(_ relatedItem: PlaylistItem) -> some View {
+        ZStack {
+            LinearGradient(
+                colors: PosterCard.gradientColors(for: relatedItem.name),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Image(systemName: relatedItem.contentType == .series ? "rectangle.stack.fill" : "film.fill")
+                .font(.system(size: 18, weight: .light))
+                .foregroundStyle(.white.opacity(0.15))
+        }
+        .frame(height: 160)
+    }
+
+    // MARK: - Data Loading
+
+    private func loadRelated() async {
+        do {
+            let response = try await DataService.shared.fetchItems(
+                playlistId: item.playlistId,
+                contentType: item.contentType,
+                groupTitle: item.groupTitle,
+                page: 1,
+                limit: 18
+            )
+            relatedItems = response.items.filter { $0.id != item.id }
+        } catch {
+            relatedItems = []
+        }
+        isLoadingRelated = false
     }
 }
