@@ -919,87 +919,84 @@ final class PlayerViewModel: ObservableObject {
     }
 
     /// Race multiple URLs in parallel — first readyToPlay wins, losers are discarded.
+    /// Race multiple URLs in parallel using AVURLAsset.load(.isPlayable).
+    /// First URL whose asset is playable wins, then playURL() handles actual playback.
     private func raceParallel(urls: [URL], fallbacks: [URL]) {
-        // Cancel any previous race
         raceTasks.forEach { $0.cancel() }
         raceTasks.removeAll()
         fallbackTimer?.cancel()
         statusObserver?.invalidate()
 
         fallbackURLs = fallbacks
-        let raceStart = CFAbsoluteTimeGetCurrent()
-        var raceSettled = false
 
-        // Pre-build AVURLAssets for all candidates
-        let candidates: [(url: URL, asset: AVURLAsset, item: AVPlayerItem)] = urls.map { url in
-            let asset = AVURLAsset(url: url, options: [
-                "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": "VLC/3.0.21 LibVLC/3.0.21"],
-                AVURLAssetPreferPreciseDurationAndTimingKey: false,
-            ])
-            let playerItem = AVPlayerItem(asset: asset)
-            playerItem.preferredForwardBufferDuration = 4
-            return (url, asset, playerItem)
+        for (idx, url) in urls.enumerated() {
+            let host = url.host ?? url.absoluteString.prefix(40).description
+            print("[Player] \u{25B6} Race[\(idx)]: \(host)")
         }
 
-        // Observe each candidate's status
-        var observers: [NSKeyValueObservation] = []
-        for (idx, candidate) in candidates.enumerated() {
-            let host = candidate.url.host ?? candidate.url.absoluteString.prefix(40).description
-            print("[Player] \u{25B6} Race[\(idx)]: \(host)")
+        let raceTask = Task { [weak self] in
+            let raceStart = CFAbsoluteTimeGetCurrent()
 
-            let obs = candidate.item.observe(\.status, options: [.new]) { [weak self] item, _ in
-                Task { @MainActor [weak self] in
-                    guard let self, !raceSettled else { return }
-                    let elapsed = CFAbsoluteTimeGetCurrent() - raceStart
+            // Probe each URL in parallel — first playable wins
+            let winnerURL: URL? = await withTaskGroup(of: URL?.self) { group in
+                for url in urls {
+                    group.addTask {
+                        let asset = AVURLAsset(url: url, options: [
+                            "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": "VLC/3.0.21 LibVLC/3.0.21"],
+                            AVURLAssetPreferPreciseDurationAndTimingKey: false,
+                        ])
+                        do {
+                            let playable = try await asset.load(.isPlayable)
+                            return playable ? url : nil
+                        } catch {
+                            return nil
+                        }
+                    }
+                }
+                for await result in group {
+                    if let url = result {
+                        group.cancelAll()
+                        return url
+                    }
+                }
+                return nil
+            }
 
-                    switch item.status {
-                    case .readyToPlay:
-                        raceSettled = true
-                        print("[Player] \u{2713} Race winner[\(idx)] in \(String(format: "%.1f", elapsed))s: \(host)")
-                        // Cancel all observers
-                        observers.forEach { $0.invalidate() }
-                        observers.removeAll()
-                        self.fallbackTimer?.cancel()
-                        self.raceTasks.forEach { $0.cancel() }
-                        self.raceTasks.removeAll()
-                        self.fallbackURLs = fallbacks
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
 
-                        // Commit winner to player
-                        self.player.replaceCurrentItem(with: candidate.item)
-                        self.player.play()
-                        self.isPlaying = true
-                        self.hasFirstFrame = true
-                        self.fallbackURLs = []
-                        self.fallbackTimer?.cancel()
-                        self.resumeIfNeeded()
+            await MainActor.run {
+                self.fallbackTimer?.cancel()
+                let elapsed = CFAbsoluteTimeGetCurrent() - raceStart
 
-                    case .failed:
-                        let reason = item.error?.localizedDescription ?? "unknown"
-                        print("[Player] \u{2717} Race[\(idx)] failed: \(reason)")
-                    default: break
+                if let url = winnerURL {
+                    print("[Player] \u{2713} Race winner in \(String(format: "%.1f", elapsed))s: \(url.host ?? "?")")
+                    self.playURL(url)
+                } else {
+                    print("[Player] \u{2717} Race — no playable source, trying fallbacks")
+                    if let next = self.fallbackURLs.first {
+                        self.fallbackURLs.removeFirst()
+                        self.playURL(next)
+                    } else {
+                        let total = CFAbsoluteTimeGetCurrent() - self.loadStartTime
+                        print("[Player] \u{2717} All sources exhausted after \(String(format: "%.1f", total))s")
+                        self.error = "Playback failed"
+                        self.isBuffering = false
                     }
                 }
             }
-            observers.append(obs)
         }
+        raceTasks.append(raceTask)
 
-        // Global race timeout — if no winner, fall back to sequential cascade
+        // Safety timeout — if probing takes too long, start playing the first URL directly
         let timeout = DispatchWorkItem { [weak self] in
             Task { @MainActor in
-                guard let self, !raceSettled else { return }
-                raceSettled = true
-                print("[Player] \u{23F1} Race timeout — falling back to sequential")
-                observers.forEach { $0.invalidate() }
-                observers.removeAll()
-
-                // Try fallback URLs sequentially
-                if let next = self.fallbackURLs.first {
-                    self.fallbackURLs.removeFirst()
-                    self.playURL(next)
-                } else {
-                    self.error = "Playback failed"
-                    self.isBuffering = false
-                }
+                guard let self else { return }
+                raceTask.cancel()
+                print("[Player] \u{23F1} Race timeout — playing first URL directly")
+                // On timeout, try the first race URL directly (don't skip to fallbacks)
+                self.fallbackURLs = urls.dropFirst().map { $0 } + fallbacks
+                self.playURL(urls[0])
             }
         }
         fallbackTimer = timeout
