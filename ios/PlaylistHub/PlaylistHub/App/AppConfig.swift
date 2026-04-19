@@ -8,7 +8,7 @@ enum AppConfig {
     static let webAppBaseURL = URL(string: "https://playlist-hub-kappa.vercel.app")!
 
     // CF Worker stream proxy (direct fallback — single hop through CF edge)
-    static let cfWorkerURL = URL(string: "https://royal-bonus-3655.karinexshop.workers.dev")!
+    static let cfWorkerURL = URL(string: "https://iptv-proxy.karinexshop.workers.dev")!
 
     /// Vercel stream proxy (multi-hop — slowest, last resort)
     static func streamProxyURL(for streamURL: String) -> URL {

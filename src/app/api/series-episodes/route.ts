@@ -56,19 +56,28 @@ export async function GET(req: NextRequest) {
   let data: Record<string, unknown> | null = null;
 
   // 1. External proxy (Cloudflare Worker / Scanner)
-  const proxyUrl = process.env.STREAM_PROXY_URL?.trim().replace(/\/$/, '');
-  if (proxyUrl) {
-    try {
-      const sep = proxyUrl.includes('?') ? '&' : '?';
-      const headers: Record<string, string> = {};
-      const token = process.env.STREAM_PROXY_TOKEN;
-      if (token) headers['X-Proxy-Token'] = token;
-      const res = await fetch(`${proxyUrl}${sep}url=${encodeURIComponent(apiUrl)}`, {
-        signal: AbortSignal.timeout(15000), headers,
-      });
-      if (res.ok) data = await res.json() as Record<string, unknown>;
-      else errors.push(`proxy: HTTP ${res.status}`);
-    } catch { errors.push('proxy: unavailable'); }
+  const configuredProxyUrl = process.env.STREAM_PROXY_URL?.trim().replace(/\/$/, '');
+  const proxyCandidates = [
+    configuredProxyUrl,
+    // Fallback worker endpoint to survive stale env config
+    'https://iptv-proxy.karinexshop.workers.dev',
+  ].filter(Boolean) as string[];
+
+  if (proxyCandidates.length > 0) {
+    for (const proxyUrl of proxyCandidates) {
+      if (data) break;
+      try {
+        const sep = proxyUrl.includes('?') ? '&' : '?';
+        const headers: Record<string, string> = {};
+        const token = process.env.STREAM_PROXY_TOKEN;
+        if (token) headers['X-Proxy-Token'] = token;
+        const res = await fetch(`${proxyUrl}${sep}url=${encodeURIComponent(apiUrl)}`, {
+          signal: AbortSignal.timeout(15000), headers,
+        });
+        if (res.ok) data = await res.json() as Record<string, unknown>;
+        else errors.push(`proxy(${proxyUrl}): HTTP ${res.status}`);
+      } catch { errors.push(`proxy(${proxyUrl}): unavailable`); }
+    }
   } else {
     errors.push('proxy: not configured');
   }

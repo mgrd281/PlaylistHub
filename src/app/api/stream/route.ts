@@ -98,16 +98,25 @@ async function fetchViaScannerUrl(
 
 /** Try fetching through CF Worker */
 async function fetchViaCfWorker(targetUrl: string, rangeHeader?: string | null): Promise<Response | null> {
-  const proxyUrl = process.env.STREAM_PROXY_URL?.trim().replace(/\/$/, '');
-  if (!proxyUrl) return null;
-  try {
-    const separator = proxyUrl.includes('?') ? '&' : '?';
-    const url = `${proxyUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
-    const headers: Record<string, string> = {};
-    if (rangeHeader) headers['Range'] = rangeHeader;
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000), headers });
-    if ((res.ok || res.status === 206) && await isUsableStreamPayload(res, targetUrl)) return res;
-  } catch { /* timeout or network error */ }
+  const configured = process.env.STREAM_PROXY_URL?.trim().replace(/\/$/, '');
+  const candidates = [
+    configured,
+    // Fallback worker endpoint (kept in code to avoid total outage if env points to stale worker)
+    'https://iptv-proxy.karinexshop.workers.dev',
+  ].filter(Boolean) as string[];
+  if (candidates.length === 0) return null;
+
+  for (const proxyUrl of candidates) {
+    try {
+      const separator = proxyUrl.includes('?') ? '&' : '?';
+      const url = `${proxyUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
+      const headers: Record<string, string> = {};
+      if (rangeHeader) headers['Range'] = rangeHeader;
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000), headers });
+      if ((res.ok || res.status === 206) && await isUsableStreamPayload(res, targetUrl)) return res;
+    } catch { /* timeout or network error */ }
+  }
+
   return null;
 }
 
