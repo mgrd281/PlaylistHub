@@ -530,13 +530,14 @@ export function LiveTVBrowser() {
       setPlaylistsError(null);
       try {
         const res = await fetch('/api/browse?mode=playlists');
+        // Detect redirect (session expired → middleware sent us to login page)
+        if (res.redirected) {
+          if (!cancelled) setPlaylistsError('Session expired. Please refresh the page.');
+          if (!cancelled) setPlaylistsLoading(false);
+          return;
+        }
         if (!res.ok) {
-          // Check if redirected to login (auth expired)
-          if (res.redirected || res.url.includes('/login')) {
-            if (!cancelled) setPlaylistsError('Session expired. Please refresh the page.');
-          } else {
-            if (!cancelled) setPlaylistsError('Failed to load playlists.');
-          }
+          if (!cancelled) setPlaylistsError('Failed to load playlists.');
           if (!cancelled) setPlaylistsLoading(false);
           return;
         }
@@ -576,7 +577,7 @@ export function LiveTVBrowser() {
       });
       try {
         const res = await fetch(`/api/browse?${params}`);
-        if (!res.ok) {
+        if (res.redirected || !res.ok) {
           if (!cancelled) setChannelsLoading(false);
           return;
         }
