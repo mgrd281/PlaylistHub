@@ -60,7 +60,7 @@ struct SplashView: View {
                 Spacer()
 
                 // ── Karinex Attribution ──
-                Text("A Karinex product")
+                Text("Ein Unternehmen der karinex.de")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.2))
                     .tracking(0.8)
