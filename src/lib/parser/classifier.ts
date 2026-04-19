@@ -53,6 +53,12 @@ export function classifyContent(
   streamUrl: string
 ): ContentType {
   const group = groupTitle || '';
+  const urlLower = streamUrl.toLowerCase();
+
+  // URL path classification (highest confidence)
+  if (urlLower.includes('/movie/') || urlLower.includes('/vod/')) return 'movie';
+  if (urlLower.includes('/series/')) return 'series';
+  if (urlLower.includes('/live/') || /\.ts(?:[?#]|$)/i.test(urlLower)) return 'channel';
 
   // Group-based classification (highest priority)
   if (matchesGroupKeywords(group, SERIES_GROUP_KEYWORDS)) return 'series';
@@ -69,12 +75,6 @@ export function classifyContent(
   if (seriesScore > 0 && seriesScore >= movieScore) return 'series';
   if (movieScore > 0 && movieScore > channelScore) return 'movie';
   if (channelScore > 0) return 'channel';
-
-  // URL extension heuristics
-  const urlLower = streamUrl.toLowerCase();
-  if (urlLower.includes('/movie/') || urlLower.includes('/vod/')) return 'movie';
-  if (urlLower.includes('/series/')) return 'series';
-  if (urlLower.includes('/live/') || urlLower.endsWith('.ts')) return 'channel';
 
   return 'uncategorized';
 }

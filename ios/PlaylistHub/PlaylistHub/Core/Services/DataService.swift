@@ -197,7 +197,11 @@ final class DataService: ObservableObject {
 
     func fetchSeriesEpisodes(streamUrl: String) async throws -> SeriesEpisodesResponse {
         let url = AppConfig.seriesEpisodesURL(for: streamUrl)
-        let (data, _) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        if let token = try? await supabase.auth.session.accessToken {
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, _) = try await URLSession.shared.data(for: request)
         return try JSONDecoder.supabase.decode(SeriesEpisodesResponse.self, from: data)
     }
 }
