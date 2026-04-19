@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var deviceManager: DeviceManager
     @EnvironmentObject private var themeManager: ThemeManager
+    @StateObject private var myList = MyListManager.shared
     @State private var showSignOutConfirm = false
 
     private var accent: Color { themeManager.accentColor }
@@ -61,6 +62,47 @@ struct SettingsView: View {
                             }
                         }
                         .padding(16)
+                    }
+
+                    // ── Library ──
+                    settingsSection("Library") {
+                        NavigationLink(destination: MyListView().environmentObject(themeManager)) {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(accent.opacity(0.12))
+                                        .frame(width: 40, height: 40)
+                                    Image(systemName: "plus.rectangle.on.rectangle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(accent)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("My List")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    Text(myList.count == 0 ? "No saved items" : "\(myList.count) saved")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if myList.count > 0 {
+                                    Text("\(myList.count)")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .frame(minWidth: 22, minHeight: 22)
+                                        .background(accent, in: Circle())
+                                }
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.quaternary)
+                            }
+                            .padding(14)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     // ── Device ──

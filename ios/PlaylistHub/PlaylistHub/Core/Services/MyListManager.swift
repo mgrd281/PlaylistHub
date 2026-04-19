@@ -48,6 +48,16 @@ final class MyListManager: ObservableObject {
         saveToDisk()
     }
 
+    func remove(streamURL: String) {
+        items.removeValue(forKey: streamURL)
+        saveToDisk()
+    }
+
+    func removeAll() {
+        items.removeAll()
+        saveToDisk()
+    }
+
     var sortedItems: [ListEntry] {
         items.values.sorted { $0.addedAt > $1.addedAt }
     }
