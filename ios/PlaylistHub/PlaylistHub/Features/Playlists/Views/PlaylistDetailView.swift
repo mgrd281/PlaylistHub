@@ -112,7 +112,7 @@ struct PlaylistDetailView: View {
             }
         }
         .fullScreenCover(item: $selectedItem) { item in
-            PlayerView(
+            MovieDetailView(
                 item: item,
                 channelList: viewModel.currentChannelContext(for: item)
             )

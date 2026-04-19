@@ -64,7 +64,7 @@ struct SeriesView: View {
             .navigationBarTitleDisplayMode(.large)
             .refreshable { await vm.loadContent() }
             .fullScreenCover(item: $selectedItem) { item in
-                PlayerView(item: item, channelList: nil)
+                MovieDetailView(item: item)
             }
             .onChange(of: vm.searchText) { _, _ in
                 vm.debounceSearch()

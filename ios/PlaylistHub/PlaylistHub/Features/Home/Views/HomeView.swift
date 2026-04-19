@@ -54,7 +54,7 @@ struct HomeView: View {
             .fullScreenCover(item: $selectedItem, onDismiss: {
                 vm.refreshWatchHistory()
             }) { item in
-                PlayerView(item: item, channelList: nil)
+                MovieDetailView(item: item)
             }
         }
         .task { await vm.load() }
