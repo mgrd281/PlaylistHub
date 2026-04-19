@@ -30,12 +30,24 @@ struct ProfilePickerView: View {
                 cinematicOverlay
                     .ignoresSafeArea()
 
-                // Layer 4: Content
+                // Layer 4: Content — heading + profiles sit directly on dark zone
                 VStack(spacing: 0) {
                     Spacer()
 
-                    // Glass panel — elevated surface behind profiles
-                    profilePanel(safeBottom: geo.safeAreaInsets.bottom)
+                    // Heading
+                    Text("Who's watching?")
+                        .font(.system(size: 18, weight: .regular))
+                        .tracking(0.3)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 10)
+                        .animation(.easeOut(duration: 0.6).delay(0.1), value: appeared)
+                        .padding(.bottom, 24)
+
+                    // Profile grid
+                    profileGrid
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, max(geo.safeAreaInsets.bottom, 16) + 8)
                 }
             }
         }
@@ -56,126 +68,66 @@ struct ProfilePickerView: View {
 
     private func backdropLayer(size: CGSize) -> some View {
         ZStack {
-            // Ambient warm dark fallback
-            AnimatedGradientBackground()
+            // Solid black fallback
+            Color.black
 
-            // Artwork — upper portion, anchored top
+            // Subtle animated gradient fallback (visible only when no artwork loads)
+            AnimatedGradientBackground()
+                .opacity(artworkVM.loadedImages.isEmpty ? 1 : 0)
+                .animation(.easeInOut(duration: 1.0), value: artworkVM.loadedImages.isEmpty)
+
+            // Hero artwork — single sharp image fills upper ~60%, top-anchored
             ForEach(artworkVM.loadedImages.indices, id: \.self) { idx in
                 let entry = artworkVM.loadedImages[idx]
 
-                // Blurred ambient fill — lets artwork color tint the whole screen
                 Image(uiImage: entry.image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: size.width, height: size.height)
-                    .blur(radius: 50)
-                    .opacity(artworkVM.activeIndex == idx ? 0.6 : 0)
-                    .animation(.easeInOut(duration: 2.0), value: artworkVM.activeIndex)
-                    .clipped()
-
-                // Sharp hero image — top-anchored, fills upper ~65%
-                Image(uiImage: entry.image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: size.width, height: size.height * 0.65)
+                    .frame(width: size.width, height: size.height * 0.60)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .scaleEffect(artworkVM.activeIndex == idx ? 1.05 : 1.0, anchor: .top)
-                    .animation(.easeInOut(duration: 12), value: artworkVM.activeIndex)
+                    // Subtle Ken Burns zoom
+                    .scaleEffect(artworkVM.activeIndex == idx ? 1.04 : 1.0, anchor: .center)
+                    .animation(.easeInOut(duration: 14), value: artworkVM.activeIndex)
                     .opacity(artworkVM.activeIndex == idx ? 1 : 0)
-                    .animation(.easeInOut(duration: 1.4), value: artworkVM.activeIndex)
+                    .animation(.easeInOut(duration: 1.6), value: artworkVM.activeIndex)
             }
         }
     }
 
     private var cinematicOverlay: some View {
         ZStack {
-            // Bottom fade — artwork dissolves smoothly into dark lower section
+            // Bottom fade — matches Netflix: artwork visible top ~55%, smooth fade to solid black
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: .black.opacity(0.03), location: 0.25),
-                    .init(color: .black.opacity(0.20), location: 0.38),
-                    .init(color: .black.opacity(0.55), location: 0.48),
-                    .init(color: .black.opacity(0.82), location: 0.56),
-                    .init(color: .black.opacity(0.94), location: 0.63),
-                    .init(color: .black.opacity(0.98), location: 0.70),
+                    .init(color: .clear, location: 0.35),
+                    .init(color: .black.opacity(0.15), location: 0.42),
+                    .init(color: .black.opacity(0.45), location: 0.50),
+                    .init(color: .black.opacity(0.75), location: 0.56),
+                    .init(color: .black.opacity(0.92), location: 0.62),
+                    .init(color: .black, location: 0.70),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
 
-            // Top edge darken for status bar
+            // Top edge darken for status bar readability
             LinearGradient(
-                colors: [.black.opacity(0.4), .clear],
+                colors: [.black.opacity(0.35), .clear],
                 startPoint: .top,
-                endPoint: .init(x: 0.5, y: 0.12)
+                endPoint: .init(x: 0.5, y: 0.10)
             )
         }
         .allowsHitTesting(false)
     }
 
-    // MARK: - Profile Panel (glass surface behind profiles)
-
-    private func profilePanel(safeBottom: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            // Heading
-            Text("Who's watching?")
-                .font(.system(size: 17, weight: .regular))
-                .tracking(0.4)
-                .foregroundStyle(.white.opacity(0.8))
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .padding(.top, 28)
-                .padding(.bottom, 24)
-
-            // Profile grid
-            profileGrid
-                .padding(.horizontal, 28)
-                .padding(.bottom, max(safeBottom, 16) + 12)
-        }
-        .frame(maxWidth: .infinity)
-        .background(
-            ZStack {
-                // Curved glass panel
-                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32)
-                    .fill(.ultraThinMaterial.opacity(0.55))
-
-                // Subtle warm tint on the glass
-                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.04),
-                                Color.white.opacity(0.01),
-                                Color.clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-
-                // Top edge highlight
-                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [.white.opacity(0.12), .white.opacity(0.04), .clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.5
-                    )
-            }
-            .ignoresSafeArea(edges: .bottom)
-        )
-    }
-
     // MARK: - Profile Grid (profiles + add + edit, always 3 columns)
 
     private var profileGrid: some View {
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 20), count: 3)
 
-        return LazyVGrid(columns: cols, spacing: 20) {
+        return LazyVGrid(columns: cols, spacing: 22) {
             // Real profiles
             ForEach(Array(profileManager.profiles.enumerated()), id: \.element.id) { index, profile in
                 profileTile(profile, index: index)
@@ -203,11 +155,11 @@ struct ProfilePickerView: View {
                 }
             }
         }
-        .frame(maxWidth: 360)
+        .frame(maxWidth: 380)
     }
 
-    private let tileSize: CGFloat = 92
-    private let tileRadius: CGFloat = 20
+    private let tileSize: CGFloat = 96
+    private let tileRadius: CGFloat = 16
 
     private func profileTile(_ profile: UserProfile, index: Int) -> some View {
         let colors = UserProfile.avatarColors[profile.avatarColorIndex % UserProfile.avatarColors.count]
@@ -225,7 +177,7 @@ struct ProfilePickerView: View {
         } label: {
             VStack(spacing: 10) {
                 ZStack {
-                    // Background gradient
+                    // Solid gradient fill — matches Netflix reference (no glass)
                     RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
                         .fill(
                             LinearGradient(
@@ -236,22 +188,11 @@ struct ProfilePickerView: View {
                         )
                         .frame(width: tileSize, height: tileSize)
 
-                    // Inner highlight (top-left gloss)
-                    RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [.white.opacity(0.18), .white.opacity(0.04), .clear],
-                                startPoint: .topLeading,
-                                endPoint: .center
-                            )
-                        )
-                        .frame(width: tileSize, height: tileSize)
-
                     // Avatar icon
                     Image(systemName: profile.isKids ? "teddybear.fill" : profile.avatarIcon)
-                        .font(.system(size: profile.isKids ? 34 : 36, weight: .medium))
+                        .font(.system(size: profile.isKids ? 36 : 38, weight: .medium))
                         .foregroundStyle(.white.opacity(0.95))
-                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                        .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
 
                     // Selection ring
                     if isSelected {
@@ -285,10 +226,10 @@ struct ProfilePickerView: View {
                 )
 
                 Text(profile.name)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
                     .lineLimit(1)
-                    .frame(width: tileSize + 10)
+                    .frame(width: tileSize + 14)
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 16)
@@ -297,43 +238,27 @@ struct ProfilePickerView: View {
         .buttonStyle(.plain)
     }
 
-    /// Uniform action tile for Add / Edit — premium glass style matching profile tiles
+    /// Action tile for Add / Edit — solid dark gray, matches Netflix reference
     private func actionTile(icon: String, label: String, index: Int, action: @escaping () -> Void) -> some View {
         let stagger = Double(index) * 0.06
 
         return Button(action: action) {
             VStack(spacing: 10) {
                 ZStack {
-                    // Tinted glass background
+                    // Solid dark gray fill — matches Netflix Add/Edit tiles
                     RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
-                        .fill(.white.opacity(0.06))
-                        .frame(width: tileSize, height: tileSize)
-
-                    // Subtle inner glow
-                    RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [.white.opacity(0.06), .clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: tileSize, height: tileSize)
-
-                    // Border
-                    RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
-                        .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                        .fill(Color(white: 0.22))
                         .frame(width: tileSize, height: tileSize)
 
                     // Icon
                     Image(systemName: icon)
-                        .font(.system(size: 26, weight: .light))
-                        .foregroundStyle(.white.opacity(0.45))
+                        .font(.system(size: 28, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.65))
                 }
 
                 Text(label)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
                     .frame(width: tileSize + 10)
             }
             .opacity(appeared ? 1 : 0)
@@ -499,7 +424,12 @@ final class BackdropViewModel: ObservableObject {
     private func loadArtwork() async {
         // Gather URLs (involves Supabase queries)
         let urls = await gatherArtworkURLs()
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            print("[Backdrop] No URLs to load")
+            return
+        }
+
+        print("[Backdrop] Attempting to load \(urls.count) images")
 
         // Download & score images concurrently OFF the main actor
         let candidates: [(image: UIImage, score: Int)] = await withTaskGroup(of: (UIImage?, Int).self) { group in
@@ -517,7 +447,12 @@ final class BackdropViewModel: ObservableObject {
             return results.sorted(by: { $0.1 > $1.1 })
         }
 
-        guard !candidates.isEmpty else { return }
+        guard !candidates.isEmpty else {
+            print("[Backdrop] All image downloads failed")
+            return
+        }
+
+        print("[Backdrop] Loaded \(candidates.count) images, best score: \(candidates.first?.score ?? 0)")
 
         // Take top 6 best-quality images — update on main actor
         let best = candidates.prefix(6)
@@ -531,8 +466,8 @@ final class BackdropViewModel: ObservableObject {
         }
     }
 
-    /// Gather artwork URLs from user's playlists — movies first, then series.
-    /// Uses a simple approach: grab items that have any image URL.
+    /// Gather artwork URLs from user's playlists — movies and series ONLY (no channels/live TV).
+    /// Prioritises movies for best poster art, then series.
     private func gatherArtworkURLs() async -> [URL] {
         do {
             let supabase = SupabaseManager.shared.client
@@ -545,7 +480,10 @@ final class BackdropViewModel: ObservableObject {
                 .execute()
                 .value
 
-            guard !playlists.isEmpty else { return [] }
+            guard !playlists.isEmpty else {
+                print("[Backdrop] No playlists found")
+                return []
+            }
 
             struct ArtworkItem: Decodable {
                 let tvgLogo: String?
@@ -563,22 +501,21 @@ final class BackdropViewModel: ObservableObject {
 
             var collected: [URL] = []
 
-            // Try movies first (best poster art), then series, then anything
-            let contentTypes = ["movie", "series", "channel"]
+            // Movies and series ONLY — no channels/live TV for premium artwork
+            let contentTypes = ["movie", "series"]
 
             for contentType in contentTypes {
-                guard collected.count < 20 else { break }
+                guard collected.count < 25 else { break }
 
-                for playlist in playlists.prefix(3) {
-                    guard collected.count < 20 else { break }
+                for playlist in playlists.prefix(5) {
+                    guard collected.count < 25 else { break }
 
-                    // Query: items with tvg_logo OR logo_url set
                     let items: [ArtworkItem] = try await supabase
                         .from("playlist_items")
                         .select("tvg_logo, logo_url")
                         .eq("playlist_id", value: playlist.id.uuidString)
                         .eq("content_type", value: contentType)
-                        .limit(50)
+                        .limit(60)
                         .execute()
                         .value
 
@@ -587,16 +524,39 @@ final class BackdropViewModel: ObservableObject {
                 }
             }
 
-            guard !collected.isEmpty else { return [] }
+            // If no movie/series art, try channels as last resort
+            if collected.isEmpty {
+                print("[Backdrop] No movie/series art, falling back to channels")
+                for playlist in playlists.prefix(3) {
+                    guard collected.count < 25 else { break }
+                    let items: [ArtworkItem] = try await supabase
+                        .from("playlist_items")
+                        .select("tvg_logo, logo_url")
+                        .eq("playlist_id", value: playlist.id.uuidString)
+                        .eq("content_type", value: "channel")
+                        .limit(40)
+                        .execute()
+                        .value
+                    collected.append(contentsOf: items.compactMap(\.bestURL))
+                }
+            }
 
-            // Deduplicate, shuffle, take up to 20
+            guard !collected.isEmpty else {
+                print("[Backdrop] No artwork URLs collected from any playlist")
+                return []
+            }
+
+            print("[Backdrop] Collected \(collected.count) artwork URLs")
+
+            // Deduplicate, shuffle, take up to 25
             let unique = Array(Set(collected.map(\.absoluteString)))
                 .compactMap(URL.init(string:))
                 .shuffled()
-                .prefix(20)
+                .prefix(25)
 
             return Array(unique)
         } catch {
+            print("[Backdrop] Error fetching artwork: \(error)")
             return []
         }
     }
