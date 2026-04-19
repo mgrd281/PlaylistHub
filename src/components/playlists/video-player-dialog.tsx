@@ -5,7 +5,7 @@ import {
   X, AlertCircle, Loader2, Copy,
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, Search, Share2,
-  PictureInPicture2, MonitorPlay, ChevronLeft,
+  PictureInPicture2, MonitorPlay, ChevronLeft, ChevronRight,
   Radio, PanelRightOpen, PanelRightClose, Tv,
   RectangleHorizontal, Square, Expand,
   Film, Clapperboard, Clock, Eye,
@@ -216,6 +216,16 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hlsRef = useRef<import('hls.js').default | null>(null);
 
+  /* ── Mobile detection for IPTV layout ── */
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)');
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
@@ -314,6 +324,39 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       ch.name.toLowerCase().includes(q) || ch.group_title?.toLowerCase().includes(q)
     );
   }, [relatedChannels, liveChannelSearch]);
+
+  /* ── Mobile IPTV: group channels by group_title ── */
+  const [mobileActiveGroup, setMobileActiveGroup] = useState<string | null>(null);
+  const mobileGroupedChannels = useMemo(() => {
+    if (!channelList?.length) return new Map<string, PlaylistItem[]>();
+    const groups = new Map<string, PlaylistItem[]>();
+    for (const ch of channelList) {
+      const g = ch.group_title || 'Uncategorized';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(ch);
+    }
+    return groups;
+  }, [channelList]);
+
+  // Auto-select group of current channel
+  useEffect(() => {
+    if (isMobile && item?.group_title && mobileActiveGroup === null) {
+      setMobileActiveGroup(item.group_title);
+    }
+  }, [isMobile, item?.group_title, mobileActiveGroup]);
+
+  const mobileDisplayChannels = useMemo(() => {
+    if (!mobileActiveGroup) return channelList ?? [];
+    return mobileGroupedChannels.get(mobileActiveGroup) ?? [];
+  }, [mobileActiveGroup, mobileGroupedChannels, channelList]);
+
+  const mobileFilteredChannels = useMemo(() => {
+    if (!liveChannelSearch.trim()) return mobileDisplayChannels;
+    const q = liveChannelSearch.toLowerCase();
+    return mobileDisplayChannels.filter(ch =>
+      ch.name.toLowerCase().includes(q) || ch.group_title?.toLowerCase().includes(q)
+    );
+  }, [mobileDisplayChannels, liveChannelSearch]);
 
   // Defer non-essential live-page UI so stream startup stays fast.
   useEffect(() => {
@@ -1709,6 +1752,262 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
             </div>
           </div>
         </div>
+      ) : isMobile && !fullscreen ? (
+      /* ═══════════════════════════════════════════════════════════════════
+         MOBILE IPTV LAYOUT — structured player + channel browser
+         ═══════════════════════════════════════════════════════════════════ */
+      <div className="flex flex-col h-full">
+        {/* ── Compact video player (sticky top) ── */}
+        <div className="shrink-0 bg-black">
+          <div
+            className="relative aspect-video w-full"
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('.player-controls')) return;
+              togglePlay();
+            }}
+          >
+            <video
+              ref={videoRef}
+              crossOrigin="anonymous"
+              className="w-full h-full object-contain"
+              playsInline
+              autoPlay
+              preload="auto"
+              onError={() => {
+                if (hlsRef.current || initInProgressRef.current) return;
+                setError('Video could not be played.');
+                setLoading(false);
+              }}
+            />
+
+            {/* Loading spinner */}
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+                <div className="w-12 h-12 rounded-full border-2 border-white/10 border-t-white/80 animate-spin" />
+              </div>
+            )}
+
+            {/* Error state */}
+            {error && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/80 p-4 text-center z-20 bg-black/60">
+                <AlertCircle className="h-8 w-8 text-red-400" />
+                <p className="text-xs text-white/60">{error}</p>
+                <button onClick={copyUrl}
+                  className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/15 transition-colors">
+                  <Copy className="h-3 w-3" /> Copy URL
+                </button>
+              </div>
+            )}
+
+            {/* Paused overlay */}
+            {!playing && !loading && !error && (
+              <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                <div className="w-14 h-14 rounded-full bg-white/15 backdrop-blur-sm flex items-center justify-center">
+                  <Play className="h-6 w-6 text-white fill-white ml-0.5" />
+                </div>
+              </div>
+            )}
+
+            {/* Live badge + Fullscreen */}
+            <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-20 pointer-events-none">
+              {isLive && (
+                <span className="pointer-events-auto flex items-center gap-1.5 bg-red-600/90 backdrop-blur-sm text-white text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                  Live
+                </span>
+              )}
+              <div className="flex-1" />
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
+                className="pointer-events-auto p-1.5 rounded-lg bg-black/40 backdrop-blur-sm text-white/70 hover:text-white transition-colors"
+              >
+                <Maximize className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Now Playing bar ── */}
+        <div className="shrink-0 bg-card border-b border-border/60 px-3 py-2.5">
+          <div className="flex items-center gap-3">
+            {/* Back button */}
+            <button onClick={onClose} className="shrink-0 p-1.5 -ml-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            {/* Channel logo */}
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted overflow-hidden">
+              {item.tvg_logo ? (
+                <img src={item.tvg_logo} alt="" className="h-full w-full object-contain p-1.5"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              ) : (
+                <Radio className="h-4 w-4 text-muted-foreground" />
+              )}
+            </div>
+
+            {/* Channel info */}
+            <div className="flex-1 min-w-0">
+              <h2 className="text-sm font-semibold text-foreground truncate">{displayName}</h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                {item.group_title && (
+                  <span className="text-[11px] text-muted-foreground truncate">{item.group_title}</span>
+                )}
+                {hasNavigation && (
+                  <span className="text-[10px] text-muted-foreground/50 tabular-nums shrink-0">
+                    {currentIndex + 1}/{channelList!.length}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Prev / Next */}
+            {hasNavigation && (
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  onClick={() => prevChannel && navigateChannel(prevChannel)}
+                  disabled={!prevChannel}
+                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-25 transition-colors"
+                >
+                  <SkipBack className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => nextChannel && navigateChannel(nextChannel)}
+                  disabled={!nextChannel}
+                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-25 transition-colors"
+                >
+                  <SkipForward className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Group category tabs ── */}
+        {mobileGroupedChannels.size > 1 && (
+          <div className="shrink-0 bg-background border-b border-border/40">
+            <div className="overflow-x-auto scrollbar-none">
+              <div className="flex gap-1 px-3 py-2 w-max">
+                <button
+                  onClick={() => setMobileActiveGroup(null)}
+                  className={`px-3 py-1.5 rounded-lg text-[12px] font-medium whitespace-nowrap transition-all ${
+                    mobileActiveGroup === null
+                      ? 'bg-primary text-primary-foreground font-semibold'
+                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  All ({channelList?.length ?? 0})
+                </button>
+                {Array.from(mobileGroupedChannels.entries()).map(([group, channels]) => (
+                  <button
+                    key={group}
+                    onClick={() => setMobileActiveGroup(group)}
+                    className={`px-3 py-1.5 rounded-lg text-[12px] font-medium whitespace-nowrap transition-all ${
+                      mobileActiveGroup === group
+                        ? 'bg-primary text-primary-foreground font-semibold'
+                        : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                    }`}
+                  >
+                    {group} ({channels.length})
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Search bar ── */}
+        <div className="shrink-0 bg-background px-3 py-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+            <input
+              type="text"
+              placeholder="Search channels..."
+              value={liveChannelSearch}
+              onChange={(e) => setLiveChannelSearch(e.target.value)}
+              className="w-full h-8 pl-8 pr-8 rounded-lg bg-muted/50 border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-border transition-all"
+            />
+            {liveChannelSearch && (
+              <button onClick={() => setLiveChannelSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground transition-colors">
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── Channel list ── */}
+        <div className="flex-1 overflow-y-auto bg-background">
+          <div className="px-2 pb-4">
+            {mobileFilteredChannels.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Search className="h-5 w-5 text-muted-foreground/30 mb-2" />
+                <p className="text-sm text-muted-foreground/60">No channels found</p>
+                {liveChannelSearch && (
+                  <button onClick={() => setLiveChannelSearch('')} className="text-xs text-primary hover:underline mt-2">
+                    Clear search
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-0.5 pt-1">
+                {mobileFilteredChannels.map((ch) => {
+                  const isActive = ch.id === item.id;
+                  return (
+                    <button
+                      key={ch.id}
+                      onClick={() => { if (!isActive) navigateChannel(ch); }}
+                      className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all ${
+                        isActive
+                          ? 'bg-primary/10 border border-primary/25'
+                          : 'hover:bg-muted/70 border border-transparent'
+                      }`}
+                    >
+                      {/* Channel number */}
+                      <span className={`text-[11px] tabular-nums w-6 text-right shrink-0 ${
+                        isActive ? 'text-primary font-bold' : 'text-muted-foreground/40'
+                      }`}>
+                        {(channelList?.indexOf(ch) ?? 0) + 1}
+                      </span>
+
+                      {/* Logo */}
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
+                        isActive ? 'bg-primary/15' : 'bg-muted/60'
+                      }`}>
+                        {ch.tvg_logo ? (
+                          <img src={ch.tvg_logo} alt="" className="h-full w-full object-contain p-1"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          <Radio className="h-3 w-3 text-muted-foreground/50" />
+                        )}
+                      </div>
+
+                      {/* Name */}
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[13px] truncate leading-tight ${
+                          isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/80'
+                        }`}>
+                          {ch.name}
+                        </p>
+                        {ch.group_title && !mobileActiveGroup && (
+                          <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">{ch.group_title}</p>
+                        )}
+                      </div>
+
+                      {/* Playing indicator */}
+                      {isActive && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                          <span className="text-[10px] font-bold text-red-500 uppercase">Now</span>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
       ) : (
       <>
       {!fullscreen && (
@@ -2374,43 +2673,6 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
         )}
       </div>
 
-      {/* ═══════ MOBILE CHANNEL STRIP — horizontal scroll chips (md:hidden) ═══════ */}
-      {hasNavigation && !isVod && !fullscreen && liveSupportReady && (
-        <div className="md:hidden mt-2 px-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Tv className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              {item.group_title || 'Channels'}
-            </span>
-            <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-              {relatedChannels.length}
-            </span>
-          </div>
-          <div className="overflow-x-auto scrollbar-none -mx-4 px-4 pb-3">
-            <div className="flex gap-1.5 w-max">
-              {/* Current channel pinned first */}
-              <button
-                className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-primary-foreground text-[12px] font-semibold whitespace-nowrap shrink-0"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-                {item.name}
-              </button>
-              {relatedChannels.map((ch) => (
-                <button
-                  key={ch.id}
-                  onClick={() => navigateChannel(ch)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-muted/80 hover:bg-muted text-[12px] font-medium text-foreground/80 whitespace-nowrap shrink-0 transition-colors"
-                >
-                  {ch.tvg_logo && (
-                    <img src={ch.tvg_logo} alt="" className="h-4 w-4 rounded-sm object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  )}
-                  {ch.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
       </>
       )}
 
