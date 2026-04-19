@@ -71,7 +71,7 @@ struct ProfilePickerView: View {
                 Image(uiImage: entry.image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: size.width, height: size.height * 0.70)
+                    .frame(width: size.width, height: size.height * 0.82)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
                     // Subtle Ken Burns zoom
@@ -85,17 +85,18 @@ struct ProfilePickerView: View {
 
     private var cinematicOverlay: some View {
         ZStack {
-            // Gradient: artwork fades to near-black that continues behind profiles
+            // Gradient: artwork fades SLOWLY — ends right where the panel starts
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: .clear, location: 0.35),
-                    .init(color: .black.opacity(0.15), location: 0.42),
-                    .init(color: .black.opacity(0.40), location: 0.48),
-                    .init(color: .black.opacity(0.70), location: 0.54),
-                    .init(color: .black.opacity(0.90), location: 0.60),
-                    .init(color: Color(white: 0.08), location: 0.66),
-                    .init(color: Color(white: 0.08), location: 1.0),
+                    .init(color: .clear, location: 0.42),
+                    .init(color: .black.opacity(0.08), location: 0.50),
+                    .init(color: .black.opacity(0.22), location: 0.56),
+                    .init(color: .black.opacity(0.45), location: 0.62),
+                    .init(color: .black.opacity(0.70), location: 0.68),
+                    .init(color: .black.opacity(0.92), location: 0.74),
+                    .init(color: Color(white: 0.10), location: 0.80),
+                    .init(color: Color(white: 0.10), location: 1.0),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -117,27 +118,40 @@ struct ProfilePickerView: View {
         VStack(spacing: 0) {
             // Heading — matches reference: small, understated
             Text("Who's watching?")
-                .font(.system(size: 15, weight: .regular))
+                .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(.white.opacity(0.55))
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 8)
                 .animation(.easeOut(duration: 0.6).delay(0.1), value: appeared)
-                .padding(.bottom, 16)
+                .padding(.top, 28)
+                .padding(.bottom, 18)
 
             // Profile grid
             profileGrid
                 .padding(.horizontal, 24)
-                .padding(.bottom, max(safeBottom, 20) + 12)
+                .padding(.bottom, max(safeBottom, 20) + 16)
         }
         .frame(maxWidth: .infinity)
+        .background(
+            // Ultra-subtle panel — barely visible, like Netflix
+            UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(white: 0.12).opacity(0.0), Color(white: 0.12), Color(white: 0.12)],
+                        startPoint: .top,
+                        endPoint: .init(x: 0.5, y: 0.22)
+                    )
+                )
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 
     // MARK: - Profile Grid (profiles + add + edit, always 3 columns)
 
     private var profileGrid: some View {
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 14), count: 3)
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
 
-        return LazyVGrid(columns: cols, spacing: 12) {
+        return LazyVGrid(columns: cols, spacing: 14) {
             // Real profiles
             ForEach(Array(profileManager.profiles.enumerated()), id: \.element.id) { index, profile in
                 profileTile(profile, index: index)
@@ -168,8 +182,8 @@ struct ProfilePickerView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private let tileSize: CGFloat = 100
-    private let tileRadius: CGFloat = 12
+    private let tileSize: CGFloat = 110
+    private let tileRadius: CGFloat = 16
 
     private func profileTile(_ profile: UserProfile, index: Int) -> some View {
         let colors = UserProfile.avatarColors[profile.avatarColorIndex % UserProfile.avatarColors.count]
@@ -200,7 +214,7 @@ struct ProfilePickerView: View {
 
                     // Avatar icon
                     Image(systemName: profile.isKids ? "teddybear.fill" : profile.avatarIcon)
-                        .font(.system(size: profile.isKids ? 34 : 36, weight: .medium))
+                        .font(.system(size: profile.isKids ? 38 : 40, weight: .medium))
                         .foregroundStyle(.white)
 
                     // Selection ring
@@ -261,7 +275,7 @@ struct ProfilePickerView: View {
 
                     // Icon
                     Image(systemName: icon)
-                        .font(.system(size: 26, weight: .light))
+                        .font(.system(size: 30, weight: .light))
                         .foregroundStyle(.white.opacity(0.55))
                 }
 
