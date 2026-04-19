@@ -19,52 +19,45 @@ struct ProfilePickerView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // Layer 1: Cinematic rotating backdrop
+                // Layer 1: Black base
+                Color.black.ignoresSafeArea()
+
+                // Layer 2: Cinematic backdrop in upper portion
                 backdropLayer(size: geo.size)
+                    .ignoresSafeArea()
 
-                // Layer 2: Multi-layer cinematic overlay
-                cinematicOverlay
+                // Layer 3: Cinematic overlay
+                cinematicOverlay(height: geo.size.height)
+                    .ignoresSafeArea()
 
-                // Layer 3: Content
+                // Layer 4: Content
                 VStack(spacing: 0) {
-                    // Top logo
-                    logoHeader
-                        .padding(.top, geo.safeAreaInsets.top + 16)
-                        .padding(.horizontal, 28)
-
                     Spacer()
 
                     // Title
-                    VStack(spacing: 6) {
-                        Text("Who's watching?")
-                            .font(.system(size: 26, weight: .bold))
-                            .foregroundStyle(.white)
-                            .opacity(appeared ? 1 : 0)
-                            .offset(y: appeared ? 0 : 18)
-                    }
-                    .padding(.bottom, 40)
+                    Text("Who's watching?")
+                        .font(.system(size: 20, weight: .medium))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.95))
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 14)
+                        .padding(.bottom, 36)
 
-                    // Profile grid
+                    // Profile grid (profiles + add tile inline)
                     profileGrid
-                        .padding(.horizontal, 28)
-                        .padding(.bottom, 32)
+                        .padding(.horizontal, 40)
+                        .padding(.bottom, 28)
 
-                    // Add profile button
-                    if profileManager.profiles.count < 5 {
-                        addProfileButton
-                            .padding(.bottom, 14)
-                    }
-
-                    // Edit toggle
-                    editToggle
-                        .padding(.bottom, geo.safeAreaInsets.bottom + 24)
+                    // Manage profiles
+                    manageButton
+                        .padding(.bottom, geo.safeAreaInsets.bottom + 36)
                 }
             }
         }
         .ignoresSafeArea()
         .onAppear {
             ensureDefaultProfile()
-            withAnimation(.easeOut(duration: 0.9).delay(0.15)) {
+            withAnimation(.easeOut(duration: 0.8).delay(0.2)) {
                 appeared = true
             }
         }
@@ -78,100 +71,101 @@ struct ProfilePickerView: View {
 
     private func backdropLayer(size: CGSize) -> some View {
         ZStack {
-            // Base: premium animated gradient (always visible as fallback)
+            // Ambient warm dark fallback
             AnimatedGradientBackground()
 
-            // Artwork images with crossfade
+            // Artwork — upper portion, anchored top
             ForEach(artworkVM.loadedImages.indices, id: \.self) { idx in
                 let entry = artworkVM.loadedImages[idx]
+
+                // Blurred ambient fill behind sharp image
                 Image(uiImage: entry.image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: size.width, height: size.height)
+                    .blur(radius: 40)
+                    .opacity(artworkVM.activeIndex == idx ? 0.5 : 0)
+                    .animation(.easeInOut(duration: 2.0), value: artworkVM.activeIndex)
                     .clipped()
-                    // Ken Burns: subtle slow zoom
-                    .scaleEffect(artworkVM.activeIndex == idx ? 1.08 : 1.0)
-                    .animation(.easeInOut(duration: 8), value: artworkVM.activeIndex)
+
+                // Sharp hero image — top-anchored, fills upper ~60%
+                Image(uiImage: entry.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height * 0.62)
+                    .clipped()
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .scaleEffect(artworkVM.activeIndex == idx ? 1.06 : 1.0, anchor: .top)
+                    .animation(.easeInOut(duration: 10), value: artworkVM.activeIndex)
                     .opacity(artworkVM.activeIndex == idx ? 1 : 0)
-                    .animation(.easeInOut(duration: 1.8), value: artworkVM.activeIndex)
+                    .animation(.easeInOut(duration: 1.6), value: artworkVM.activeIndex)
             }
         }
     }
 
-    private var cinematicOverlay: some View {
+    private func cinematicOverlay(height: CGFloat) -> some View {
         ZStack {
-            // Top edge vignette
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.75), location: 0),
-                    .init(color: .black.opacity(0.3), location: 0.25),
-                    .init(color: .clear, location: 0.45),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            // Bottom heavy fade for profile area
+            // Smooth bottom fade — artwork dissolves into solid dark lower area
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: .black.opacity(0.15), location: 0.3),
-                    .init(color: .black.opacity(0.75), location: 0.55),
-                    .init(color: .black.opacity(0.92), location: 0.72),
-                    .init(color: .black, location: 0.85),
+                    .init(color: .black.opacity(0.05), location: 0.20),
+                    .init(color: .black.opacity(0.30), location: 0.35),
+                    .init(color: .black.opacity(0.70), location: 0.48),
+                    .init(color: .black.opacity(0.90), location: 0.56),
+                    .init(color: .black.opacity(0.97), location: 0.64),
+                    .init(color: .black, location: 0.72),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
 
-            // Side vignettes for depth
-            RadialGradient(
-                colors: [.clear, .black.opacity(0.3)],
-                center: .center,
-                startRadius: 180,
-                endRadius: 500
+            // Top edge darken for status bar
+            LinearGradient(
+                colors: [.black.opacity(0.5), .clear],
+                startPoint: .top,
+                endPoint: .init(x: 0.5, y: 0.15)
             )
+
+            // Warm ambient glow from accent color
+            VStack {
+                Spacer()
+                Rectangle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                themeManager.accentColor.opacity(0.04),
+                                .clear
+                            ],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 250
+                        )
+                    )
+                    .frame(height: height * 0.4)
+            }
         }
-        .ignoresSafeArea()
         .allowsHitTesting(false)
     }
 
-    // MARK: - Logo
-
-    private var logoHeader: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "play.rectangle.fill")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [themeManager.accentColor, themeManager.accentColor.opacity(0.6)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: themeManager.accentColor.opacity(0.4), radius: 8, y: 2)
-
-            Text("PlaylistHub")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-
-            Spacer()
-        }
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : -12)
-        .animation(.easeOut(duration: 0.6).delay(0.1), value: appeared)
-    }
-
-    // MARK: - Profile Grid
+    // MARK: - Profile Grid (profiles + add tile inline)
 
     private var profileGrid: some View {
-        let cols = adaptiveColumns
-        return LazyVGrid(columns: cols, spacing: 24) {
+        let allItems = profileManager.profiles.count + (profileManager.profiles.count < 5 ? 1 : 0)
+        let colCount = min(allItems, 3)
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 24), count: max(colCount, 1))
+
+        return LazyVGrid(columns: cols, spacing: 28) {
             ForEach(Array(profileManager.profiles.enumerated()), id: \.element.id) { index, profile in
-                profileCard(profile, index: index)
+                profileTile(profile, index: index)
+            }
+
+            // Add Profile tile inline in grid
+            if profileManager.profiles.count < 5 {
+                addTile(index: profileManager.profiles.count)
             }
         }
-        .frame(maxWidth: 380)
+        .frame(maxWidth: 340)
     }
 
     private var adaptiveColumns: [GridItem] {
@@ -179,9 +173,9 @@ struct ProfilePickerView: View {
         return Array(repeating: GridItem(.flexible(), spacing: 20), count: max(count, 1))
     }
 
-    private func profileCard(_ profile: UserProfile, index: Int) -> some View {
+    private func profileTile(_ profile: UserProfile, index: Int) -> some View {
         let colors = UserProfile.avatarColors[profile.avatarColorIndex % UserProfile.avatarColors.count]
-        let stagger = Double(index) * 0.1
+        let stagger = Double(index) * 0.08
 
         return Button {
             guard !isEditing else {
@@ -190,10 +184,9 @@ struct ProfilePickerView: View {
             }
             selectProfile(profile)
         } label: {
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 ZStack {
-                    // Card background with glass effect
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
@@ -204,130 +197,117 @@ struct ProfilePickerView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 90, height: 90)
+                        .frame(width: 78, height: 78)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .fill(
                                     LinearGradient(
-                                        colors: [.white.opacity(0.2), .clear],
+                                        colors: [.white.opacity(0.15), .clear],
                                         startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
+                                        endPoint: .center
                                     )
                                 )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .strokeBorder(
-                                    .white.opacity(selectedId == profile.id ? 0.9 : 0.15),
-                                    lineWidth: selectedId == profile.id ? 2.5 : 0.5
+                                    .white.opacity(selectedId == profile.id ? 1.0 : 0),
+                                    lineWidth: selectedId == profile.id ? 2 : 0
                                 )
                         )
-                        .shadow(color: Color(red: colors.top.r, green: colors.top.g, blue: colors.top.b).opacity(0.35), radius: 16, y: 8)
-                        .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
+                        .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
 
-                    // Icon
                     Image(systemName: profile.isKids ? "teddybear.fill" : profile.avatarIcon)
-                        .font(.system(size: profile.isKids ? 34 : 36, weight: .medium))
+                        .font(.system(size: profile.isKids ? 30 : 32, weight: .medium))
                         .foregroundStyle(.white.opacity(0.95))
-                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
 
-                    // Edit badge overlay
                     if isEditing {
                         ZStack {
                             Circle()
                                 .fill(.ultraThinMaterial)
-                                .frame(width: 30, height: 30)
-                                .shadow(color: .black.opacity(0.3), radius: 4)
+                                .frame(width: 26, height: 26)
                             Image(systemName: "pencil")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(.white)
                         }
-                        .offset(x: 35, y: -35)
+                        .offset(x: 30, y: -30)
                         .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .scaleEffect(selectedId == profile.id ? 1.1 : 1.0)
-                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: selectedId)
-                .rotationEffect(isEditing ? .degrees(index % 2 == 0 ? -1.5 : 1.5) : .zero)
+                .scaleEffect(selectedId == profile.id ? 1.08 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.65), value: selectedId)
+                .rotationEffect(isEditing ? .degrees(index % 2 == 0 ? -1.2 : 1.2) : .zero)
                 .animation(
                     isEditing
-                        ? .easeInOut(duration: 0.15).repeatForever(autoreverses: true)
+                        ? .easeInOut(duration: 0.12).repeatForever(autoreverses: true)
                         : .default,
                     value: isEditing
                 )
 
-                // Name
                 Text(profile.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.8))
                     .lineLimit(1)
-                    .shadow(color: .black.opacity(0.5), radius: 4, y: 1)
             }
             .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 25)
-            .animation(.easeOut(duration: 0.6).delay(0.25 + stagger), value: appeared)
+            .offset(y: appeared ? 0 : 20)
+            .animation(.easeOut(duration: 0.5).delay(0.2 + stagger), value: appeared)
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Add Profile Button
+    private func addTile(index: Int) -> some View {
+        let stagger = Double(index) * 0.08
 
-    private var addProfileButton: some View {
-        Button {
-            showAddSheet = true
-        } label: {
+        return Button { showAddSheet = true } label: {
             VStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.white.opacity(0.06))
-                        .frame(width: 72, height: 72)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.white.opacity(0.04))
+                        .frame(width: 78, height: 78)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(.white.opacity(0.10), lineWidth: 1)
                         )
 
                     Image(systemName: "plus")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .font(.system(size: 28, weight: .thin))
+                        .foregroundStyle(.white.opacity(0.45))
                 }
 
                 Text("Add Profile")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.45))
             }
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 20)
+            .animation(.easeOut(duration: 0.5).delay(0.2 + stagger), value: appeared)
         }
         .buttonStyle(.plain)
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 15)
-        .animation(.easeOut(duration: 0.5).delay(0.55), value: appeared)
     }
 
-    // MARK: - Edit Toggle
+    // MARK: - Manage Profiles
 
-    private var editToggle: some View {
+    private var manageButton: some View {
         Button {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 isEditing.toggle()
             }
         } label: {
-            HStack(spacing: 7) {
-                Image(systemName: isEditing ? "checkmark" : "pencil")
-                    .font(.system(size: 12, weight: .semibold))
-                Text(isEditing ? "Done" : "Manage Profiles")
-                    .font(.system(size: 14, weight: .medium))
-            }
-            .foregroundStyle(.white.opacity(0.45))
-            .padding(.horizontal, 22)
-            .padding(.vertical, 11)
-            .background(
-                Capsule()
-                    .fill(.white.opacity(0.05))
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
-            )
+            Text(isEditing ? "Done" : "Manage Profiles")
+                .font(.system(size: 15, weight: .medium))
+                .tracking(0.3)
+                .foregroundStyle(.white.opacity(0.5))
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(.white.opacity(0.2), lineWidth: 1)
+                )
         }
         .buttonStyle(.plain)
         .opacity(appeared ? 1 : 0)
-        .animation(.easeOut(duration: 0.4).delay(0.65), value: appeared)
+        .animation(.easeOut(duration: 0.4).delay(0.55), value: appeared)
     }
 
     // MARK: - Logic
@@ -414,6 +394,7 @@ final class BackdropViewModel: ObservableObject {
     struct LoadedImage: Identifiable {
         let id: Int
         let image: UIImage
+        let score: Int
     }
 
     @Published var loadedImages: [LoadedImage] = []
@@ -421,8 +402,7 @@ final class BackdropViewModel: ObservableObject {
 
     private var rotationTask: Task<Void, Never>?
 
-    /// Dedicated high-res image loader that bypasses the 300px poster cache.
-    /// Loads at up to 800px for crisp full-screen mobile backdrops.
+    /// High-res loader at up to 1000px for crisp full-screen backdrops.
     private static func loadHighResImage(from url: URL) async -> UIImage? {
         do {
             let config = URLSessionConfiguration.default
@@ -435,20 +415,44 @@ final class BackdropViewModel: ObservableObject {
                   (200..<400).contains(http.statusCode),
                   let img = UIImage(data: data) else { return nil }
 
-            // Scale to max 800px — high enough for mobile full-screen, saves memory
-            let maxDim: CGFloat = 800
+            // Reject tiny images
+            guard img.size.width >= 200 && img.size.height >= 200 else { return nil }
+
+            // Scale to max 1000px for crisp display
+            let maxDim: CGFloat = 1000
             if img.size.width > maxDim || img.size.height > maxDim {
                 let scale = maxDim / max(img.size.width, img.size.height)
                 let newSize = CGSize(width: img.size.width * scale, height: img.size.height * scale)
                 let renderer = UIGraphicsImageRenderer(size: newSize)
                 return renderer.image { _ in img.draw(in: CGRect(origin: .zero, size: newSize)) }
             }
-            // Accept images 150px+ — anything smaller is a bad thumbnail
-            guard img.size.width >= 150 && img.size.height >= 150 else { return nil }
             return img
         } catch {
             return nil
         }
+    }
+
+    /// Score image for backdrop suitability — portrait images with good resolution rank highest
+    nonisolated private static func scoreImage(_ img: UIImage) -> Int {
+        var score = 0
+        let w = img.size.width
+        let h = img.size.height
+        let ratio = h / w
+
+        // Portrait or near-square preferred for phone portrait screen
+        if ratio >= 1.2 { score += 40 }
+        else if ratio >= 0.8 { score += 20 }
+
+        // Resolution bonus
+        let totalPx = w * h
+        if totalPx >= 500_000 { score += 30 }
+        else if totalPx >= 200_000 { score += 15 }
+
+        // Larger dimension bonus
+        if max(w, h) >= 600 { score += 20 }
+        else if max(w, h) >= 400 { score += 10 }
+
+        return score
     }
 
     init() {
@@ -463,37 +467,40 @@ final class BackdropViewModel: ObservableObject {
         let urls = await gatherArtworkURLs()
         guard !urls.isEmpty else { return }
 
-        // Load images concurrently, collect successful ones
-        let results: [(Int, UIImage)] = await withTaskGroup(of: (Int, UIImage?).self) { group in
-            for (idx, url) in urls.enumerated() {
+        // Load images concurrently, score each
+        var candidates: [(image: UIImage, score: Int)] = await withTaskGroup(of: (UIImage?, Int).self) { group in
+            for url in urls {
                 group.addTask {
-                    let img = await Self.loadHighResImage(from: url)
-                    return (idx, img)
+                    guard let img = await Self.loadHighResImage(from: url) else { return (nil, 0) }
+                    let score = Self.scoreImage(img)
+                    return (img, score)
                 }
             }
-            var loaded: [(Int, UIImage)] = []
-            for await (idx, img) in group {
-                if let img { loaded.append((idx, img)) }
+            var results: [(UIImage, Int)] = []
+            for await (img, score) in group {
+                if let img { results.append((img, score)) }
             }
-            return loaded.sorted(by: { $0.0 < $1.0 })
+            return results
         }
 
-        guard !results.isEmpty else { return }
+        guard !candidates.isEmpty else { return }
 
-        // Publish loaded images
-        loadedImages = results.enumerated().map { offset, pair in
-            LoadedImage(id: offset, image: pair.1)
+        // Sort by quality score descending — best images first
+        candidates.sort(by: { $0.score > $1.score })
+
+        // Take top 6 best-quality images
+        let best = candidates.prefix(6)
+        loadedImages = best.enumerated().map { idx, pair in
+            LoadedImage(id: idx, image: pair.image, score: pair.score)
         }
         activeIndex = 0
 
-        // Start rotation if we have multiple
         if loadedImages.count > 1 {
             startRotation()
         }
     }
 
-    /// Multi-source artwork gathering: movies → series → channels.
-    /// Fetches the best available poster/logo URLs from the user's catalog.
+    /// Multi-source artwork: movies → series (movies preferred for poster art)
     private func gatherArtworkURLs() async -> [URL] {
         do {
             let supabase = SupabaseManager.shared.client
@@ -524,7 +531,7 @@ final class BackdropViewModel: ObservableObject {
 
             var collected: [URL] = []
 
-            // Phase 1: Movie posters (best quality — typically full poster art)
+            // Movies first — typically best poster art
             for playlist in playlists.prefix(3) {
                 let items: [PosterItem] = try await supabase
                     .from("playlist_items")
@@ -532,15 +539,15 @@ final class BackdropViewModel: ObservableObject {
                     .eq("playlist_id", value: playlist.id.uuidString)
                     .eq("content_type", value: "movie")
                     .not("tvg_logo", operator: .is, value: "null")
-                    .limit(60)
+                    .limit(50)
                     .execute()
                     .value
 
                 collected.append(contentsOf: items.compactMap(\.bestURL))
             }
 
-            // Phase 2: Series posters if not enough movies
-            if collected.count < 8 {
+            // Series if not enough movies
+            if collected.count < 10 {
                 for playlist in playlists.prefix(2) {
                     let items: [PosterItem] = try await supabase
                         .from("playlist_items")
@@ -556,28 +563,11 @@ final class BackdropViewModel: ObservableObject {
                 }
             }
 
-            // Phase 3: Channel logos as last resort
-            if collected.count < 4 {
-                for playlist in playlists.prefix(1) {
-                    let items: [PosterItem] = try await supabase
-                        .from("playlist_items")
-                        .select("tvg_logo, logo_url")
-                        .eq("playlist_id", value: playlist.id.uuidString)
-                        .eq("content_type", value: "channel")
-                        .not("tvg_logo", operator: .is, value: "null")
-                        .limit(20)
-                        .execute()
-                        .value
-
-                    collected.append(contentsOf: items.compactMap(\.bestURL))
-                }
-            }
-
-            // Deduplicate, shuffle, take up to 10
+            // Deduplicate, shuffle, fetch more than needed for quality scoring
             let unique = Array(Set(collected.map(\.absoluteString)))
                 .compactMap(URL.init(string:))
                 .shuffled()
-                .prefix(10)
+                .prefix(18)
 
             return Array(unique)
         } catch {
@@ -587,12 +577,11 @@ final class BackdropViewModel: ObservableObject {
 
     private func startRotation() {
         rotationTask = Task {
-            // Small initial delay so first image is visible
-            try? await Task.sleep(for: .seconds(6))
+            try? await Task.sleep(for: .seconds(7))
             while !Task.isCancelled {
                 let next = (activeIndex + 1) % loadedImages.count
                 activeIndex = next
-                try? await Task.sleep(for: .seconds(7))
+                try? await Task.sleep(for: .seconds(8))
             }
         }
     }
@@ -616,7 +605,7 @@ struct AddProfileSheet: View {
                     let colors = UserProfile.avatarColors[colorIdx]
 
                     ZStack {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [
@@ -627,21 +616,21 @@ struct AddProfileSheet: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 100, height: 100)
+                            .frame(width: 90, height: 90)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
                                     .fill(
                                         LinearGradient(
-                                            colors: [.white.opacity(0.2), .clear],
+                                            colors: [.white.opacity(0.15), .clear],
                                             startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
+                                            endPoint: .center
                                         )
                                     )
                             )
-                            .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+                            .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
 
                         Image(systemName: isKids ? "teddybear.fill" : "face.smiling.inverse")
-                            .font(.system(size: 40, weight: .medium))
+                            .font(.system(size: 36, weight: .medium))
                             .foregroundStyle(.white.opacity(0.95))
                     }
                     .padding(.top, 20)
@@ -722,7 +711,7 @@ struct EditProfileSheet: View {
                     let colors = UserProfile.avatarColors[colorIndex % UserProfile.avatarColors.count]
 
                     ZStack {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [
@@ -733,21 +722,21 @@ struct EditProfileSheet: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 100, height: 100)
+                            .frame(width: 90, height: 90)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
                                     .fill(
                                         LinearGradient(
-                                            colors: [.white.opacity(0.2), .clear],
+                                            colors: [.white.opacity(0.15), .clear],
                                             startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
+                                            endPoint: .center
                                         )
                                     )
                             )
-                            .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+                            .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
 
                         Image(systemName: profile.isKids ? "teddybear.fill" : profile.avatarIcon)
-                            .font(.system(size: 40, weight: .medium))
+                            .font(.system(size: 36, weight: .medium))
                             .foregroundStyle(.white.opacity(0.95))
                     }
                     .padding(.top, 20)
