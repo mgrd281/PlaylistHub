@@ -28,8 +28,29 @@ struct HomeView: View {
                         .padding(.bottom, 28)
 
                     // ── Continue Watching ──
-                    if !vm.recentItems.isEmpty {
-                        sectionHeader("Continue Watching", icon: "clock.fill")
+                    if !vm.watchHistory.isEmpty {
+                        HStack {
+                            HStack(spacing: 6) {
+                                Image(systemName: "clock.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(accent)
+                                Text("Continue Watching")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            Spacer()
+                            if vm.watchHistory.count > 3 {
+                                Button {
+                                    vm.clearHistory()
+                                } label: {
+                                    Text("Clear")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+
                         continueWatchingRail
                             .padding(.bottom, 28)
                     }
@@ -195,12 +216,22 @@ struct HomeView: View {
 
     private var continueWatchingRail: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 12) {
-                ForEach(vm.recentItems) { item in
-                    Button { selectedItem = item } label: {
-                        ContinueWatchingCard(item: item, accent: accent)
+            LazyHStack(spacing: 14) {
+                ForEach(vm.watchHistory) { entry in
+                    Button {
+                        // Convert history entry back to a PlaylistItem for playback
+                        selectedItem = vm.playlistItem(from: entry)
+                    } label: {
+                        ContinueWatchingCard(entry: entry, accent: accent)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            vm.removeFromHistory(entry.itemId)
+                        } label: {
+                            Label("Remove", systemImage: "xmark.circle")
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -417,78 +448,227 @@ private struct StatDivider: View {
     }
 }
 
-// MARK: - Continue Watching Card
+// MARK: - Continue Watching Card (Premium Cinematic)
 
 private struct ContinueWatchingCard: View {
-    let item: PlaylistItem
+    let entry: WatchHistoryEntry
     let accent: Color
+
+    private let cardWidth: CGFloat = 260
+    private let cardHeight: CGFloat = 146
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .bottomLeading) {
-                // Thumbnail
-                if let url = item.resolvedLogoURL {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            thumbnailFallback
+            // ── Cinematic Thumbnail ──
+            ZStack(alignment: .bottom) {
+                // Thumbnail / poster image
+                thumbnailLayer
+                    .frame(width: cardWidth, height: cardHeight)
+                    .clipped()
+
+                // Bottom gradient for readability
+                LinearGradient(
+                    colors: [.clear, .clear, .black.opacity(0.4), .black.opacity(0.85)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                // Content overlay at bottom
+                VStack(alignment: .leading, spacing: 5) {
+                    Spacer()
+
+                    // Title
+                    Text(entry.name)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    // Metadata row
+                    HStack(spacing: 6) {
+                        // Content type badge
+                        contentTypeBadge
+
+                        if let group = entry.groupTitle {
+                            Text(group)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        // Time info
+                        if entry.isLive {
+                            HStack(spacing: 3) {
+                                Circle().fill(.red).frame(width: 4, height: 4)
+                                Text("LIVE")
+                                    .font(.system(size: 8, weight: .heavy))
+                                    .foregroundStyle(.red)
+                            }
+                        } else if let remaining = entry.remainingText {
+                            Text(remaining)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.5))
                         }
                     }
-                } else {
-                    thumbnailFallback
-                }
-            }
-            .frame(width: 180, height: 100)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(alignment: .bottomLeading) {
-                // Fake progress bar
-                GeometryReader { geo in
-                    VStack {
-                        Spacer()
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(accent)
-                            .frame(width: geo.size.width * randomProgress, height: 3)
+
+                    // ── Progress bar ──
+                    if !entry.isLive && entry.duration > 0 {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                // Track
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(.white.opacity(0.15))
+                                    .frame(height: 3)
+
+                                // Fill
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(accent)
+                                    .frame(width: geo.size.width * entry.progress, height: 3)
+                                    .shadow(color: accent.opacity(0.5), radius: 4, y: 0)
+                            }
+                        }
+                        .frame(height: 3)
                     }
                 }
-                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 12, bottomTrailingRadius: 12))
-            }
-            .overlay(alignment: .center) {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.5), radius: 4, y: 2)
-            }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
 
-            Text(item.name)
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-                .padding(.top, 8)
-            Text(item.groupTitle ?? item.contentType.displayName)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                // ── Play button overlay ──
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 42, height: 42)
+                    .overlay {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .offset(x: 1)
+                    }
+                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                    .offset(y: -20)
+            }
+            .frame(width: cardWidth, height: cardHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            // ── Below-card metadata ──
+            HStack(spacing: 4) {
+                Text(entry.watchedAgoText)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.top, 6)
+            .padding(.horizontal, 2)
         }
-        .frame(width: 180)
+        .frame(width: cardWidth)
     }
 
-    private var thumbnailFallback: some View {
+    // MARK: - Thumbnail Layer
+
+    @ViewBuilder
+    private var thumbnailLayer: some View {
+        if let url = entry.resolvedLogoURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                case .failure:
+                    brandedFallback
+                default:
+                    // Loading state
+                    ZStack {
+                        brandedFallback
+                        ProgressView()
+                            .tint(.white.opacity(0.3))
+                    }
+                }
+            }
+        } else {
+            brandedFallback
+        }
+    }
+
+    // MARK: - Branded Fallback (no generic empty cards)
+
+    private var brandedFallback: some View {
         ZStack {
+            // Rich gradient based on content
             LinearGradient(
-                colors: PosterCard.gradientColors(for: item.name),
+                colors: PosterCard.gradientColors(for: entry.name),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            Image(systemName: item.contentType == .channel ? "tv.fill" : "film.fill")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(.white.opacity(0.4))
+
+            // Subtle pattern overlay
+            VStack {
+                HStack {
+                    Spacer()
+                    Image(systemName: contentIcon)
+                        .font(.system(size: 60, weight: .ultraLight))
+                        .foregroundStyle(.white.opacity(0.08))
+                        .rotationEffect(.degrees(-15))
+                        .offset(x: 20, y: -10)
+                }
+                Spacer()
+            }
+
+            // Centered content icon
+            VStack(spacing: 6) {
+                Image(systemName: contentIcon)
+                    .font(.system(size: 28, weight: .light))
+                    .foregroundStyle(.white.opacity(0.35))
+                Text(entry.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .lineLimit(1)
+                    .frame(maxWidth: 160)
+            }
         }
     }
 
-    private var randomProgress: CGFloat {
-        let hash = abs(item.name.hashValue)
-        return CGFloat(hash % 70 + 20) / 100.0
+    // MARK: - Content Type Badge
+
+    private var contentTypeBadge: some View {
+        HStack(spacing: 3) {
+            Image(systemName: contentIcon)
+                .font(.system(size: 7, weight: .bold))
+            Text(contentLabel)
+                .font(.system(size: 8, weight: .bold))
+                .textCase(.uppercase)
+        }
+        .foregroundStyle(badgeColor)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(badgeColor.opacity(0.2))
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+    }
+
+    private var contentIcon: String {
+        switch entry.contentType {
+        case "channel": return "tv.fill"
+        case "movie": return "film.fill"
+        case "series": return "rectangle.stack.fill"
+        default: return "play.rectangle.fill"
+        }
+    }
+
+    private var contentLabel: String {
+        switch entry.contentType {
+        case "channel": return "Live"
+        case "movie": return "Movie"
+        case "series": return "Series"
+        default: return "Video"
+        }
+    }
+
+    private var badgeColor: Color {
+        switch entry.contentType {
+        case "channel": return .red
+        case "movie": return .purple
+        case "series": return .orange
+        default: return .blue
+        }
     }
 }
 
@@ -588,7 +768,7 @@ struct PremiumPlaylistRow: View {
 @MainActor
 final class HomeViewModel: ObservableObject {
     @Published var playlists: [Playlist] = []
-    @Published var recentItems: [PlaylistItem] = []
+    @Published var watchHistory: [WatchHistoryEntry] = []
     @Published var featuredMovies: [PlaylistItem] = []
     @Published var featuredSeries: [PlaylistItem] = []
     @Published var isLoading = false
@@ -602,6 +782,8 @@ final class HomeViewModel: ObservableObject {
 
     func load() async {
         isLoading = true
+        // Load real watch history
+        watchHistory = WatchHistoryManager.shared.continueWatchingItems
         do {
             playlists = try await DataService.shared.fetchPlaylists()
             // Load featured content from first active playlist
@@ -612,18 +794,37 @@ final class HomeViewModel: ObservableObject {
                 async let seriesTask = DataService.shared.fetchItems(
                     playlistId: primary.id, contentType: .series, page: 1, limit: 20
                 )
-                async let recentTask = DataService.shared.fetchItems(
-                    playlistId: primary.id, page: 1, limit: 15
-                )
 
-                let (moviesResp, seriesResp, recentResp) = try await (moviesTask, seriesTask, recentTask)
+                let (moviesResp, seriesResp) = try await (moviesTask, seriesTask)
                 featuredMovies = Array(moviesResp.items.prefix(15))
                 featuredSeries = Array(seriesResp.items.prefix(15))
-                // Mix recent: some channels + movies + series for variety
-                recentItems = Array(recentResp.items.shuffled().prefix(10))
             }
         } catch {}
         isLoading = false
+    }
+
+    /// Convert a watch history entry back to a PlaylistItem for the player
+    func playlistItem(from entry: WatchHistoryEntry) -> PlaylistItem {
+        PlaylistItem(
+            id: entry.itemId,
+            playlistId: entry.playlistId,
+            name: entry.name,
+            streamUrl: entry.streamUrl,
+            logoUrl: entry.logoUrl,
+            groupTitle: entry.groupTitle,
+            contentType: ContentType(rawValue: entry.contentType) ?? .uncategorized,
+            createdAt: entry.lastWatchedAt
+        )
+    }
+
+    func removeFromHistory(_ itemId: UUID) {
+        WatchHistoryManager.shared.remove(itemId: itemId)
+        watchHistory = WatchHistoryManager.shared.continueWatchingItems
+    }
+
+    func clearHistory() {
+        WatchHistoryManager.shared.clearAll()
+        watchHistory = []
     }
 
     func delete(_ playlist: Playlist) async {

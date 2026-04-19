@@ -31,6 +31,7 @@
 		E95AD179054FE17FFEC18A89 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A218A5C63769BD1CFFAB98 /* SettingsView.swift */; };
 		EAB7DE81375B4DB6185C79C7 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19EF0021CCCFE128DD6232AB /* Models.swift */; };
 		ED3CE299AB2013DD8821CEF8 /* DataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF388B01C376C5E4B72CF928 /* DataService.swift */; };
+		FF4257811E55978FCC57C7B9 /* WatchHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +54,7 @@
 		8CEE276D84134D7B9A8B893B /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 		A16A13EF96F0187ACFC70B2A /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		B00FC575C15D1FC08C386E3E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHistoryManager.swift; sourceTree = "<group>"; };
 		B771C2E95F74C0E9A62E444E /* SeriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesView.swift; sourceTree = "<group>"; };
 		BB231FECDEB482DBE4A39EEB /* SupabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseManager.swift; sourceTree = "<group>"; };
 		D5A218A5C63769BD1CFFAB98 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -231,6 +233,7 @@
 				02424ED07E2345E8FEE76928 /* DeviceManager.swift */,
 				8CDA21138AB82340B51337E1 /* KeychainHelper.swift */,
 				BB231FECDEB482DBE4A39EEB /* SupabaseManager.swift */,
+				B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -421,6 +424,7 @@
 				DBE559C25971769129324AEE /* SplashView.swift in Sources */,
 				E94BE6D8FD123625648F4304 /* SupabaseManager.swift in Sources */,
 				5F592323645FD4855A57AFB1 /* ThemeManager.swift in Sources */,
+				FF4257811E55978FCC57C7B9 /* WatchHistoryManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

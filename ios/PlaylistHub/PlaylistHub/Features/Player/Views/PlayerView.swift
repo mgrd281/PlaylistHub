@@ -97,7 +97,10 @@ struct PlayerView: View {
             vm.startPlayback()
             scheduleControlsHide()
         }
-        .onDisappear { vm.teardown() }
+        .onDisappear {
+            vm.saveWatchProgress()
+            vm.teardown()
+        }
         .onChange(of: vm.hasFirstFrame) { _, ready in
             if ready {
                 withAnimation(.easeIn(duration: 0.3)) { showSecondaryUI = true }
@@ -481,6 +484,7 @@ final class PlayerViewModel: ObservableObject {
     private var timeObserver: Any?
     private var statusObserver: NSKeyValueObservation?
     private var currentIndex: Int
+    private var lastHistorySave: CFAbsoluteTime = 0
 
     /// Cascade fallback state
     private var fallbackURLs: [URL] = []
@@ -635,6 +639,7 @@ final class PlayerViewModel: ObservableObject {
                     self.hasFirstFrame = true
                     self.fallbackURLs = []
                     self.fallbackTimer?.cancel()
+                    self.resumeIfNeeded()
                 case .failed:
                     let reason = item.error?.localizedDescription ?? "unknown"
                     print("[Player] ✗ Failed in \(String(format: "%.1f", elapsed))s: \(reason)")
@@ -690,6 +695,13 @@ final class PlayerViewModel: ObservableObject {
                 let status = self.player.timeControlStatus
                 self.isBuffering = status == .waitingToPlayAtSpecifiedRate
                 self.isPlaying = status == .playing
+
+                // Save watch progress every ~5 seconds
+                let now = CFAbsoluteTimeGetCurrent()
+                if now - self.lastHistorySave > 5 {
+                    self.lastHistorySave = now
+                    self.saveWatchProgress()
+                }
             }
         }
     }
@@ -700,6 +712,28 @@ final class PlayerViewModel: ObservableObject {
         player.replaceCurrentItem(with: nil)
         if let obs = timeObserver { player.removeTimeObserver(obs) }
         statusObserver?.invalidate()
+    }
+
+    /// Save current playback position to watch history
+    func saveWatchProgress() {
+        WatchHistoryManager.shared.record(
+            itemId: currentItem.id,
+            playlistId: currentItem.playlistId,
+            name: displayName,
+            streamUrl: currentItem.streamUrl,
+            logoUrl: currentItem.logoUrl ?? currentItem.tvgLogo,
+            groupTitle: currentItem.groupTitle,
+            contentType: currentItem.contentType,
+            position: currentTime,
+            duration: duration
+        )
+    }
+
+    /// Resume from saved position if available
+    private func resumeIfNeeded() {
+        if let saved = WatchHistoryManager.shared.savedPosition(for: currentItem.id) {
+            seek(to: saved)
+        }
     }
 
     func togglePlayPause() {
