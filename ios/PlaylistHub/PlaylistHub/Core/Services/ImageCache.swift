@@ -94,6 +94,10 @@ struct CachedAsyncImage<Placeholder: View>: View {
             } else {
                 placeholder()
                     .task(id: url) {
+                        // Reset state when URL changes
+                        image = nil
+                        failed = false
+
                         guard let url else { failed = true; return }
                         // Check cache synchronously first (avoids flicker)
                         if let cached = ImageCacheStore.shared.image(for: url) {
@@ -108,5 +112,6 @@ struct CachedAsyncImage<Placeholder: View>: View {
                     }
             }
         }
+        .clipped()
     }
 }

@@ -247,10 +247,10 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
         const res = await fetch(`/api/browse?type=${contentType}&mode=groups`);
         if (!res.ok) return;
         const data = await res.json();
-        const g = data.groups || [];
+        const g: GroupInfo[] = data.groups || [];
         setGroups(g);
         groupCache.set(contentType, { groups: g, ts: Date.now() });
-      } catch {}
+      } catch { /* keep cached groups */ }
     }
     fetchGroups();
   }, [contentType]);
@@ -284,18 +284,19 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
 
       try {
         const res = await fetch(`/api/browse?${params}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          const newItems = data.items || [];
-          const newTotal = data.total || 0;
-          const newTotalPages = data.totalPages || 0;
-          setItems(newItems);
-          setTotal(newTotal);
-          setTotalPages(newTotalPages);
-          pageCache.set(key, { items: newItems, total: newTotal, totalPages: newTotalPages, ts: Date.now() });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            const newItems = data.items || [];
+            const newTotal = data.total || 0;
+            const newTotalPages = data.totalPages || 0;
+            setItems(newItems);
+            setTotal(newTotal);
+            setTotalPages(newTotalPages);
+            pageCache.set(key, { items: newItems, total: newTotal, totalPages: newTotalPages, ts: Date.now() });
+          }
         }
-      } catch {}
+      } catch { /* network error — keep showing cached data if available */ }
       if (!cancelled) setLoading(false);
     }
     fetchItems();
@@ -304,7 +305,7 @@ export function ContentBrowser({ contentType }: { contentType: 'channel' | 'movi
 
   const gridCols = layout === 'wide'
     ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
-    : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8';
+    : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7';
 
   const SUBTITLE: Record<string, string> = {
     channel: 'Browse and watch live television channels',

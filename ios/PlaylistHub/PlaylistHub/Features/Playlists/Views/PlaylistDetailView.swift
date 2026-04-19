@@ -379,11 +379,13 @@ struct PosterCard: View {
                     posterFallback
                 }
                 .aspectRatio(contentMode: .fill)
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
             } else {
                 posterFallback
             }
         }
         .frame(height: 165)
+        .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .bottomLeading) {
             // Title overlay
@@ -461,10 +463,12 @@ struct PosterCardSmall: View {
                     smallFallback
                 }
                 .aspectRatio(contentMode: .fill)
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
             } else {
                 smallFallback
             }
         }
+        .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 

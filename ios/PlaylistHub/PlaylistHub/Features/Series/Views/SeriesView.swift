@@ -24,6 +24,21 @@ struct SeriesView: View {
                     if vm.isLoading && vm.groupedItems.isEmpty && vm.items.isEmpty {
                         VStack { Spacer(); ProgressView(); Spacer() }
                             .frame(maxWidth: .infinity)
+                    } else if let error = vm.loadError, vm.groupedItems.isEmpty && vm.items.isEmpty {
+                        VStack(spacing: 12) {
+                            Spacer()
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 32, weight: .light))
+                                .foregroundStyle(.secondary)
+                            Text(error)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Button("Retry") { Task { await vm.loadContent() } }
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.red)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
                     } else if vm.selectedPlaylist == nil {
                         EmptyStateView(
                             icon: "rectangle.stack",
@@ -184,6 +199,7 @@ final class SeriesViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var searchText = ""
     @Published var hasMore = false
+    @Published var loadError: String?
     private var page = 1
     private var searchTask: Task<Void, Never>?
     private var hasLoaded = false
@@ -198,7 +214,9 @@ final class SeriesViewModel: ObservableObject {
                 selectedPlaylist = first
                 await loadContent()
             }
-        } catch {}
+        } catch {
+            loadError = "Failed to load playlists"
+        }
         hasLoaded = true
     }
 
@@ -212,8 +230,7 @@ final class SeriesViewModel: ObservableObject {
         guard let playlist = selectedPlaylist else { return }
         page = 1
         isLoading = true
-        items = []
-        groupedItems = []
+        loadError = nil
 
         if searchText.isEmpty {
             await loadGrouped(playlist: playlist)
@@ -236,11 +253,15 @@ final class SeriesViewModel: ObservableObject {
                 let key = item.groupTitle ?? ""
                 groups[key, default: []].append(item)
             }
+            // Replace atomically — no flash of empty state
+            items = []
             groupedItems = groups
                 .map { GroupedItems(name: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
                 .sorted { $0.items.count > $1.items.count }
             hasMore = response.page < response.totalPages
-        } catch {}
+        } catch {
+            loadError = "Failed to load series"
+        }
     }
 
     private func loadFlat(playlist: Playlist) async {
@@ -252,9 +273,13 @@ final class SeriesViewModel: ObservableObject {
                 page: 1,
                 limit: 50
             )
+            // Replace atomically
+            groupedItems = []
             items = response.items
             hasMore = response.page < response.totalPages
-        } catch {}
+        } catch {
+            loadError = "Failed to load series"
+        }
     }
 
     func loadMore() async {
@@ -281,7 +306,9 @@ final class SeriesViewModel: ObservableObject {
                 items.append(contentsOf: response.items)
             }
             hasMore = response.page < response.totalPages
-        } catch {}
+        } catch {
+            page -= 1
+        }
     }
 
     func debounceSearch() {
