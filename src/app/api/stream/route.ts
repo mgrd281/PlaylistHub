@@ -131,8 +131,10 @@ async function streamResponse(upstream: Response, targetUrl: string): Promise<Ne
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith('#')) {
           // Rewrite URIs inside #EXT-X-MAP or similar tags
-          return line.replace(/URI="([^"]+)"/, (_m, uri: string) => {
-            const abs = uri.startsWith('http') ? uri : uri;
+          return line.replace(/URI="([^"]+)"/g, (_m, uri: string) => {
+            const abs = uri.startsWith('http') ? uri : (() => {
+              try { return new URL(uri, new URL(targetUrl)).href; } catch { return uri; }
+            })();
             return `URI="/api/stream?url=${encodeURIComponent(abs)}"`;
           });
         }

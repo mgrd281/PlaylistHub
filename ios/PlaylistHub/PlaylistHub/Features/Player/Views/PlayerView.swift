@@ -757,8 +757,13 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func playEpisode(_ episode: EpisodeData) {
-        // Episodes also use cascade for fastest start
-        let cascade = AppConfig.streamCascade(for: episode.streamUrl)
+        // Convert to HLS (.m3u8) — Xtream servers support HLS for all content types
+        let hlsUrl = episode.streamUrl.replacingOccurrences(
+            of: "\\.[a-zA-Z0-9]+$",
+            with: ".m3u8",
+            options: .regularExpression
+        )
+        let cascade = AppConfig.streamCascade(for: hlsUrl)
         guard let first = cascade.first else { return }
         fallbackURLs = Array(cascade.dropFirst())
         loadStartTime = CFAbsoluteTimeGetCurrent()

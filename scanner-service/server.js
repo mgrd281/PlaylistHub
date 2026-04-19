@@ -259,7 +259,14 @@ const server = http.createServer(async (req, res) => {
           .split('\n')
           .map((line) => {
             const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) return line;
+            if (!trimmed) return line;
+            // Handle #EXT-X-MAP:URI="..." and similar tags with URI attributes
+            if (trimmed.startsWith('#')) {
+              return line.replace(/URI="([^"]+)"/g, (_m, uri) => {
+                const absolute = uri.startsWith('http') ? uri : new URL(uri, base).href;
+                return `URI="/stream?url=${encodeURIComponent(absolute)}"`;
+              });
+            }
             const absolute = trimmed.startsWith('http') ? trimmed : new URL(trimmed, base).href;
             return `/stream?url=${encodeURIComponent(absolute)}`;
           })

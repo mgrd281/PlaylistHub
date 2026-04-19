@@ -20,6 +20,14 @@ const VLC_HEADERS = {
   'Icy-MetaData': '1',
 };
 
+/** Build fetch headers — merge VLC UA with client Range header */
+function buildUpstreamHeaders(request) {
+  const headers = { ...VLC_HEADERS };
+  const range = request.headers.get('Range');
+  if (range) headers['Range'] = range;
+  return headers;
+}
+
 export default {
   async fetch(request) {
     // Handle CORS preflight
@@ -64,9 +72,11 @@ export default {
       let redirectCount = 0;
       const MAX_REDIRECTS = 5;
 
+      const upstreamHeaders = buildUpstreamHeaders(request);
+
       while (redirectCount < MAX_REDIRECTS) {
         const res = await fetch(finalUrl, {
-          headers: VLC_HEADERS,
+          headers: upstreamHeaders,
           redirect: 'manual', // Don't auto-follow — we handle redirects ourselves
           cf: { cacheTtl: 0, cacheEverything: false },
         });
@@ -89,7 +99,7 @@ export default {
         // which follows redirects in its network (may work if the domain is behind CF)
         try {
           const fallback = await fetch(decodedUrl, {
-            headers: VLC_HEADERS,
+            headers: upstreamHeaders,
             redirect: 'follow',
             cf: { cacheTtl: 0, cacheEverything: false },
           });
@@ -122,7 +132,14 @@ export default {
           .split('\n')
           .map((line) => {
             const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) return line;
+            if (!trimmed) return line;
+            // Rewrite URI="..." attributes in tags like #EXT-X-MAP
+            if (trimmed.startsWith('#')) {
+              return line.replace(/URI="([^"]+)"/g, (_m, uri) => {
+                const absUrl = uri.startsWith('http') ? uri : new URL(uri, baseUrl).href;
+                return `URI="${workerBase}/?url=${encodeURIComponent(absUrl)}"`;
+              });
+            }
             const absUrl = trimmed.startsWith('http')
               ? trimmed
               : new URL(trimmed, baseUrl).href;
@@ -139,14 +156,21 @@ export default {
         });
       }
 
-      // Stream binary content through
+      // Stream binary content through — preserve Range response headers for MP4 seeking
+      const responseHeaders = {
+        'Content-Type': contentType,
+        ...corsHeaders(request),
+        'Cache-Control': 'no-store',
+        'Accept-Ranges': upstream.headers.get('accept-ranges') || 'bytes',
+      };
+      const cl = upstream.headers.get('content-length');
+      const cr = upstream.headers.get('content-range');
+      if (cl) responseHeaders['Content-Length'] = cl;
+      if (cr) responseHeaders['Content-Range'] = cr;
+
       return new Response(upstream.body, {
         status: upstream.status,
-        headers: {
-          'Content-Type': contentType,
-          ...corsHeaders(request),
-          'Cache-Control': 'no-store',
-        },
+        headers: responseHeaders,
       });
     } catch (err) {
       return jsonResponse({ error: String(err) }, 502, request);
@@ -159,7 +183,8 @@ function corsHeaders(request) {
   return {
     'Access-Control-Allow-Origin': ALLOWED_ORIGINS[0] === '*' ? '*' : origin,
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'X-Proxy-Token, Content-Type',
+    'Access-Control-Allow-Headers': 'X-Proxy-Token, Content-Type, Range',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
     'Access-Control-Max-Age': '86400',
   };
 }
