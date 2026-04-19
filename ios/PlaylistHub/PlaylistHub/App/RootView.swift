@@ -38,6 +38,12 @@ struct MainTabView: View {
                 }
                 .tag(AppState.AppTab.dashboard)
 
+            LiveTVView()
+                .tabItem {
+                    Label("Live TV", systemImage: "tv.fill")
+                }
+                .tag(AppState.AppTab.liveTV)
+
             PlaylistsView()
                 .tabItem {
                     Label("Playlists", systemImage: "list.bullet.rectangle.portrait.fill")

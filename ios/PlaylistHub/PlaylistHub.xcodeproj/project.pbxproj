@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		068136FA7853A2251574FF31 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00FC575C15D1FC08C386E3E /* RootView.swift */; };
+		0C3E1DFA04AF1C8637B9CE66 /* LiveTVView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233DA00F7ADF3C35385B38D1 /* LiveTVView.swift */; };
 		2F61DD8BE07BC732C3C1A39B /* DeviceInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23AD53101C88C3935A572D80 /* DeviceInfoView.swift */; };
 		3265A6DF09766AF47A4634A5 /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02424ED07E2345E8FEE76928 /* DeviceManager.swift */; };
 		384CF2625095CDA17466588F /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E54D16CFBEA2671A756307 /* Extensions.swift */; };
@@ -35,6 +36,7 @@
 		0893EB466EF18043F0149485 /* PlaylistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailView.swift; sourceTree = "<group>"; };
 		0DBD14A7EF24BBA3499A6C92 /* PlaylistHubApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistHubApp.swift; sourceTree = "<group>"; };
 		19EF0021CCCFE128DD6232AB /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		233DA00F7ADF3C35385B38D1 /* LiveTVView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVView.swift; sourceTree = "<group>"; };
 		23AD53101C88C3935A572D80 /* DeviceInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceInfoView.swift; sourceTree = "<group>"; };
 		30DAEBF3548C6795AF53D58B /* PlaylistHub.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PlaylistHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		33E54D16CFBEA2671A756307 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
@@ -75,6 +77,7 @@
 			children = (
 				2FB1747C82BB5C113B890DE7 /* Auth */,
 				4EA7636F1ED5CB50546AB03A /* Dashboard */,
+				FA92A59412BC6C8263B61FFD /* LiveTV */,
 				8E0C03F6FCA444C52FB07479 /* Player */,
 				083E981A8D55C1AF6E974205 /* Playlists */,
 				AA0338013C7420CA9BBA4664 /* Settings */,
@@ -204,6 +207,14 @@
 			path = Player;
 			sourceTree = "<group>";
 		};
+		9C149E9DEEACDE705E5602EF /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				233DA00F7ADF3C35385B38D1 /* LiveTVView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
 		AA0338013C7420CA9BBA4664 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
@@ -245,6 +256,14 @@
 				01E46E374DE46C6DD0B85877 /* DashboardView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		FA92A59412BC6C8263B61FFD /* LiveTV */ = {
+			isa = PBXGroup;
+			children = (
+				9C149E9DEEACDE705E5602EF /* Views */,
+			);
+			path = LiveTV;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -319,6 +338,7 @@
 				3265A6DF09766AF47A4634A5 /* DeviceManager.swift in Sources */,
 				384CF2625095CDA17466588F /* Extensions.swift in Sources */,
 				C80E1B55970AC4382CBC18C7 /* KeychainHelper.swift in Sources */,
+				0C3E1DFA04AF1C8637B9CE66 /* LiveTVView.swift in Sources */,
 				BC19BFF44FADABAF25BC6741 /* LoginView.swift in Sources */,
 				EAB7DE81375B4DB6185C79C7 /* Models.swift in Sources */,
 				B7C169D965E864F99B184B92 /* PlayerView.swift in Sources */,

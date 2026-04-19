@@ -22,6 +22,6 @@ final class AppState: ObservableObject {
     @Published var selectedTab: AppTab = .dashboard
 
     enum AppTab: Int, CaseIterable {
-        case dashboard, playlists, settings
+        case dashboard, liveTV, playlists, settings
     }
 }
