@@ -380,17 +380,31 @@ final class BackdropViewModel: ObservableObject {
     nonisolated private static func loadHighResImage(from url: URL) async -> UIImage? {
         do {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 12
-            config.timeoutIntervalForResource = 20
+            config.timeoutIntervalForRequest = 15
+            config.timeoutIntervalForResource = 25
             let session = URLSession(configuration: config)
 
             let (data, response) = try await session.data(from: url)
-            guard let http = response as? HTTPURLResponse,
-                  (200..<400).contains(http.statusCode),
-                  let img = UIImage(data: data) else { return nil }
+            guard let http = response as? HTTPURLResponse else {
+                print("[Backdrop] No HTTP response for \(url.lastPathComponent)")
+                return nil
+            }
+            guard (200..<400).contains(http.statusCode) else {
+                print("[Backdrop] HTTP \(http.statusCode) for \(url.lastPathComponent)")
+                return nil
+            }
+            guard let img = UIImage(data: data) else {
+                print("[Backdrop] Not a valid image (\(data.count) bytes) from \(url.lastPathComponent)")
+                return nil
+            }
 
             // Reject tiny images (lowered threshold for IPTV poster art)
-            guard img.size.width >= 80 && img.size.height >= 80 else { return nil }
+            guard img.size.width >= 80 && img.size.height >= 80 else {
+                print("[Backdrop] Image too small \(img.size) from \(url.lastPathComponent)")
+                return nil
+            }
+
+            print("[Backdrop] OK \(Int(img.size.width))x\(Int(img.size.height)) from \(url.lastPathComponent)")
 
             // Scale to max 1000px for crisp display
             let maxDim: CGFloat = 1000
@@ -402,6 +416,7 @@ final class BackdropViewModel: ObservableObject {
             }
             return img
         } catch {
+            print("[Backdrop] Download error for \(url.lastPathComponent): \(error.localizedDescription)")
             return nil
         }
     }
@@ -438,18 +453,17 @@ final class BackdropViewModel: ObservableObject {
     }
 
     private func loadArtwork() async {
-        // Gather URLs from user playlists, with curated fallback
-        var urls = await gatherArtworkURLs()
+        // Always start with curated posters (guaranteed to work)
+        // Then add user playlist artwork on top
+        var urls = Self.curatedPosterURLs.shuffled()
+        let userURLs = await gatherArtworkURLs()
 
-        // If no user artwork, use curated premium movie posters as fallback
-        if urls.isEmpty {
-            print("[Backdrop] Using curated fallback posters")
-            urls = Self.curatedPosterURLs.shuffled()
-        }
-
-        guard !urls.isEmpty else {
-            print("[Backdrop] No URLs to load")
-            return
+        if !userURLs.isEmpty {
+            // User artwork first, then curated as backup
+            urls = userURLs + urls
+            print("[Backdrop] \(userURLs.count) user + \(Self.curatedPosterURLs.count) curated URLs")
+        } else {
+            print("[Backdrop] No user artwork, using \(urls.count) curated posters only")
         }
 
         print("[Backdrop] Attempting to load \(urls.count) images")
@@ -471,7 +485,7 @@ final class BackdropViewModel: ObservableObject {
         }
 
         guard !candidates.isEmpty else {
-            print("[Backdrop] All image downloads failed")
+            print("[Backdrop] All image downloads failed (\(urls.count) attempted)")
             return
         }
 
