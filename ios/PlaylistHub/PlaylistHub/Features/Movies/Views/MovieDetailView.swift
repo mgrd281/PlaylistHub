@@ -26,6 +26,9 @@ struct MovieDetailView: View {
     // Preview player
     @StateObject private var previewVM = PreviewPlayerModel()
 
+    // Ken Burns animation for artwork fallback
+    @State private var kenBurnsActive = false
+
     // Parse metadata
     private var genre: String? {
         guard let group = item.groupTitle else { return nil }
@@ -76,6 +79,11 @@ struct MovieDetailView: View {
         .fullScreenCover(isPresented: $showPlayer) {
             PlayerView(item: item, channelList: channelList)
         }
+        .onChange(of: showPlayer) { _, isShowing in
+            if isShowing {
+                previewVM.stop()
+            }
+        }
         .task {
             await loadRelated()
             loadSavedRating()
@@ -86,7 +94,7 @@ struct MovieDetailView: View {
         }
     }
 
-    // MARK: - Hero Section (Video Preview + Artwork Fallback)
+    // MARK: - Hero Section (Video Preview + Cinematic Artwork Fallback)
 
     private var heroSection: some View {
         GeometryReader { geo in
@@ -94,20 +102,27 @@ struct MovieDetailView: View {
             let heroHeight: CGFloat = width * 1.3
 
             ZStack(alignment: .bottom) {
-                // Video preview layer (muted, autoplaying)
+                // Layer 1: Video preview (muted, autoplaying 30s clip)
                 if previewVM.isReady {
-                    VideoPlayer(player: previewVM.player)
-                        .disabled(true) // no user interaction on preview
+                    PreviewVideoLayer(player: previewVM.player)
                         .frame(width: width, height: heroHeight)
                         .clipped()
-                        .transition(.opacity)
+                        .transition(.opacity.animation(.easeIn(duration: 0.6)))
                 } else if let url = item.resolvedLogoURL {
+                    // Layer 2: Artwork with Ken Burns pan/zoom animation
                     CachedAsyncImage(url: url) {
                         heroFallback(width: width, height: heroHeight)
                     }
                     .aspectRatio(contentMode: .fill)
                     .frame(width: width, height: heroHeight)
+                    .scaleEffect(kenBurnsActive ? 1.08 : 1.0)
+                    .offset(x: kenBurnsActive ? -8 : 8, y: kenBurnsActive ? -6 : 4)
                     .clipped()
+                    .onAppear {
+                        withAnimation(.easeInOut(duration: 12).repeatForever(autoreverses: true)) {
+                            kenBurnsActive = true
+                        }
+                    }
                 } else {
                     heroFallback(width: width, height: heroHeight)
                 }
@@ -116,17 +131,39 @@ struct MovieDetailView: View {
                 VStack(spacing: 0) {
                     Spacer()
                     LinearGradient(
-                        colors: [.clear, .black.opacity(0.6), .black],
+                        colors: [.clear, .black.opacity(0.5), .black.opacity(0.85), .black],
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: heroHeight * 0.45)
+                    .frame(height: heroHeight * 0.5)
                 }
 
-                // Mute toggle (bottom-right of hero)
+                // Top vignette (subtle)
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [.black.opacity(0.4), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: heroHeight * 0.15)
+                    Spacer()
+                }
+
+                // Mute toggle + preview badge (bottom-right of hero)
                 if previewVM.isReady {
-                    HStack {
+                    HStack(spacing: 8) {
                         Spacer()
+
+                        // "PREVIEW" badge
+                        Text("PREVIEW")
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(0.8)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.black.opacity(0.4), in: Capsule())
+                            .overlay(Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
+
                         Button {
                             previewVM.toggleMute()
                         } label: {
@@ -137,9 +174,9 @@ struct MovieDetailView: View {
                                 .background(.black.opacity(0.5), in: Circle())
                                 .overlay(Circle().strokeBorder(.white.opacity(0.2), lineWidth: 0.5))
                         }
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 80)
                     }
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 80)
                 }
             }
             .frame(width: width, height: heroHeight)
@@ -505,4 +542,27 @@ struct MovieDetailView: View {
         }
         isLoadingRelated = false
     }
+}
+
+// MARK: - Preview Video Layer (AVPlayerLayer — no controls, pure rendering)
+
+private struct PreviewVideoLayer: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> PreviewPlayerUIView {
+        let view = PreviewPlayerUIView()
+        view.playerLayer.player = player
+        view.playerLayer.videoGravity = .resizeAspectFill
+        view.backgroundColor = .black
+        return view
+    }
+
+    func updateUIView(_ uiView: PreviewPlayerUIView, context: Context) {
+        uiView.playerLayer.player = player
+    }
+}
+
+private class PreviewPlayerUIView: UIView {
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
+    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }
