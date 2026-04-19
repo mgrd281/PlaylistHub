@@ -19,6 +19,13 @@ struct HomeView: View {
                     ForEach(remoteConfig.enabledHomeSections) { section in
                         homeSectionView(for: section.id)
                     }
+
+                    // Top 10 — always injected if not in server config
+                    if !remoteConfig.enabledHomeSections.contains(where: { $0.id == "top10" }),
+                       !vm.top10Movies.isEmpty {
+                        top10Section
+                            .padding(.bottom, 28)
+                    }
                 }
             }
             .background(Color(.systemBackground))
@@ -113,6 +120,12 @@ struct HomeView: View {
                     .padding(.bottom, 28)
             }
 
+        case "top10":
+            if !vm.top10Movies.isEmpty {
+                top10Section
+                    .padding(.bottom, 28)
+            }
+
         case "featuredSeries":
             if remoteConfig.features.featuredContentEnabled && !vm.featuredSeries.isEmpty {
                 let sec = remoteConfig.homeSection("featuredSeries")
@@ -128,6 +141,11 @@ struct HomeView: View {
                 .padding(.bottom, 40)
 
         default:
+            // Always show Top 10 if movies exist and section not explicitly listed
+            if id == "" && !vm.top10Movies.isEmpty {
+                top10Section
+                    .padding(.bottom, 28)
+            }
             EmptyView()
         }
     }
@@ -297,6 +315,42 @@ struct HomeView: View {
                 }
             }
             .padding(.horizontal, 20)
+        }
+    }
+
+    // MARK: - Top 10 Section
+
+    private var top10Section: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Section header
+            HStack(spacing: 8) {
+                Text("TOP")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(accent)
+                +
+                Text(" 10")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(.primary)
+
+                Text("Movies Today")
+                    .font(.subheadline.weight(.semibold))
+
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+
+            // Horizontal scroll rail
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 0) {
+                    ForEach(Array(vm.top10Movies.enumerated()), id: \.element.id) { index, item in
+                        Button { selectedItem = item } label: {
+                            Top10Card(item: item, rank: index + 1, accentColor: accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
         }
     }
 
@@ -778,6 +832,145 @@ struct PremiumPlaylistRow: View {
     }
 }
 
+// MARK: - Top 10 Card
+
+struct Top10Card: View {
+    let item: PlaylistItem
+    let rank: Int
+    let accentColor: Color
+
+    /// Total width of one card cell (numeral zone + poster)
+    private let cellWidth: CGFloat = 158
+    private let posterWidth: CGFloat = 110
+    private let posterHeight: CGFloat = 164
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            // Layer 1: Large ranking numeral (behind poster)
+            rankNumeral
+                .frame(width: cellWidth, height: posterHeight, alignment: .leading)
+
+            // Layer 2: Poster card (overlapping the numeral, offset right)
+            posterCard
+                .frame(width: posterWidth, height: posterHeight)
+                .offset(x: cellWidth - posterWidth)  // push poster to right, overlapping numeral
+        }
+        .frame(width: cellWidth, height: posterHeight + 8)
+    }
+
+    // MARK: - Rank Numeral
+
+    private var rankNumeral: some View {
+        Text("\(rank)")
+            .font(.system(size: 150, weight: .black, design: .rounded))
+            .italic()
+            .foregroundStyle(.clear)
+            .overlay(
+                Text("\(rank)")
+                    .font(.system(size: 150, weight: .black, design: .rounded))
+                    .italic()
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color(.systemGray4).opacity(0.6),
+                                Color(.systemGray5).opacity(0.3)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        Text("\(rank)")
+                            .font(.system(size: 150, weight: .black, design: .rounded))
+                            .italic()
+                            .foregroundStyle(.clear)
+                            .background(.clear)
+                            .overlay(
+                                // Stroke outline effect
+                                Text("\(rank)")
+                                    .font(.system(size: 150, weight: .black, design: .rounded))
+                                    .italic()
+                                    .foregroundStyle(Color(.systemGray3).opacity(0.5))
+                                    .mask(
+                                        ZStack {
+                                            Text("\(rank)")
+                                                .font(.system(size: 150, weight: .black, design: .rounded))
+                                                .italic()
+                                                .foregroundStyle(.white)
+                                                .offset(x: -1.5)
+                                            Text("\(rank)")
+                                                .font(.system(size: 150, weight: .black, design: .rounded))
+                                                .italic()
+                                                .foregroundStyle(.white)
+                                                .offset(x: 1.5)
+                                            Text("\(rank)")
+                                                .font(.system(size: 150, weight: .black, design: .rounded))
+                                                .italic()
+                                                .foregroundStyle(.white)
+                                                .offset(y: -1.5)
+                                            Text("\(rank)")
+                                                .font(.system(size: 150, weight: .black, design: .rounded))
+                                                .italic()
+                                                .foregroundStyle(.white)
+                                                .offset(y: 1.5)
+                                            Text("\(rank)")
+                                                .font(.system(size: 150, weight: .black, design: .rounded))
+                                                .italic()
+                                                .foregroundStyle(.black)
+                                        }
+                                    )
+                            )
+                    )
+            )
+            .offset(x: rank >= 10 ? -8 : 2, y: 8)
+    }
+
+    // MARK: - Poster
+
+    private var posterCard: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let url = item.resolvedLogoURL {
+                CachedAsyncImage(url: url) {
+                    posterFallback
+                }
+                .aspectRatio(contentMode: .fill)
+                .frame(width: posterWidth, height: posterHeight)
+                .clipped()
+            } else {
+                posterFallback
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+    }
+
+    private var posterFallback: some View {
+        ZStack {
+            LinearGradient(
+                colors: PosterCard.gradientColors(for: item.name),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            VStack(spacing: 6) {
+                Image(systemName: "film.fill")
+                    .font(.system(size: 20, weight: .light))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text(item.name)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, 6)
+            }
+        }
+        .frame(width: posterWidth, height: posterHeight)
+    }
+}
+
 // MARK: - ViewModel
 
 @MainActor
@@ -786,6 +979,7 @@ final class HomeViewModel: ObservableObject {
     @Published var watchHistory: [WatchHistoryEntry] = []
     @Published var featuredMovies: [PlaylistItem] = []
     @Published var featuredSeries: [PlaylistItem] = []
+    @Published var top10Movies: [PlaylistItem] = []
     @Published var isLoading = false
     @Published var showDeleteConfirm = false
     @Published var deleteTarget: Playlist?
@@ -823,6 +1017,27 @@ final class HomeViewModel: ObservableObject {
                 let (moviesResp, seriesResp) = try await (moviesTask, seriesTask)
                 featuredMovies = Array(moviesResp.items.prefix(15))
                 featuredSeries = Array(seriesResp.items.prefix(15))
+
+                // Top 10: prioritize movies with poster art, stable sort by name
+                let withArt = moviesResp.items.filter { $0.resolvedLogoURL != nil }
+                let withoutArt = moviesResp.items.filter { $0.resolvedLogoURL == nil }
+                let ranked = (withArt.sorted(by: { $0.name < $1.name }) + withoutArt.sorted(by: { $0.name < $1.name }))
+                top10Movies = Array(ranked.prefix(10))
+
+                // If first playlist didn't have enough, try additional playlists
+                if top10Movies.count < 10 {
+                    for extra in playlists.dropFirst().prefix(2) where extra.status == .active {
+                        let moreResp = try await DataService.shared.fetchItems(
+                            playlistId: extra.id, contentType: .movie, page: 1, limit: 20
+                        )
+                        let existingIds = Set(top10Movies.map(\.id))
+                        let newItems = moreResp.items.filter { !existingIds.contains($0.id) }
+                        let newWithArt = newItems.filter { $0.resolvedLogoURL != nil }.sorted(by: { $0.name < $1.name })
+                        top10Movies.append(contentsOf: newWithArt)
+                        if top10Movies.count >= 10 { break }
+                    }
+                    top10Movies = Array(top10Movies.prefix(10))
+                }
             }
         } catch {}
         isLoading = false
