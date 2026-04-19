@@ -755,11 +755,13 @@ final class PlayerViewModel: ObservableObject {
     private var fallbackURLs: [URL] = []
     private var fallbackTimer: DispatchWorkItem?
     private var loadStartTime: CFAbsoluteTime = 0
+    /// Track parallel race tasks so we can cancel losers
+    private var raceTasks: [Task<Void, Never>] = []
 
     /// Timeout per source in cascade (seconds)
-    private static let sourceTimeout: TimeInterval = 6
-    /// Longer timeout for VOD (MP4 files need more time for moov atom + buffering)
-    private static let vodSourceTimeout: TimeInterval = 12
+    private static let sourceTimeout: TimeInterval = 5
+    /// Timeout for VOD — slightly longer but we race in parallel
+    private static let vodSourceTimeout: TimeInterval = 8
 
     var prevChannel: PlaylistItem? {
         guard currentIndex > 0 else { return nil }
@@ -826,7 +828,8 @@ final class PlayerViewModel: ObservableObject {
             self.ownsPlayer = false
         } else {
             let p = AVPlayer()
-            p.automaticallyWaitsToMinimizeStalling = false
+            // Live: start immediately, tolerate stalls. VOD: buffer first, play smooth.
+            p.automaticallyWaitsToMinimizeStalling = !item.isLive
             self.player = p
             self.ownsPlayer = true
         }
@@ -885,24 +888,123 @@ final class PlayerViewModel: ObservableObject {
         switchTo(prev)
     }
 
-    /// Build URL cascade and start with the fastest source (direct → CF → Vercel)
+    /// Build URL cascade and start with the fastest source
     private func loadStream(for item: PlaylistItem) {
+        // Update stalling strategy on item change
+        player.automaticallyWaitsToMinimizeStalling = !item.isLive
+
         let cascade: [URL]
         if item.isXtreamVod {
-            // VOD: original format first (.mp4), then .m3u8 as fallback
             cascade = AppConfig.vodStreamCascade(for: item.resolvedStreamURL, hlsFallback: item.hlsFallbackURL)
         } else {
-            // Live TV: .m3u8 only (resolvedStreamURL already converts)
             cascade = AppConfig.streamCascade(for: item.resolvedStreamURL)
         }
-        guard let first = cascade.first else {
+        guard !cascade.isEmpty else {
             error = "Invalid stream URL"
             isBuffering = false
             return
         }
-        fallbackURLs = Array(cascade.dropFirst())
+
         loadStartTime = CFAbsoluteTimeGetCurrent()
-        playURL(first)
+
+        if item.isXtreamVod && cascade.count >= 2 {
+            // VOD: race direct + CF Worker in parallel — first to produce a playable
+            // AVPlayerItem.status == .readyToPlay wins. Dramatically cuts startup time.
+            raceParallel(urls: Array(cascade.prefix(2)), fallbacks: Array(cascade.dropFirst(2)))
+        } else {
+            // Live / non-Xtream: sequential cascade (proven reliable for HLS)
+            fallbackURLs = Array(cascade.dropFirst())
+            playURL(cascade[0])
+        }
+    }
+
+    /// Race multiple URLs in parallel — first readyToPlay wins, losers are discarded.
+    private func raceParallel(urls: [URL], fallbacks: [URL]) {
+        // Cancel any previous race
+        raceTasks.forEach { $0.cancel() }
+        raceTasks.removeAll()
+        fallbackTimer?.cancel()
+        statusObserver?.invalidate()
+
+        fallbackURLs = fallbacks
+        let raceStart = CFAbsoluteTimeGetCurrent()
+        var raceSettled = false
+
+        // Pre-build AVURLAssets for all candidates
+        let candidates: [(url: URL, asset: AVURLAsset, item: AVPlayerItem)] = urls.map { url in
+            let asset = AVURLAsset(url: url, options: [
+                "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": "VLC/3.0.21 LibVLC/3.0.21"],
+                AVURLAssetPreferPreciseDurationAndTimingKey: false,
+            ])
+            let playerItem = AVPlayerItem(asset: asset)
+            playerItem.preferredForwardBufferDuration = 4
+            return (url, asset, playerItem)
+        }
+
+        // Observe each candidate's status
+        var observers: [NSKeyValueObservation] = []
+        for (idx, candidate) in candidates.enumerated() {
+            let host = candidate.url.host ?? candidate.url.absoluteString.prefix(40).description
+            print("[Player] \u{25B6} Race[\(idx)]: \(host)")
+
+            let obs = candidate.item.observe(\.status, options: [.new]) { [weak self] item, _ in
+                Task { @MainActor [weak self] in
+                    guard let self, !raceSettled else { return }
+                    let elapsed = CFAbsoluteTimeGetCurrent() - raceStart
+
+                    switch item.status {
+                    case .readyToPlay:
+                        raceSettled = true
+                        print("[Player] \u{2713} Race winner[\(idx)] in \(String(format: "%.1f", elapsed))s: \(host)")
+                        // Cancel all observers
+                        observers.forEach { $0.invalidate() }
+                        observers.removeAll()
+                        self.fallbackTimer?.cancel()
+                        self.raceTasks.forEach { $0.cancel() }
+                        self.raceTasks.removeAll()
+                        self.fallbackURLs = fallbacks
+
+                        // Commit winner to player
+                        self.player.replaceCurrentItem(with: candidate.item)
+                        self.player.play()
+                        self.isPlaying = true
+                        self.hasFirstFrame = true
+                        self.fallbackURLs = []
+                        self.fallbackTimer?.cancel()
+                        self.resumeIfNeeded()
+
+                    case .failed:
+                        let reason = item.error?.localizedDescription ?? "unknown"
+                        print("[Player] \u{2717} Race[\(idx)] failed: \(reason)")
+                    default: break
+                    }
+                }
+            }
+            observers.append(obs)
+        }
+
+        // Global race timeout — if no winner, fall back to sequential cascade
+        let timeout = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self, !raceSettled else { return }
+                raceSettled = true
+                print("[Player] \u{23F1} Race timeout — falling back to sequential")
+                observers.forEach { $0.invalidate() }
+                observers.removeAll()
+
+                // Try fallback URLs sequentially
+                if let next = self.fallbackURLs.first {
+                    self.fallbackURLs.removeFirst()
+                    self.playURL(next)
+                } else {
+                    self.error = "Playback failed"
+                    self.isBuffering = false
+                }
+            }
+        }
+        fallbackTimer = timeout
+        let raceDuration = currentItem.isLive ? Self.sourceTimeout : Self.vodSourceTimeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + raceDuration, execute: timeout)
     }
 
     /// Attempt playback from a single URL. On failure/timeout, cascade to next.
@@ -1005,6 +1107,8 @@ final class PlayerViewModel: ObservableObject {
 
     func teardown() {
         fallbackTimer?.cancel()
+        raceTasks.forEach { $0.cancel() }
+        raceTasks.removeAll()
         if let obs = timeObserver { player.removeTimeObserver(obs) }
         statusObserver?.invalidate()
         removeLifecycleObservers()
@@ -1155,12 +1259,22 @@ final class PlayerViewModel: ObservableObject {
             options: .regularExpression
         ) : nil
         let cascade = AppConfig.vodStreamCascade(for: originalUrl, hlsFallback: hlsFallback)
-        guard let first = cascade.first else { return }
-        fallbackURLs = Array(cascade.dropFirst())
+        guard !cascade.isEmpty else { return }
+
+        isBuffering = true
+        error = nil
+        hasFirstFrame = false
         loadStartTime = CFAbsoluteTimeGetCurrent()
         activeEpisodeId = episode.id
         displayName = episode.title
-        playURL(first)
+
+        // Race direct + CF Worker in parallel for fast startup
+        if cascade.count >= 2 {
+            raceParallel(urls: Array(cascade.prefix(2)), fallbacks: Array(cascade.dropFirst(2)))
+        } else {
+            fallbackURLs = Array(cascade.dropFirst())
+            playURL(cascade[0])
+        }
     }
 
     private func loadEpisodes() {

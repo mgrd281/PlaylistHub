@@ -119,6 +119,65 @@ function tryVideoUrl(
   });
 }
 
+/** Race multiple video URLs — first to fire 'loadeddata' wins.
+ *  Uses hidden probe videos so the main <video> element only gets the winner. */
+function raceVideoUrls(
+  mainVideo: HTMLVideoElement,
+  urls: string[],
+  timeoutMs = 8000,
+): Promise<boolean> {
+  if (urls.length === 0) return Promise.resolve(false);
+  if (urls.length === 1) return tryVideoUrl(mainVideo, urls[0], timeoutMs);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const probes: HTMLVideoElement[] = [];
+
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      // Destroy all probes
+      for (const p of probes) {
+        p.removeAttribute('src');
+        p.load();
+      }
+    };
+
+    const timer = setTimeout(() => { cleanup(); resolve(false); }, timeoutMs);
+
+    for (const url of urls) {
+      const probe = document.createElement('video');
+      probe.preload = 'auto';
+      probe.muted = true;
+      probes.push(probe);
+
+      probe.addEventListener('loadeddata', () => {
+        if (settled) return;
+        cleanup();
+        // Commit winning URL to main video
+        mainVideo.src = url;
+        mainVideo.load();
+        mainVideo.addEventListener('loadeddata', () => resolve(true), { once: true });
+        mainVideo.addEventListener('error', () => resolve(false), { once: true });
+      }, { once: true });
+
+      probe.addEventListener('error', () => {
+        // Mark this probe as failed — if all fail, resolve(false)
+        const idx = probes.indexOf(probe);
+        if (idx >= 0) probes[idx] = probe; // keep reference
+        if (!settled && probes.every(p => p.error)) {
+          cleanup();
+          resolve(false);
+        }
+      }, { once: true });
+
+      probe.src = url;
+      probe.load();
+    }
+  });
+}
+
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
   const h = Math.floor(seconds / 3600);
@@ -851,21 +910,25 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           return;
         }
         // Chrome/Firefox — use hls.js
-        if (await attachHls(video, proxied, { live: isLive, timeoutMs: 15000 })) return;
+        if (await attachHls(video, proxied, { live: isLive, timeoutMs: 10000 })) return;
         setError('تعذّر تشغيل البث.');
         setLoading(false);
         initInProgressRef.current = false;
         return;
       }
 
-      // ── Xtream VOD: try MP4 direct first (fast), HLS conversion in parallel ──
+      // ── Xtream VOD: race MP4 sources in parallel for fastest startup ──
       if (isXtreamVod) {
-        // The .mp4 URL via proxy should work immediately if Accept-Ranges
-        // is correct (browser needs range seeking for moov-at-end files).
         const proxiedMp4 = proxyUrl(url.replace(/\.\w+$/, '.mp4'));
+        const proxiedHls = proxyUrl(url.replace(/\.\w+$/, '.m3u8'));
 
-        // Strategy 1: Try .mp4 direct via proxy (fast — most common success path)
-        if (await tryVideoUrl(video, proxiedMp4, 15000)) {
+        // Phase 1: Race direct proxy MP4 + original extension in parallel (8s timeout)
+        const mp4Winner = await raceVideoUrls(video, [
+          proxiedMp4,
+          ...(url.endsWith('.mp4') ? [] : [proxied]),
+        ], 8000);
+
+        if (mp4Winner) {
           try { await video.play(); } catch { /* user presses play */ }
           setLoading(false);
           setMainVideoLoaded(true);
@@ -873,23 +936,12 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           return;
         }
 
-        // Strategy 2: Try original extension if different from .mp4
-        if (!url.endsWith('.mp4')) {
-          if (await tryVideoUrl(video, proxied, 12000)) {
-            try { await video.play(); } catch { /* user presses play */ }
-            setLoading(false);
-            setMainVideoLoaded(true);
-            initInProgressRef.current = false;
-            return;
-          }
-        }
-
-        // Strategy 3: HLS (.m3u8) fallback — some Xtream servers support this
+        // Phase 2: HLS (.m3u8) fallback — some Xtream servers support this
         if (await attachHls(video, proxiedHls, { live: false, timeoutMs: 8000 })) return;
 
-        // Strategy 4: Safari native HLS
+        // Phase 3: Safari native HLS
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          if (await tryVideoUrl(video, proxiedHls, 8000)) {
+          if (await tryVideoUrl(video, proxiedHls, 6000)) {
             try { await video.play(); } catch { /* user presses play */ }
             setLoading(false);
             setMainVideoLoaded(true);
@@ -905,7 +957,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       }
 
       // ── VOD/MP4 — direct proxy ──
-      if (await tryVideoUrl(video, proxied, 15000)) {
+      if (await tryVideoUrl(video, proxied, 10000)) {
         try { await video.play(); } catch { /* user presses play */ }
         setLoading(false);
         setMainVideoLoaded(true);
