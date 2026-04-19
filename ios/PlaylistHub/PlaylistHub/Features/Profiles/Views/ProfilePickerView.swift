@@ -360,6 +360,22 @@ final class BackdropViewModel: ObservableObject {
 
     private var rotationTask: Task<Void, Never>?
 
+    /// Curated premium movie poster URLs — used as fallback when user has no playlist artwork.
+    /// All verified 780×1170 portrait JPEG posters from TMDB CDN.
+    private static let curatedPosterURLs: [URL] = [
+        "https://image.tmdb.org/t/p/w780/d5NXSklXo0qyIYkgV94XAgMIckC.jpg",
+        "https://image.tmdb.org/t/p/w780/sv1xJUazXeYqALzczSZ3O6nkH75.jpg",
+        "https://image.tmdb.org/t/p/w780/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg",
+        "https://image.tmdb.org/t/p/w780/or06FN3Dka5tukK1e9sl16pB3iy.jpg",
+        "https://image.tmdb.org/t/p/w780/qNBAXBIQlnOThrVvA6mA2B5ggV6.jpg",
+        "https://image.tmdb.org/t/p/w780/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg",
+        "https://image.tmdb.org/t/p/w780/ngl2FKBlU4fhbdsrtdom9LVLBXw.jpg",
+        "https://image.tmdb.org/t/p/w780/vpnVM9B6NMmQpWeZvzLvDESb2QY.jpg",
+        "https://image.tmdb.org/t/p/w780/gPbM0MK8CP8A174rmUwGsAB5gKr.jpg",
+        "https://image.tmdb.org/t/p/w780/aosm8NMQ3UyoBVpSxyimorCQykC.jpg",
+        "https://image.tmdb.org/t/p/w780/udDclJoHjfjb8Ekgsd4FDteOkCU.jpg",
+    ].compactMap(URL.init(string:))
+
     /// High-res loader — runs off main actor for concurrent downloads
     nonisolated private static func loadHighResImage(from url: URL) async -> UIImage? {
         do {
@@ -422,8 +438,15 @@ final class BackdropViewModel: ObservableObject {
     }
 
     private func loadArtwork() async {
-        // Gather URLs (involves Supabase queries)
-        let urls = await gatherArtworkURLs()
+        // Gather URLs from user playlists, with curated fallback
+        var urls = await gatherArtworkURLs()
+
+        // If no user artwork, use curated premium movie posters as fallback
+        if urls.isEmpty {
+            print("[Backdrop] Using curated fallback posters")
+            urls = Self.curatedPosterURLs.shuffled()
+        }
+
         guard !urls.isEmpty else {
             print("[Backdrop] No URLs to load")
             return
