@@ -19,7 +19,16 @@ struct PlayerView: View {
     @State private var gestureBrightness: CGFloat = UIScreen.main.brightness
     @State private var gestureVolume: CGFloat = PlayerView.systemVolume
 
+    // Lock state
+    @State private var isLocked = false
+    @State private var showLockHint = false
+
+    // Double-tap seek animation
+    @State private var seekSide: SeekSide?
+    @State private var seekTapCount = 0
+
     private enum GestureKind { case brightness, volume }
+    private enum SeekSide { case left, right }
 
     init(item: PlaylistItem, channelList: [PlaylistItem]?, existingPlayer: AVPlayer? = nil) {
         _vm = StateObject(wrappedValue: PlayerViewModel(item: item, channelList: channelList, existingPlayer: existingPlayer))
@@ -70,19 +79,31 @@ struct PlayerView: View {
                 .padding(32)
             }
 
-            // 6) Controls overlay
-            if showControls {
+            // 6) Controls overlay (hidden when locked)
+            if showControls && !isLocked {
                 controlsOverlay
                     .transition(.opacity)
             }
 
-            // 7) Brightness/volume HUD
+            // 7) Double-tap seek ripple
+            if let side = seekSide {
+                seekRipple(side: side)
+                    .transition(.opacity)
+            }
+
+            // 8) Brightness/volume HUD
             if let kind = gestureKind {
                 gestureHUD(kind: kind)
                     .transition(.opacity)
             }
 
-            // 8) Channel name flash on switch
+            // 9) Lock hint (shown briefly when tapping while locked)
+            if showLockHint {
+                lockHintOverlay
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
+
+            // 10) Channel name flash on switch
             if vm.showChannelFlash {
                 channelFlashOverlay
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -92,6 +113,9 @@ struct PlayerView: View {
         .animation(.easeOut(duration: 0.2), value: vm.isBuffering)
         .animation(.easeOut(duration: 0.25), value: vm.showChannelFlash)
         .animation(.easeOut(duration: 0.15), value: gestureKind == nil)
+        .animation(.easeOut(duration: 0.2), value: seekSide != nil)
+        .animation(.easeOut(duration: 0.2), value: showLockHint)
+        .animation(.easeOut(duration: 0.2), value: isLocked)
         .statusBarHidden(!showControls)
         .preferredColorScheme(.dark)
         .persistentSystemOverlays(.hidden)
@@ -139,53 +163,139 @@ struct PlayerView: View {
 
     private var gestureLayer: some View {
         GeometryReader { geo in
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { toggleControlsVisibility() }
-                .onTapGesture(count: 2) {
-                    // Double-tap left/right to seek ±10s
-                }
-                .gesture(
-                    DragGesture(minimumDistance: 8)
-                        .onChanged { value in
-                            let isLeft = value.startLocation.x < geo.size.width / 2
-                            let verticalDelta = -value.translation.height / geo.size.height
+            HStack(spacing: 0) {
+                // Left half — double-tap to seek back
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard !isLocked, !vm.currentItem.isLive else { return }
+                        handleDoubleTapSeek(side: .left)
+                    }
+                    .onTapGesture(count: 1) { handleSingleTap() }
 
-                            if gestureKind == nil {
-                                // Only activate if gesture is more vertical than horizontal
-                                guard abs(value.translation.height) > abs(value.translation.width) else { return }
-                                gestureKind = isLeft ? .brightness : .volume
-                                gestureBrightness = UIScreen.main.brightness
-                                gestureVolume = PlayerView.systemVolume
-                            }
+                // Right half — double-tap to seek forward
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard !isLocked, !vm.currentItem.isLive else { return }
+                        handleDoubleTapSeek(side: .right)
+                    }
+                    .onTapGesture(count: 1) { handleSingleTap() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        guard !isLocked else { return }
+                        let isLeft = value.startLocation.x < geo.size.width / 2
+                        let verticalDelta = -value.translation.height / geo.size.height
 
-                            switch gestureKind {
-                            case .brightness:
-                                let newVal = max(0, min(1, gestureBrightness + verticalDelta))
-                                UIScreen.main.brightness = newVal
-                            case .volume:
-                                let newVal = max(0, min(1, gestureVolume + verticalDelta))
-                                PlayerView.setSystemVolume(Float(newVal))
-                            case .none:
-                                break
-                            }
+                        if gestureKind == nil {
+                            guard abs(value.translation.height) > abs(value.translation.width) else { return }
+                            gestureKind = isLeft ? .brightness : .volume
+                            gestureBrightness = UIScreen.main.brightness
+                            gestureVolume = PlayerView.systemVolume
                         }
-                        .onEnded { _ in
-                            gestureKind = nil
+
+                        switch gestureKind {
+                        case .brightness:
+                            let newVal = max(0, min(1, gestureBrightness + verticalDelta))
+                            UIScreen.main.brightness = newVal
+                        case .volume:
+                            let newVal = max(0, min(1, gestureVolume + verticalDelta))
+                            PlayerView.setSystemVolume(Float(newVal))
+                        case .none:
+                            break
                         }
-                )
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 50)
-                        .onEnded { value in
-                            // Horizontal swipe for channel switching (only when not in brightness/volume mode)
-                            guard gestureKind == nil else { return }
-                            let horizontal = value.translation.width
-                            if abs(horizontal) > abs(value.translation.height) {
-                                if horizontal < -50 { vm.goNext() }
-                                else if horizontal > 50 { vm.goPrev() }
-                            }
+                    }
+                    .onEnded { _ in
+                        gestureKind = nil
+                    }
+            )
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 50)
+                    .onEnded { value in
+                        guard !isLocked, gestureKind == nil else { return }
+                        let horizontal = value.translation.width
+                        if abs(horizontal) > abs(value.translation.height) {
+                            if horizontal < -50 { vm.goNext() }
+                            else if horizontal > 50 { vm.goPrev() }
                         }
-                )
+                    }
+            )
+        }
+    }
+
+    private func handleSingleTap() {
+        if isLocked {
+            // Show lock hint briefly
+            showLockHint = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                showLockHint = false
+            }
+        } else {
+            toggleControlsVisibility()
+        }
+    }
+
+    private func handleDoubleTapSeek(side: SeekSide) {
+        let delta: Double = side == .left ? -10 : 10
+        vm.seekRelative(delta)
+        seekTapCount += 1
+        seekSide = side
+
+        // Auto-dismiss ripple after short delay
+        let currentCount = seekTapCount
+        Task {
+            try? await Task.sleep(for: .seconds(0.7))
+            if seekTapCount == currentCount {
+                seekSide = nil
+            }
+        }
+    }
+
+    // MARK: - Double-Tap Seek Ripple Animation
+
+    private func seekRipple(side: SeekSide) -> some View {
+        HStack {
+            if side == .right { Spacer() }
+            VStack(spacing: 6) {
+                Image(systemName: side == .left ? "gobackward.10" : "goforward.10")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("10 seconds")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .frame(width: 140, height: 140)
+            .background(
+                Circle()
+                    .fill(.white.opacity(0.1))
+            )
+            if side == .left { Spacer() }
+        }
+        .padding(.horizontal, 30)
+    }
+
+    // MARK: - Lock Hint Overlay
+
+    private var lockHintOverlay: some View {
+        Button {
+            isLocked = false
+            showLockHint = false
+            showControls = true
+            scheduleControlsHide()
+        } label: {
+            VStack(spacing: 8) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(.white)
+                Text("Tap to unlock")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .padding(20)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 
@@ -300,9 +410,10 @@ struct PlayerView: View {
 
     private var headerBar: some View {
         HStack(spacing: 10) {
+            // Close button
             Button { dismiss() } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 16, weight: .semibold))
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(.ultraThinMaterial, in: Circle())
@@ -325,6 +436,19 @@ struct PlayerView: View {
 
             if vm.currentItem.isLive {
                 liveBadge
+            }
+
+            // Lock button
+            Button {
+                isLocked = true
+                showControls = false
+                controlsTimer?.invalidate()
+            } label: {
+                Image(systemName: "lock.open.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
             }
 
             // AirPlay route picker — always available, system-provided
