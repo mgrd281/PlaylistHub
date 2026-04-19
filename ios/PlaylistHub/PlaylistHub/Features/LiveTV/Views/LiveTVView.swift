@@ -442,17 +442,10 @@ struct LiveTVView: View {
     // MARK: - Category Tabs
 
     private var categoryTabs: some View {
-        let sortedCats = vm.categories.sorted { a, b in
-            let sA = BrowsingMemory.shared.categoryScore(a.key)
-            let sB = BrowsingMemory.shared.categoryScore(b.key)
-            if sA != sB { return sA > sB }
-            return a.totalCount > b.totalCount
-        }
-
         return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    ForEach(sortedCats) { cat in
+                    ForEach(vm.categories) { cat in
                         let isSelected = vm.activeCategory?.id == cat.id
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -492,13 +485,6 @@ struct LiveTVView: View {
     // MARK: - Sub-Group Pills
 
     private func subGroupPills(_ category: LiveTVCategory) -> some View {
-        let sortedGroups = category.groups.sorted { a, b in
-            let scoreA = BrowsingMemory.shared.groupScore(category: category.key, group: a.name)
-            let scoreB = BrowsingMemory.shared.groupScore(category: category.key, group: b.name)
-            if scoreA != scoreB { return scoreA > scoreB }
-            return a.items.count > b.items.count
-        }
-
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 5) {
                 // Favorites pill (only when there are favorites)
@@ -522,7 +508,7 @@ struct LiveTVView: View {
                     vm.selectGroup(nil)
                 }
 
-                ForEach(sortedGroups) { group in
+                ForEach(category.groups) { group in
                     IPTVPill(
                         name: group.displayName,
                         count: group.items.count,
@@ -2016,49 +2002,33 @@ final class LiveTVViewModel: ObservableObject {
 /// Designed to run off @MainActor (e.g. in Task.detached or background preloader).
 private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCategory] {
     var buckets: [String: [(sectionName: String, items: [PlaylistItem])]] = [:]
+    var categoryOrder: [String] = []
 
     for section in sections {
         let channelNames = section.items.prefix(8).map(\.name)
         let key = classifyGroup(section.name, channelNames: Array(channelNames))
+        if buckets[key] == nil { categoryOrder.append(key) }
         buckets[key, default: []].append((section.name, section.items))
-    }
-
-    // Try to break up "Other" if disproportionately large
-    if let otherBucket = buckets["other"], otherBucket.count > 3 {
-        let totalAll = sections.reduce(0) { $0 + $1.items.count }
-        let otherCount = otherBucket.reduce(0) { $0 + $1.items.count }
-
-        if Double(otherCount) / Double(max(totalAll, 1)) > 0.4 {
-            var stillOther: [(String, [PlaylistItem])] = []
-            for (name, items) in otherBucket {
-                let allNames = items.map(\.name)
-                let deepKey = deepClassifyGroup(groupName: name, channelNames: allNames)
-                if deepKey != "other" {
-                    buckets[deepKey, default: []].append((name, items))
-                } else {
-                    stillOther.append((name, items))
-                }
-            }
-            buckets["other"] = stillOther.isEmpty ? nil : stillOther
-        }
     }
 
     if let arabicBucket = buckets["arabic"] {
         // Remove existing Arabic bucket before rebuilding it to avoid duplicate Arabic top-level pills.
         buckets.removeValue(forKey: "arabic")
+        categoryOrder.removeAll { $0 == "arabic" }
 
-        var providerGroups: [String: (displayName: String, items: [PlaylistItem])] = [:]
+        var providerGroupsOrdered: [(name: String, displayName: String, items: [PlaylistItem])] = []
+        var providerIndexByName: [String: Int] = [:]
         var fallbackGroups: [String: [PlaylistItem]] = [:]
 
         for (sectionName, items) in arabicBucket {
             if isMeaningfulProviderGroupName(sectionName) {
-                let key = canonicalArabicGroupKey(sectionName)
                 let displayName = providerDisplayName(sectionName)
-                if var existing = providerGroups[key] {
-                    existing.items.append(contentsOf: items)
-                    providerGroups[key] = existing
+                let key = displayName.lowercased()
+                if let idx = providerIndexByName[key] {
+                    providerGroupsOrdered[idx].items.append(contentsOf: items)
                 } else {
-                    providerGroups[key] = (displayName: displayName, items: items)
+                    providerIndexByName[key] = providerGroupsOrdered.count
+                    providerGroupsOrdered.append((name: displayName, displayName: displayName, items: items))
                 }
             } else {
                 // Fallback only for raw/noisy provider groups (e.g. numeric ids).
@@ -2069,12 +2039,8 @@ private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCat
             }
         }
 
-        var arabicGroups: [LiveTVCategory.ChannelGroup] = providerGroups.map { key, value in
-            LiveTVCategory.ChannelGroup(
-                name: key,
-                displayName: value.displayName,
-                items: value.items
-            )
+        var arabicGroups: [LiveTVCategory.ChannelGroup] = providerGroupsOrdered.map {
+            LiveTVCategory.ChannelGroup(name: $0.name, displayName: $0.displayName, items: $0.items)
         }
 
         for (fallbackKey, channels) in fallbackGroups {
@@ -2088,31 +2054,31 @@ private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCat
             ))
         }
 
-        // Merge any duplicate group keys that might still collide after normalization/fallback.
+        // Merge duplicates safely by display label while preserving first-seen order.
         var merged: [String: (displayName: String, items: [PlaylistItem])] = [:]
+        var mergedOrder: [String] = []
         for group in arabicGroups {
-            if var existing = merged[group.name] {
+            let mergeKey = group.displayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if var existing = merged[mergeKey] {
                 existing.items.append(contentsOf: group.items)
-                merged[group.name] = existing
+                merged[mergeKey] = existing
             } else {
-                merged[group.name] = (displayName: group.displayName, items: group.items)
+                mergedOrder.append(mergeKey)
+                merged[mergeKey] = (displayName: group.displayName, items: group.items)
             }
         }
 
-        arabicGroups = merged.map { key, value in
+        arabicGroups = mergedOrder.compactMap { key in
+            guard let value = merged[key] else { return nil }
             var seen = Set<String>()
             let deduped = value.items.filter { seen.insert($0.resolvedStreamURL).inserted }
-            return LiveTVCategory.ChannelGroup(name: key, displayName: value.displayName, items: deduped)
+            return LiveTVCategory.ChannelGroup(name: value.displayName, displayName: value.displayName, items: deduped)
         }
         .filter { !$0.items.isEmpty }
-        .sorted {
-            if $0.items.count != $1.items.count { return $0.items.count > $1.items.count }
-            return $0.displayName < $1.displayName
-        }
 
         let total = arabicGroups.reduce(0) { $0 + $1.items.count }
 
-        var result = buildCategoryList(from: buckets)
+        var result = buildCategoryList(from: buckets, categoryOrder: categoryOrder)
         if !arabicGroups.isEmpty {
             result.append(LiveTVCategory(
                 id: "arabic",
@@ -2125,23 +2091,29 @@ private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCat
         }
 
         return result.sorted {
+            if $0.key == "arabic" { return true }
+            if $1.key == "arabic" { return false }
             if $0.key == "other" { return false }
             if $1.key == "other" { return true }
-            return $0.totalCount > $1.totalCount
+            return categoryOrder.firstIndex(of: $0.key) ?? .max < categoryOrder.firstIndex(of: $1.key) ?? .max
         }
     }
 
-    return buildCategoryList(from: buckets).sorted {
+    return buildCategoryList(from: buckets, categoryOrder: categoryOrder).sorted {
         if $0.key == "other" { return false }
         if $1.key == "other" { return true }
-        return $0.totalCount > $1.totalCount
+        return categoryOrder.firstIndex(of: $0.key) ?? .max < categoryOrder.firstIndex(of: $1.key) ?? .max
     }
 }
 
 /// Build category list from non-Arabic buckets
-private func buildCategoryList(from buckets: [String: [(sectionName: String, items: [PlaylistItem])]]) -> [LiveTVCategory] {
+private func buildCategoryList(
+    from buckets: [String: [(sectionName: String, items: [PlaylistItem])]],
+    categoryOrder: [String]
+) -> [LiveTVCategory] {
     var result: [LiveTVCategory] = []
-    for (key, entries) in buckets {
+    for key in categoryOrder where key != "arabic" {
+        guard let entries = buckets[key], !entries.isEmpty else { continue }
         let def = categoryDefs.first(where: { $0.key == key })
 
         let groups: [LiveTVCategory.ChannelGroup] = entries
@@ -2154,7 +2126,6 @@ private func buildCategoryList(from buckets: [String: [(sectionName: String, ite
                     items: entry.items
                 )
             }
-            .sorted { $0.items.count > $1.items.count }
 
         let total = groups.reduce(0) { $0 + $1.items.count }
 

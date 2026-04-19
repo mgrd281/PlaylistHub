@@ -126,7 +126,8 @@ export async function GET(request: Request) {
       .select('*')
       .in('playlist_id', playlistIds)
       .eq('content_type', contentType)
-      .order('name', { ascending: true });
+      // Keep provider/source sequence (scan insert order) instead of re-sorting by name.
+      .order('created_at', { ascending: true });
 
     if (searchParam) {
       gQuery = gQuery.or(`name.ilike.%${searchParam}%,group_title.ilike.%${searchParam}%`);
@@ -144,9 +145,9 @@ export async function GET(request: Request) {
       grouped[g].push(item);
     }
 
+    // Preserve first-seen group order from source/provider data.
     const sections = Object.entries(grouped)
-      .map(([name, items]) => ({ name, items, count: items.length }))
-      .sort((a, b) => b.count - a.count);
+      .map(([name, items]) => ({ name, items, count: items.length }));
 
     return NextResponse.json({
       sections,
