@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
         const headers: Record<string, string> = {};
         const token = process.env.STREAM_PROXY_TOKEN;
         if (token) headers['X-Proxy-Token'] = token;
-        const res = await fetch(`${proxyUrl}${sep}url=${encodeURIComponent(apiUrl)}`, {
+        const res = await fetch(`${proxyUrl}${sep}mode=json&url=${encodeURIComponent(apiUrl)}`, {
           signal: AbortSignal.timeout(15000), headers,
         });
         if (res.ok) data = await res.json() as Record<string, unknown>;

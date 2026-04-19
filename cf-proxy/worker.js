@@ -97,6 +97,7 @@ export default {
 
     const url = new URL(request.url);
     const targetUrl = url.searchParams.get('url');
+    const mode = (url.searchParams.get('mode') || '').toLowerCase();
 
     if (!targetUrl) {
       return jsonResponse({ error: 'Missing url param' }, 400, request);
@@ -174,6 +175,19 @@ export default {
           502,
           request,
         );
+      }
+
+      // JSON/API passthrough mode (used by series episode resolver)
+      if (mode === 'json') {
+        const responseHeaders = {
+          'Content-Type': upstream.headers.get('content-type') || 'application/json',
+          ...corsHeaders(request),
+          'Cache-Control': 'no-store',
+        };
+        return new Response(upstream.body, {
+          status: upstream.status,
+          headers: responseHeaders,
+        });
       }
 
       if (!await isUsableStreamPayload(upstream, decodedUrl)) {
