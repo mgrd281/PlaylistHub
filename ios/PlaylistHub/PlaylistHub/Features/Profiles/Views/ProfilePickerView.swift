@@ -34,19 +34,8 @@ struct ProfilePickerView: View {
                 VStack(spacing: 0) {
                     Spacer()
 
-                    // Title
-                    Text("Who's watching?")
-                        .font(.system(size: 18, weight: .regular))
-                        .tracking(0.5)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 14)
-                        .padding(.bottom, 30)
-
-                    // Profile grid (profiles + add + edit tiles, always 3 cols)
-                    profileGrid
-                        .padding(.horizontal, 32)
-                        .padding(.bottom, geo.safeAreaInsets.bottom + 28)
+                    // Glass panel — elevated surface behind profiles
+                    profilePanel(safeBottom: geo.safeAreaInsets.bottom)
                 }
             }
         }
@@ -126,12 +115,67 @@ struct ProfilePickerView: View {
         .allowsHitTesting(false)
     }
 
+    // MARK: - Profile Panel (glass surface behind profiles)
+
+    private func profilePanel(safeBottom: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            // Heading
+            Text("Who's watching?")
+                .font(.system(size: 17, weight: .regular))
+                .tracking(0.4)
+                .foregroundStyle(.white.opacity(0.8))
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
+                .padding(.top, 28)
+                .padding(.bottom, 24)
+
+            // Profile grid
+            profileGrid
+                .padding(.horizontal, 28)
+                .padding(.bottom, max(safeBottom, 16) + 12)
+        }
+        .frame(maxWidth: .infinity)
+        .background(
+            ZStack {
+                // Curved glass panel
+                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32)
+                    .fill(.ultraThinMaterial.opacity(0.55))
+
+                // Subtle warm tint on the glass
+                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.04),
+                                Color.white.opacity(0.01),
+                                Color.clear
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                // Top edge highlight
+                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [.white.opacity(0.12), .white.opacity(0.04), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.5
+                    )
+            }
+            .ignoresSafeArea(edges: .bottom)
+        )
+    }
+
     // MARK: - Profile Grid (profiles + add + edit, always 3 columns)
 
     private var profileGrid: some View {
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 20), count: 3)
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
 
-        return LazyVGrid(columns: cols, spacing: 22) {
+        return LazyVGrid(columns: cols, spacing: 20) {
             // Real profiles
             ForEach(Array(profileManager.profiles.enumerated()), id: \.element.id) { index, profile in
                 profileTile(profile, index: index)
@@ -159,12 +203,18 @@ struct ProfilePickerView: View {
                 }
             }
         }
-        .frame(maxWidth: 380)
+        .frame(maxWidth: 360)
     }
+
+    private let tileSize: CGFloat = 92
+    private let tileRadius: CGFloat = 20
 
     private func profileTile(_ profile: UserProfile, index: Int) -> some View {
         let colors = UserProfile.avatarColors[profile.avatarColorIndex % UserProfile.avatarColors.count]
         let stagger = Double(index) * 0.06
+        let isSelected = selectedId == profile.id
+        let topColor = Color(red: colors.top.r, green: colors.top.g, blue: colors.top.b)
+        let botColor = Color(red: colors.bot.r, green: colors.bot.g, blue: colors.bot.b)
 
         return Button {
             guard !isEditing else {
@@ -175,54 +225,56 @@ struct ProfilePickerView: View {
         } label: {
             VStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    // Background gradient
+                    RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    Color(red: colors.top.r, green: colors.top.g, blue: colors.top.b),
-                                    Color(red: colors.bot.r, green: colors.bot.g, blue: colors.bot.b)
-                                ],
+                                colors: [topColor, botColor],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 100, height: 100)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.white.opacity(0.12), .clear],
-                                        startPoint: .topLeading,
-                                        endPoint: .center
-                                    )
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(
-                                    .white.opacity(selectedId == profile.id ? 1.0 : 0),
-                                    lineWidth: selectedId == profile.id ? 2.5 : 0
-                                )
-                        )
+                        .frame(width: tileSize, height: tileSize)
 
+                    // Inner highlight (top-left gloss)
+                    RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [.white.opacity(0.18), .white.opacity(0.04), .clear],
+                                startPoint: .topLeading,
+                                endPoint: .center
+                            )
+                        )
+                        .frame(width: tileSize, height: tileSize)
+
+                    // Avatar icon
                     Image(systemName: profile.isKids ? "teddybear.fill" : profile.avatarIcon)
-                        .font(.system(size: profile.isKids ? 36 : 38, weight: .medium))
+                        .font(.system(size: profile.isKids ? 34 : 36, weight: .medium))
                         .foregroundStyle(.white.opacity(0.95))
+                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
 
+                    // Selection ring
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
+                            .strokeBorder(.white, lineWidth: 2.5)
+                            .frame(width: tileSize, height: tileSize)
+                    }
+
+                    // Edit badge
                     if isEditing {
                         ZStack {
                             Circle()
                                 .fill(.ultraThinMaterial)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 26, height: 26)
                             Image(systemName: "pencil")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(.white)
                         }
-                        .offset(x: 36, y: -36)
+                        .offset(x: (tileSize / 2) - 8, y: -(tileSize / 2) + 8)
                         .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .scaleEffect(selectedId == profile.id ? 1.06 : 1.0)
+                .scaleEffect(isSelected ? 1.05 : 1.0)
                 .animation(.spring(response: 0.3, dampingFraction: 0.65), value: selectedId)
                 .rotationEffect(isEditing ? .degrees(index % 2 == 0 ? -1.2 : 1.2) : .zero)
                 .animation(
@@ -233,44 +285,60 @@ struct ProfilePickerView: View {
                 )
 
                 Text(profile.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
+                    .frame(width: tileSize + 10)
             }
             .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 18)
-            .animation(.easeOut(duration: 0.5).delay(0.15 + stagger), value: appeared)
+            .offset(y: appeared ? 0 : 16)
+            .animation(.easeOut(duration: 0.5).delay(0.12 + stagger), value: appeared)
         }
         .buttonStyle(.plain)
     }
 
-    /// Uniform action tile for Add / Edit — matches profile tile size
+    /// Uniform action tile for Add / Edit — premium glass style matching profile tiles
     private func actionTile(icon: String, label: String, index: Int, action: @escaping () -> Void) -> some View {
         let stagger = Double(index) * 0.06
 
         return Button(action: action) {
             VStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.white.opacity(0.08))
-                        .frame(width: 100, height: 100)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(.white.opacity(0.10), lineWidth: 0.5)
-                        )
+                    // Tinted glass background
+                    RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
+                        .fill(.white.opacity(0.06))
+                        .frame(width: tileSize, height: tileSize)
 
+                    // Subtle inner glow
+                    RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [.white.opacity(0.06), .clear],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: tileSize, height: tileSize)
+
+                    // Border
+                    RoundedRectangle(cornerRadius: tileRadius, style: .continuous)
+                        .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                        .frame(width: tileSize, height: tileSize)
+
+                    // Icon
                     Image(systemName: icon)
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .font(.system(size: 26, weight: .light))
+                        .foregroundStyle(.white.opacity(0.45))
                 }
 
                 Text(label)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .frame(width: tileSize + 10)
             }
             .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 18)
-            .animation(.easeOut(duration: 0.5).delay(0.15 + stagger), value: appeared)
+            .offset(y: appeared ? 0 : 16)
+            .animation(.easeOut(duration: 0.5).delay(0.12 + stagger), value: appeared)
         }
         .buttonStyle(.plain)
     }
