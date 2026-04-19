@@ -757,7 +757,7 @@ final class PlayerViewModel: ObservableObject {
                 case .began:
                     self.wasPlayingBeforeBackground = self.player.timeControlStatus == .playing
                 case .ended:
-                    let optionsValue = info[AVAudioSession.InterruptionOptions.rawValue] as? UInt ?? 0
+                    let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
                     let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                     if options.contains(.shouldResume) && self.wasPlayingBeforeBackground {
                         try? AVAudioSession.sharedInstance().setActive(true)
