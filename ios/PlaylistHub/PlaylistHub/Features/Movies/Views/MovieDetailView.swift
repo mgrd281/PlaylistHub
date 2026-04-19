@@ -1,4 +1,6 @@
 import SwiftUI
+import AVKit
+import AVFoundation
 
 // MARK: - Netflix-Style Detail View (Movies & Series)
 
@@ -11,22 +13,30 @@ struct MovieDetailView: View {
     @State private var relatedItems: [PlaylistItem] = []
     @State private var isLoadingRelated = true
 
-    // Parse metadata from groupTitle
+    // My List
+    @StateObject private var myList = MyListManager.shared
+    private var isInMyList: Bool { myList.isInList(item.streamUrl) }
+
+    // Rating (local)
+    @State private var showRating = false
+    @State private var userRating: Int = 0
+    @AppStorage("rating_") private var ratingStorage: String = ""
+    private var ratingKey: String { "r_\(item.streamUrl.hashValue)" }
+
+    // Preview player
+    @StateObject private var previewVM = PreviewPlayerModel()
+
+    // Parse metadata
     private var genre: String? {
         guard let group = item.groupTitle else { return nil }
-        let cleaned = group
-            .components(separatedBy: "|").last?
-            .trimmingCharacters(in: .whitespaces)
+        let cleaned = group.components(separatedBy: "|").last?.trimmingCharacters(in: .whitespaces)
         return cleaned?.isEmpty == true ? nil : cleaned
     }
 
     private var categoryTag: String? {
         guard let group = item.groupTitle else { return nil }
         let parts = group.components(separatedBy: "|")
-        if parts.count > 1 {
-            return parts.first?.trimmingCharacters(in: .whitespaces)
-        }
-        return nil
+        return parts.count > 1 ? parts.first?.trimmingCharacters(in: .whitespaces) : nil
     }
 
     private var typeLabel: String {
@@ -66,10 +76,17 @@ struct MovieDetailView: View {
         .fullScreenCover(isPresented: $showPlayer) {
             PlayerView(item: item, channelList: channelList)
         }
-        .task { await loadRelated() }
+        .task {
+            await loadRelated()
+            loadSavedRating()
+            previewVM.startPreview(for: item)
+        }
+        .onDisappear {
+            previewVM.stop()
+        }
     }
 
-    // MARK: - Hero Section
+    // MARK: - Hero Section (Video Preview + Artwork Fallback)
 
     private var heroSection: some View {
         GeometryReader { geo in
@@ -77,7 +94,14 @@ struct MovieDetailView: View {
             let heroHeight: CGFloat = width * 1.3
 
             ZStack(alignment: .bottom) {
-                if let url = item.resolvedLogoURL {
+                // Video preview layer (muted, autoplaying)
+                if previewVM.isReady {
+                    VideoPlayer(player: previewVM.player)
+                        .disabled(true) // no user interaction on preview
+                        .frame(width: width, height: heroHeight)
+                        .clipped()
+                        .transition(.opacity)
+                } else if let url = item.resolvedLogoURL {
                     CachedAsyncImage(url: url) {
                         heroFallback(width: width, height: heroHeight)
                     }
@@ -98,8 +122,28 @@ struct MovieDetailView: View {
                     )
                     .frame(height: heroHeight * 0.45)
                 }
+
+                // Mute toggle (bottom-right of hero)
+                if previewVM.isReady {
+                    HStack {
+                        Spacer()
+                        Button {
+                            previewVM.toggleMute()
+                        } label: {
+                            Image(systemName: previewVM.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 30, height: 30)
+                                .background(.black.opacity(0.5), in: Circle())
+                                .overlay(Circle().strokeBorder(.white.opacity(0.2), lineWidth: 0.5))
+                        }
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 80)
+                    }
+                }
             }
             .frame(width: width, height: heroHeight)
+            .animation(.easeInOut(duration: 0.5), value: previewVM.isReady)
         }
         .aspectRatio(1 / 1.3, contentMode: .fit)
     }
@@ -215,9 +259,16 @@ struct MovieDetailView: View {
                     .padding(.bottom, 16)
             }
 
-            // Secondary actions
+            // Secondary actions (functional)
             secondaryActionsRow
                 .padding(.bottom, 20)
+
+            // Rating popover
+            if showRating {
+                ratingPopover
+                    .padding(.bottom, 16)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
 
             // Divider
             Rectangle()
@@ -236,26 +287,100 @@ struct MovieDetailView: View {
         .padding(.top, -20)
     }
 
-    // MARK: - Secondary Actions Row
+    // MARK: - Secondary Actions Row (Functional)
 
     private var secondaryActionsRow: some View {
         HStack(spacing: 40) {
-            actionButton(icon: "plus", label: "My List")
-            actionButton(icon: "hand.thumbsup", label: "Rate")
-            actionButton(icon: "paperplane", label: "Share")
+            // My List — toggle
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    myList.toggle(item: item)
+                }
+            } label: {
+                VStack(spacing: 6) {
+                    Image(systemName: isInMyList ? "checkmark" : "plus")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(isInMyList ? .white : .white.opacity(0.65))
+                    Text("My List")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(isInMyList ? .white.opacity(0.7) : .white.opacity(0.4))
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Rate — toggle star popover
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showRating.toggle()
+                }
+            } label: {
+                VStack(spacing: 6) {
+                    Image(systemName: userRating > 0 ? "hand.thumbsup.fill" : "hand.thumbsup")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(userRating > 0 ? .white : .white.opacity(0.65))
+                    Text("Rate")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(userRating > 0 ? .white.opacity(0.7) : .white.opacity(0.4))
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Share — native share sheet
+            ShareLink(
+                item: item.name,
+                subject: Text(item.name),
+                message: Text("Check out \(item.name) on PlaylistHub!")
+            ) {
+                VStack(spacing: 6) {
+                    Image(systemName: "paperplane")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(.white.opacity(0.65))
+                    Text("Share")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+            }
+
             Spacer()
         }
     }
 
-    private func actionButton(icon: String, label: String) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(.white.opacity(0.65))
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.4))
+    // MARK: - Rating Popover
+
+    private var ratingPopover: some View {
+        HStack(spacing: 12) {
+            ForEach(1...5, id: \.self) { star in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        userRating = star == userRating ? 0 : star
+                        saveRating()
+                    }
+                } label: {
+                    Image(systemName: star <= userRating ? "star.fill" : "star")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundStyle(star <= userRating ? .yellow : .white.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func loadSavedRating() {
+        let all = UserDefaults.standard.dictionary(forKey: "ph_ratings") as? [String: Int] ?? [:]
+        userRating = all[ratingKey] ?? 0
+    }
+
+    private func saveRating() {
+        var all = UserDefaults.standard.dictionary(forKey: "ph_ratings") as? [String: Int] ?? [:]
+        if userRating > 0 {
+            all[ratingKey] = userRating
+        } else {
+            all.removeValue(forKey: ratingKey)
+        }
+        UserDefaults.standard.set(all, forKey: "ph_ratings")
     }
 
     // MARK: - Tabs

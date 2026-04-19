@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0494323B814D55D2E5DB2EC5 /* PreviewPlayerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F55932515152FFCBFC68BF1 /* PreviewPlayerModel.swift */; };
 		068136FA7853A2251574FF31 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00FC575C15D1FC08C386E3E /* RootView.swift */; };
 		0C3E1DFA04AF1C8637B9CE66 /* LiveTVView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233DA00F7ADF3C35385B38D1 /* LiveTVView.swift */; };
 		171FE8A4B289F204C75DDC28 /* PlaylistCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0966A498372E5FF2DEC1A7 /* PlaylistCache.swift */; };
@@ -29,6 +30,7 @@
 		64541CBBEC9AFC638A6CA863 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93BC1FCA187ABB8E7620396B /* ProfileManager.swift */; };
 		7A493F8893D1A1E127ABAD32 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C3149B3D0FB1ED1D81315FD /* ImageCache.swift */; };
 		89E3B44B9C2F67987FF448A7 /* RemoteConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF1BC6C8F9C244DB7CBE879 /* RemoteConfig.swift */; };
+		A51C296DAA47B9CEBF31F920 /* MyListManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C6F70D9634861280DB5A54 /* MyListManager.swift */; };
 		B7C169D965E864F99B184B92 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B03BB81AD4CB797EB55479 /* PlayerView.swift */; };
 		BC19BFF44FADABAF25BC6741 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678583869343B62DE3381494 /* LoginView.swift */; };
 		C80E1B55970AC4382CBC18C7 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDA21138AB82340B51337E1 /* KeychainHelper.swift */; };
@@ -54,11 +56,12 @@
 		1C3149B3D0FB1ED1D81315FD /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
 		233DA00F7ADF3C35385B38D1 /* LiveTVView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVView.swift; sourceTree = "<group>"; };
 		23AD53101C88C3935A572D80 /* DeviceInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceInfoView.swift; sourceTree = "<group>"; };
-		30DAEBF3548C6795AF53D58B /* PlaylistHub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PlaylistHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		30DAEBF3548C6795AF53D58B /* PlaylistHub.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PlaylistHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		33E54D16CFBEA2671A756307 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		3AFA899C80ACE050383B6904 /* BrowsingMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowsingMemory.swift; sourceTree = "<group>"; };
 		44CD09BBC1D508CF1F26967D /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		4595B55B474ADFEEF0A7BB75 /* PlaylistsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistsView.swift; sourceTree = "<group>"; };
+		45C6F70D9634861280DB5A54 /* MyListManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyListManager.swift; sourceTree = "<group>"; };
 		521BB1FB92D63A0234B463F2 /* MoviesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviesView.swift; sourceTree = "<group>"; };
 		59CC380CBFFF3976CE874B57 /* MovieDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieDetailView.swift; sourceTree = "<group>"; };
 		5B0966A498372E5FF2DEC1A7 /* PlaylistCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistCache.swift; sourceTree = "<group>"; };
@@ -68,6 +71,7 @@
 		79D87095ABF15472C7518312 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		8CDA21138AB82340B51337E1 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		8CEE276D84134D7B9A8B893B /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
+		8F55932515152FFCBFC68BF1 /* PreviewPlayerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewPlayerModel.swift; sourceTree = "<group>"; };
 		93BC1FCA187ABB8E7620396B /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		982D7813C33AD3CD1F313FAD /* ChannelHealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelHealthManager.swift; sourceTree = "<group>"; };
 		A16A13EF96F0187ACFC70B2A /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
@@ -260,7 +264,9 @@
 				02424ED07E2345E8FEE76928 /* DeviceManager.swift */,
 				1C3149B3D0FB1ED1D81315FD /* ImageCache.swift */,
 				8CDA21138AB82340B51337E1 /* KeychainHelper.swift */,
+				45C6F70D9634861280DB5A54 /* MyListManager.swift */,
 				5B0966A498372E5FF2DEC1A7 /* PlaylistCache.swift */,
+				8F55932515152FFCBFC68BF1 /* PreviewPlayerModel.swift */,
 				EBF1BC6C8F9C244DB7CBE879 /* RemoteConfig.swift */,
 				BB231FECDEB482DBE4A39EEB /* SupabaseManager.swift */,
 				B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */,
@@ -417,6 +423,7 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					D64152630130ED79400E7374 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -467,11 +474,13 @@
 				EAB7DE81375B4DB6185C79C7 /* Models.swift in Sources */,
 				1AE809DE8F6FCD04463A3A09 /* MovieDetailView.swift in Sources */,
 				432D8F57ED08184F94952F3A /* MoviesView.swift in Sources */,
+				A51C296DAA47B9CEBF31F920 /* MyListManager.swift in Sources */,
 				B7C169D965E864F99B184B92 /* PlayerView.swift in Sources */,
 				171FE8A4B289F204C75DDC28 /* PlaylistCache.swift in Sources */,
 				4CB89FBAEBDE54A750B46237 /* PlaylistDetailView.swift in Sources */,
 				4C83593F06AEC0A781D5352B /* PlaylistHubApp.swift in Sources */,
 				C924E28DAF04FC3EFB6A2D4A /* PlaylistsView.swift in Sources */,
+				0494323B814D55D2E5DB2EC5 /* PreviewPlayerModel.swift in Sources */,
 				64541CBBEC9AFC638A6CA863 /* ProfileManager.swift in Sources */,
 				3DB514BF85F7328F7CCCECBC /* ProfilePickerView.swift in Sources */,
 				89E3B44B9C2F67987FF448A7 /* RemoteConfig.swift in Sources */,
@@ -496,7 +505,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 3227J7CBXY;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = PlaylistHub/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -518,7 +527,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 3227J7CBXY;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = PlaylistHub/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
