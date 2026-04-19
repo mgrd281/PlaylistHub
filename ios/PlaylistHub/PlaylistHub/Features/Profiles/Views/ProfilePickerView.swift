@@ -64,14 +64,14 @@ struct ProfilePickerView: View {
                 .opacity(artworkVM.loadedImages.isEmpty ? 1 : 0)
                 .animation(.easeInOut(duration: 1.0), value: artworkVM.loadedImages.isEmpty)
 
-            // Hero artwork — single sharp image fills upper ~60%, top-anchored
+            // Hero artwork — fills upper ~70%, top-anchored
             ForEach(artworkVM.loadedImages.indices, id: \.self) { idx in
                 let entry = artworkVM.loadedImages[idx]
 
                 Image(uiImage: entry.image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: size.width, height: size.height * 0.60)
+                    .frame(width: size.width, height: size.height * 0.70)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
                     // Subtle Ken Burns zoom
@@ -83,18 +83,19 @@ struct ProfilePickerView: View {
         }
     }
 
+    private let panelColor = Color(white: 0.11)
+
     private var cinematicOverlay: some View {
         ZStack {
-            // Bottom fade — artwork visible top ~50%, fades into dark
+            // Gradient fades artwork into the panel color seamlessly — NO black gap
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: .clear, location: 0.32),
-                    .init(color: .black.opacity(0.10), location: 0.40),
-                    .init(color: .black.opacity(0.35), location: 0.46),
-                    .init(color: .black.opacity(0.65), location: 0.52),
-                    .init(color: .black.opacity(0.88), location: 0.58),
-                    .init(color: .black, location: 0.65),
+                    .init(color: .clear, location: 0.38),
+                    .init(color: .black.opacity(0.20), location: 0.46),
+                    .init(color: .black.opacity(0.55), location: 0.53),
+                    .init(color: .black.opacity(0.85), location: 0.60),
+                    .init(color: .black, location: 0.66),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -110,29 +111,36 @@ struct ProfilePickerView: View {
         .allowsHitTesting(false)
     }
 
-    // MARK: - Bottom Panel (dark charcoal surface behind profiles)
+    // MARK: - Bottom Panel (blends with gradient — no visible edge)
 
     private func bottomPanel(safeBottom: CGFloat) -> some View {
         VStack(spacing: 0) {
-            // Heading — small, centered, light gray
+            // Heading
             Text("Who's watching?")
-                .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(.white.opacity(0.65))
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(.white.opacity(0.70))
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 8)
                 .animation(.easeOut(duration: 0.6).delay(0.1), value: appeared)
-                .padding(.top, 20)
-                .padding(.bottom, 18)
+                .padding(.top, 24)
+                .padding(.bottom, 20)
 
             // Profile grid
             profileGrid
                 .padding(.horizontal, 20)
-                .padding(.bottom, max(safeBottom, 16) + 4)
+                .padding(.bottom, max(safeBottom, 16) + 8)
         }
         .frame(maxWidth: .infinity)
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
-                .fill(Color(white: 0.11))
+            // Subtle curved panel — slightly lighter than black, blends with gradient endpoint
+            UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24)
+                .fill(
+                    LinearGradient(
+                        colors: [panelColor.opacity(0.0), panelColor, panelColor],
+                        startPoint: .top,
+                        endPoint: .init(x: 0.5, y: 0.25)
+                    )
+                )
                 .ignoresSafeArea(edges: .bottom)
         )
     }
