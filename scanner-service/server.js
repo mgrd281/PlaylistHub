@@ -139,6 +139,64 @@ function normalizeUrlForFetch(value) {
   return String(value).replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
 }
 
+function isManifestRequest(url) {
+  return /\.m3u8?(?:[?#]|$)/i.test(url);
+}
+
+function hasClearlyNonMediaType(contentType) {
+  return (
+    contentType.includes('text/html') ||
+    contentType.includes('application/json') ||
+    contentType.includes('application/problem+json') ||
+    contentType.includes('application/xml') ||
+    contentType.includes('text/xml')
+  );
+}
+
+async function isUsableStreamPayload(response, targetUrl) {
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  if (hasClearlyNonMediaType(contentType)) return false;
+
+  const manifestExpected = isManifestRequest(targetUrl) || contentType.includes('mpegurl');
+  if (manifestExpected) {
+    try {
+      const preview = (await response.clone().text()).slice(0, 8192).trimStart();
+      if (!preview) return false;
+      const lower = preview.toLowerCase();
+      if (
+        lower.startsWith('<!doctype html') ||
+        lower.startsWith('<html') ||
+        lower.startsWith('{') ||
+        lower.startsWith('[')
+      ) {
+        return false;
+      }
+      return preview.includes('#EXTM3U') || /#EXT-X-|#EXTINF/.test(preview);
+    } catch {
+      return false;
+    }
+  }
+
+  if (contentType.startsWith('text/')) {
+    try {
+      const preview = (await response.clone().text()).slice(0, 2048).toLowerCase();
+      if (
+        preview.includes('<html') ||
+        preview.includes('error') ||
+        preview.includes('not found') ||
+        preview.includes('forbidden') ||
+        preview.includes('access denied')
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 async function fetchWithManualRedirects(inputUrl, headers, timeoutMs = 10000, maxRedirects = 8) {
   let currentUrl = normalizeUrlForFetch(inputUrl);
 
@@ -234,7 +292,7 @@ const server = http.createServer(async (req, res) => {
         if (result.status === 'fulfilled') {
           const attempt = result.value;
           lastStatus = attempt.status;
-          if (attempt.ok || attempt.status === 206) {
+          if ((attempt.ok || attempt.status === 206) && await isUsableStreamPayload(attempt, targetUrl)) {
             upstream = attempt;
             break;
           }

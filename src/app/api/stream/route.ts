@@ -19,6 +19,65 @@ const VLC_HEADERS: Record<string, string> = {
   Accept: '*/*',
 };
 
+function isManifestRequest(url: string): boolean {
+  return /\.m3u8?(?:[?#]|$)/i.test(url);
+}
+
+function hasClearlyNonMediaType(contentType: string): boolean {
+  return (
+    contentType.includes('text/html') ||
+    contentType.includes('application/json') ||
+    contentType.includes('application/problem+json') ||
+    contentType.includes('application/xml') ||
+    contentType.includes('text/xml')
+  );
+}
+
+async function isUsableStreamPayload(res: Response, targetUrl: string): Promise<boolean> {
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  if (hasClearlyNonMediaType(contentType)) return false;
+
+  const manifestExpected = isManifestRequest(targetUrl) || contentType.includes('mpegurl');
+  if (manifestExpected) {
+    try {
+      const preview = (await res.clone().text()).slice(0, 8192).trimStart();
+      if (!preview) return false;
+      const lower = preview.toLowerCase();
+      if (
+        lower.startsWith('<!doctype html') ||
+        lower.startsWith('<html') ||
+        lower.startsWith('{') ||
+        lower.startsWith('[')
+      ) {
+        return false;
+      }
+      return preview.includes('#EXTM3U') || /#EXT-X-|#EXTINF/.test(preview);
+    } catch {
+      return false;
+    }
+  }
+
+  // Some providers respond with text/plain error pages while still returning 200.
+  if (contentType.startsWith('text/')) {
+    try {
+      const preview = (await res.clone().text()).slice(0, 2048).toLowerCase();
+      if (
+        preview.includes('<html') ||
+        preview.includes('error') ||
+        preview.includes('not found') ||
+        preview.includes('forbidden') ||
+        preview.includes('access denied')
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /** Try fetching through a Scanner Service endpoint */
 async function fetchViaScannerUrl(
   base: string,
@@ -32,7 +91,7 @@ async function fetchViaScannerUrl(
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (rangeHeader) headers['Range'] = rangeHeader;
     const res = await fetch(url, { signal: AbortSignal.timeout(12000), headers });
-    if (res.ok || res.status === 206) return res;
+    if ((res.ok || res.status === 206) && await isUsableStreamPayload(res, targetUrl)) return res;
   } catch { /* timeout or network error */ }
   return null;
 }
@@ -47,7 +106,7 @@ async function fetchViaCfWorker(targetUrl: string, rangeHeader?: string | null):
     const headers: Record<string, string> = {};
     if (rangeHeader) headers['Range'] = rangeHeader;
     const res = await fetch(url, { signal: AbortSignal.timeout(10000), headers });
-    if (res.ok || res.status === 206) return res;
+    if ((res.ok || res.status === 206) && await isUsableStreamPayload(res, targetUrl)) return res;
   } catch { /* timeout or network error */ }
   return null;
 }
@@ -66,7 +125,7 @@ async function directFetch(
       redirect: 'follow',
       headers,
     });
-    if (res.ok || res.status === 206) return res;
+    if ((res.ok || res.status === 206) && await isUsableStreamPayload(res, url)) return res;
   } catch { /* failed */ }
   return null;
 }
