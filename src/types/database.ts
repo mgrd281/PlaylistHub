@@ -2,14 +2,33 @@ export type PlaylistType = 'M3U' | 'M3U8' | 'XTREAM';
 export type PlaylistStatus = 'pending' | 'scanning' | 'active' | 'error' | 'inactive';
 export type ScanStatus = 'running' | 'completed' | 'failed';
 export type ContentType = 'channel' | 'movie' | 'series' | 'uncategorized';
+export type UserRole = 'user' | 'admin';
 
 export interface Profile {
   id: string;
   email: string;
   display_name: string | null;
   avatar_url: string | null;
+  role: UserRole;
   created_at: string;
   updated_at: string;
+}
+
+/* ── Admin: Customer overview (aggregated) ── */
+export interface AdminCustomer {
+  id: string;
+  email: string;
+  display_name: string | null;
+  role: UserRole;
+  created_at: string;
+  updated_at: string;
+  playlists_count: number;
+  devices_count: number;
+  active_devices_count: number;
+  total_channels: number;
+  total_movies: number;
+  total_series: number;
+  last_activity: string | null; // most recent device heartbeat or playlist scan
 }
 
 export interface Playlist {

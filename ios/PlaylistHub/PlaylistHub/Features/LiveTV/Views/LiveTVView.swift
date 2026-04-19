@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 
 // MARK: - Playlist info from browse API
 
@@ -8,11 +9,22 @@ struct BrowsePlaylistInfo: Codable, Identifiable {
     let channels_count: Int
 }
 
-// MARK: - Live TV Browser — playlist-first IPTV navigation
+// MARK: - Live TV — Real IPTV Architecture
+//
+// Layout (after playlist selection):
+//   ┌──────────────────────────────────┐
+//   │  Inline Player (16:9)            │  ← Video area, tap for controls
+//   │  Channel Name · Group            │
+//   ├──────────────────────────────────┤
+//   │ ⚽Sports │📰News │🧸Kids │ ...  │  ← Category tabs (scroll)
+//   ├──────────────────────────────────┤
+//   │ [All] [Bein] [Sky Sport] [ESPN]  │  ← Sub-group pills (optional)
+//   ├──────────────────────────────────┤
+//   │  Channel list (scrollable)       │  ← Tap to play, active highlighted
+//   └──────────────────────────────────┘
 
 struct LiveTVView: View {
     @StateObject private var vm = LiveTVViewModel()
-    @State private var selectedItem: PlaylistItem?
 
     var body: some View {
         NavigationStack {
@@ -23,46 +35,33 @@ struct LiveTVView: View {
                     noPlaylistsState
                 } else if vm.activePlaylist == nil {
                     playlistPickerPhase
-                } else if let cat = vm.activeCategory {
-                    channelListPhase(cat)
-                } else if vm.isSearching {
-                    searchResultsView
                 } else {
-                    categoryGridPhase
+                    iptvBrowser
                 }
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if vm.activeCategory == nil {
-                    ToolbarItem(placement: .principal) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "tv.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.red)
-                            Text("Live TV")
-                                .font(.headline)
-                        }
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "tv.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.red)
+                        Text("Live TV")
+                            .font(.headline)
                     }
                 }
-                // Playlist switcher in toolbar (when browsing channels)
                 if vm.activePlaylist != nil && vm.playlists.count > 1 {
                     ToolbarItem(placement: .topBarTrailing) {
                         playlistSwitcherMenu
                     }
                 }
             }
-            .fullScreenCover(item: $selectedItem) { item in
-                PlayerView(
-                    item: item,
-                    channelList: vm.currentChannelList
-                )
-            }
             .task { await vm.loadPlaylists() }
         }
     }
 
-    // MARK: - Phase 0: Playlist Loading
+    // MARK: - Phase 0: Loading skeleton
 
     private var playlistLoadingSkeleton: some View {
         VStack(spacing: 16) {
@@ -88,11 +87,9 @@ struct LiveTVView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
             if vm.playlistsError != nil {
-                Button("Retry") {
-                    Task { await vm.loadPlaylists() }
-                }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.red)
+                Button("Retry") { Task { await vm.loadPlaylists() } }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.red)
             } else {
                 Text("Add a playlist to start watching Live TV")
                     .font(.caption)
@@ -107,21 +104,18 @@ struct LiveTVView: View {
     private var playlistPickerPhase: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Header
                 VStack(spacing: 8) {
                     Image(systemName: "list.bullet.rectangle.portrait.fill")
                         .font(.system(size: 36, weight: .light))
                         .foregroundStyle(.red.opacity(0.7))
                     Text("Select a Playlist")
                         .font(.title3.weight(.bold))
-                    Text("Choose which playlist to browse.\nChannels are scoped to your selection.")
+                    Text("Choose which playlist to browse.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
                 }
                 .padding(.top, 24)
 
-                // Playlist cards
                 VStack(spacing: 10) {
                     ForEach(vm.playlists) { p in
                         Button {
@@ -136,7 +130,6 @@ struct LiveTVView: View {
                                     .frame(width: 44, height: 44)
                                     .background(.red.opacity(0.1))
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
-
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(p.name)
                                         .font(.subheadline.weight(.semibold))
@@ -146,9 +139,7 @@ struct LiveTVView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-
                                 Spacer()
-
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.tertiary)
@@ -165,7 +156,7 @@ struct LiveTVView: View {
         }
     }
 
-    // MARK: - Playlist Switcher Menu
+    // MARK: - Playlist Switcher
 
     private var playlistSwitcherMenu: some View {
         Menu {
@@ -202,237 +193,200 @@ struct LiveTVView: View {
         }
     }
 
-    // MARK: - Phase 2: Category Grid (playlist selected)
+    // MARK: - Phase 2: IPTV Browser (inline player + categories + channels)
 
-    private var categoryGridPhase: some View {
+    private var iptvBrowser: some View {
         VStack(spacing: 0) {
-            // Search bar scoped to playlist
-            searchBar(text: $vm.globalSearch, placeholder: "Search in \(vm.activePlaylist?.name ?? "channels")...")
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-
             if vm.isLoading {
                 loadingSkeleton
             } else if vm.categories.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    // Stats
-                    HStack(spacing: 4) {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                        Text("\(vm.totalChannels) channels · \(vm.categories.count) categories")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                // Inline player area
+                inlinePlayerArea
 
-                    // Category tiles
-                    LazyVGrid(
-                        columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-                        spacing: 12
-                    ) {
-                        ForEach(vm.categories) { cat in
-                            CategoryTile(category: cat) {
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    vm.activeCategory = cat
-                                }
-                            }
-                        }
+                // Search bar
+                searchBar
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+
+                // Global search results or browsing UI
+                if vm.isSearching {
+                    searchResultsList
+                } else {
+                    // Category tabs
+                    categoryTabs
+
+                    // Sub-group pills (when active category has multiple groups)
+                    if let cat = vm.activeCategory, cat.groups.count > 1 {
+                        subGroupPills(cat)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 40)
+
+                    Divider()
+                        .padding(.top, 4)
+
+                    // Channel list
+                    channelList
                 }
             }
         }
     }
 
-    // MARK: - Phase 2: Channel List
+    // MARK: - Inline Player Area
 
-    private func channelListPhase(_ category: LiveTVCategory) -> some View {
-        VStack(spacing: 0) {
-            // Sticky header
-            VStack(spacing: 10) {
-                // Back + title
-                HStack(spacing: 10) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            vm.activeCategory = nil
-                            vm.channelSearch = ""
-                            vm.activeGroup = nil
-                        }
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 32, height: 32)
-                            .background(Color(.systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+    private var inlinePlayerArea: some View {
+        ZStack {
+            Color.black
+
+            if let player = vm.inlinePlayer {
+                VideoSurface(player: player)
+                    .transition(.opacity)
+
+                // Buffering
+                if vm.playerBuffering {
+                    ProgressView()
+                        .scaleEffect(1.1)
+                        .tint(.white)
+                }
+
+                // Error
+                if let err = vm.playerError {
+                    VStack(spacing: 8) {
+                        Image(systemName: "wifi.exclamationmark")
+                            .font(.system(size: 20, weight: .light))
+                            .foregroundStyle(.white.opacity(0.4))
+                        Text(err)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.5))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                        Button("Retry") { vm.retryCurrentChannel() }
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 5)
+                            .background(.red, in: Capsule())
                     }
+                    .padding(12)
+                }
 
-                    Text(category.icon)
-                        .font(.title2)
+                // Controls overlay on tap
+                if vm.showPlayerControls {
+                    playerControlsOverlay
+                        .transition(.opacity)
+                }
+            } else {
+                // No channel selected yet
+                VStack(spacing: 8) {
+                    Image(systemName: "play.tv.fill")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(.white.opacity(0.2))
+                    Text("Select a channel")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+            }
 
-                    Text(category.label)
-                        .font(.headline)
+            // Now-playing info bar at bottom
+            if vm.playingItem != nil {
+                VStack {
+                    Spacer()
+                    nowPlayingBar
+                }
+            }
+        }
+        .aspectRatio(16/9, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 0))
+        .onTapGesture {
+            if vm.playingItem != nil {
+                vm.togglePlayerControls()
+            }
+        }
+    }
+
+    private var nowPlayingBar: some View {
+        HStack(spacing: 8) {
+            if vm.playingItem != nil {
+                Circle().fill(.red).frame(width: 6, height: 6)
+                    .shadow(color: .red.opacity(0.5), radius: 3)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(vm.playingItem?.name ?? "")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                if let group = vm.playingItem?.groupTitle {
+                    Text(group)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.4))
                         .lineLimit(1)
-
-                    Text("\(vm.displayItems.count)")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color(.systemGray5))
-                        .clipShape(Capsule())
-
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-
-                // In-category search
-                searchBar(text: $vm.channelSearch, placeholder: "Search in \(category.label)...")
-                    .padding(.horizontal, 16)
-
-                // Sub-group pills
-                if category.groups.count > 1 {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            GroupPill(name: "All", count: category.totalCount, isSelected: vm.activeGroup == nil) {
-                                vm.activeGroup = nil
-                            }
-                            ForEach(category.groups, id: \.name) { group in
-                                GroupPill(
-                                    name: group.name,
-                                    count: group.items.count,
-                                    isSelected: vm.activeGroup == group.name
-                                ) {
-                                    vm.activeGroup = vm.activeGroup == group.name ? nil : group.name
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                    }
                 }
             }
-            .padding(.vertical, 10)
-            .background(.bar)
-
-            Divider()
-
-            // Channel list
-            if vm.displayItems.isEmpty {
-                VStack(spacing: 12) {
-                    Spacer()
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(.quaternary)
-                    Text("No channels found")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    if !vm.channelSearch.isEmpty {
-                        Button("Clear search") {
-                            vm.channelSearch = ""
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                    }
-                    Spacer()
-                }
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(vm.displayItems) { item in
-                            Button {
-                                vm.currentChannelList = vm.displayItems
-                                selectedItem = item
-                            } label: {
-                                LiveChannelRow(
-                                    item: item,
-                                    isActive: item.id == selectedItem?.id
-                                )
-                            }
-                            .buttonStyle(ChannelButtonStyle())
-
-                            if item.id != vm.displayItems.last?.id {
-                                Divider().padding(.leading, 60)
-                            }
-                        }
-                    }
-                    .padding(.bottom, 40)
+            Spacer()
+            if vm.inlinePlayer != nil {
+                Button {
+                    vm.togglePlayPause()
+                } label: {
+                    Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                        .background(.white.opacity(0.15), in: Circle())
                 }
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+        )
     }
 
-    // MARK: - Global Search Results
-
-    private var searchResultsView: some View {
-        VStack(spacing: 0) {
-            searchBar(text: $vm.globalSearch, placeholder: "Search in \(vm.activePlaylist?.name ?? "channels")...")
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-
-            Divider()
-
-            if vm.searchResults.isEmpty {
-                VStack(spacing: 12) {
-                    Spacer()
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(.quaternary)
-                    Text("No channels match \"\(vm.globalSearch)\"")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+    private var playerControlsOverlay: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 32) {
+                Button { vm.playPrevChannel() } label: {
+                    Image(systemName: "backward.end.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(vm.hasPrevChannel ? .white : .white.opacity(0.2))
                 }
-            } else {
-                HStack {
-                    Text("\(vm.searchResults.count) channels found")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .disabled(!vm.hasPrevChannel)
 
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(vm.searchResults) { item in
-                            Button {
-                                vm.currentChannelList = vm.searchResults
-                                selectedItem = item
-                            } label: {
-                                LiveChannelRow(item: item, isActive: item.id == selectedItem?.id)
-                            }
-                            .buttonStyle(ChannelButtonStyle())
-
-                            if item.id != vm.searchResults.last?.id {
-                                Divider().padding(.leading, 60)
-                            }
-                        }
-                    }
-                    .padding(.bottom, 40)
+                Button { vm.togglePlayPause() } label: {
+                    Image(systemName: vm.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.white)
                 }
+
+                Button { vm.playNextChannel() } label: {
+                    Image(systemName: "forward.end.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(vm.hasNextChannel ? .white : .white.opacity(0.2))
+                }
+                .disabled(!vm.hasNextChannel)
             }
+            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black.opacity(0.4))
     }
 
-    // MARK: - Shared Components
+    // MARK: - Search Bar
 
-    private func searchBar(text: Binding<String>, placeholder: String) -> some View {
+    private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14))
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
-            TextField(placeholder, text: text)
+            TextField("Search channels...", text: $vm.searchQuery)
                 .font(.subheadline)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            if !text.wrappedValue.isEmpty {
+            if !vm.searchQuery.isEmpty {
                 Button {
-                    text.wrappedValue = ""
+                    vm.searchQuery = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
@@ -440,26 +394,213 @@ struct LiveTVView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private var loadingSkeleton: some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-            spacing: 12
-        ) {
-            ForEach(0..<6, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemGray6))
-                    .frame(height: 130)
-                    .shimmering()
+    // MARK: - Category Tabs
+
+    private var categoryTabs: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(vm.categories) { cat in
+                        let isSelected = vm.activeCategory?.id == cat.id
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                vm.selectCategory(cat)
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Text(cat.icon)
+                                    .font(.system(size: 14))
+                                Text(cat.label)
+                                    .font(.caption.weight(isSelected ? .bold : .medium))
+                                Text("\(cat.totalCount)")
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundStyle(isSelected ? .white.opacity(0.6) : .secondary)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(isSelected ? Color.red : Color(.systemGray6))
+                            .foregroundStyle(isSelected ? .white : .primary)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .id(cat.id)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+            .onChange(of: vm.activeCategory?.id) { _, newId in
+                if let id = newId {
+                    withAnimation { proxy.scrollTo(id, anchor: .center) }
+                }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+    }
+
+    // MARK: - Sub-Group Pills
+
+    private func subGroupPills(_ category: LiveTVCategory) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 5) {
+                IPTVPill(
+                    name: "All",
+                    count: category.totalCount,
+                    isSelected: vm.activeGroup == nil
+                ) {
+                    vm.activeGroup = nil
+                }
+
+                ForEach(category.groups) { group in
+                    IPTVPill(
+                        name: group.displayName,
+                        count: group.items.count,
+                        isSelected: vm.activeGroup == group.name
+                    ) {
+                        vm.activeGroup = vm.activeGroup == group.name ? nil : group.name
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+    }
+
+    // MARK: - Channel List
+
+    private var channelList: some View {
+        Group {
+            if vm.displayItems.isEmpty {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "tv.slash")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundStyle(.quaternary)
+                    Text("No channels in this group")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(vm.displayItems) { item in
+                                IPTVChannelRow(
+                                    item: item,
+                                    isPlaying: item.id == vm.playingItem?.id
+                                ) {
+                                    vm.playChannel(item)
+                                }
+                                .id(item.id)
+
+                                if item.id != vm.displayItems.last?.id {
+                                    Divider().padding(.leading, 56)
+                                }
+                            }
+                        }
+                        .padding(.bottom, 80)
+                    }
+                    .onChange(of: vm.playingItem?.id) { _, newId in
+                        if let id = newId {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                proxy.scrollTo(id, anchor: .center)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Search Results
+
+    private var searchResultsList: some View {
+        Group {
+            if vm.searchResults.isEmpty {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundStyle(.quaternary)
+                    Text("No channels match \"\(vm.searchQuery)\"")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else {
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("\(vm.searchResults.count) results")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+
+                    Divider()
+
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(vm.searchResults) { item in
+                                IPTVChannelRow(
+                                    item: item,
+                                    isPlaying: item.id == vm.playingItem?.id
+                                ) {
+                                    vm.playChannel(item)
+                                }
+
+                                if item.id != vm.searchResults.last?.id {
+                                    Divider().padding(.leading, 56)
+                                }
+                            }
+                        }
+                        .padding(.bottom, 80)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Shared
+
+    private var loadingSkeleton: some View {
+        VStack(spacing: 0) {
+            // Fake player area
+            Color(.systemGray6)
+                .aspectRatio(16/9, contentMode: .fit)
+                .shimmering()
+
+            // Fake tabs
+            HStack(spacing: 6) {
+                ForEach(0..<5, id: \.self) { _ in
+                    Capsule().fill(Color(.systemGray6)).frame(width: 70, height: 28).shimmering()
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            // Fake rows
+            ForEach(0..<6, id: \.self) { _ in
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 8).fill(Color(.systemGray6)).frame(width: 40, height: 40)
+                    VStack(alignment: .leading, spacing: 4) {
+                        RoundedRectangle(cornerRadius: 4).fill(Color(.systemGray6)).frame(width: 140, height: 12)
+                        RoundedRectangle(cornerRadius: 4).fill(Color(.systemGray6)).frame(width: 80, height: 10)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .shimmering()
+            }
+            Spacer()
+        }
     }
 
     private var emptyState: some View {
@@ -471,82 +612,105 @@ struct LiveTVView: View {
             Text("No channels available")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
-            Text("Add a playlist to get started")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
             Spacer()
         }
     }
 }
 
-// MARK: - Category Tile
+// MARK: - IPTV Channel Row
 
-private struct CategoryTile: View {
-    let category: LiveTVCategory
-    let onSelect: () -> Void
+private struct IPTVChannelRow: View {
+    let item: PlaylistItem
+    let isPlaying: Bool
+    let onTap: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: 8) {
-                // Icon + count
-                HStack {
-                    Text(category.icon)
-                        .font(.system(size: 28))
-                    Spacer()
-                    Text("\(category.totalCount)")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(Color(.systemGray5))
-                        .clipShape(Capsule())
-                }
-
-                // Label
-                Text(category.label)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                // Group count
-                Text("\(category.groups.count) \(category.groups.count == 1 ? "group" : "groups")")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-
-                // Preview logos
-                if !category.previewLogos.isEmpty {
-                    HStack(spacing: 3) {
-                        ForEach(category.previewLogos.prefix(4), id: \.self) { url in
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image.resizable().aspectRatio(contentMode: .fit)
-                                default:
-                                    Color(.systemGray5)
-                                }
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                // Channel logo
+                Group {
+                    if let logoURL = item.resolvedLogoURL {
+                        AsyncImage(url: logoURL) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().aspectRatio(contentMode: .fit)
+                            default:
+                                logoFallback
                             }
-                            .frame(width: 22, height: 22)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
                         }
-                        if category.totalCount > 4 {
-                            Text("+\(category.totalCount - 4)")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
-                        }
+                    } else {
+                        logoFallback
                     }
                 }
+                .frame(width: 38, height: 38)
+                .background(Color(.systemGray6))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(isPlaying ? Color.red.opacity(0.5) : .clear, lineWidth: 1.5)
+                )
+
+                // Channel info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.subheadline.weight(isPlaying ? .semibold : .regular))
+                        .foregroundStyle(isPlaying ? .red : .primary)
+                        .lineLimit(1)
+                    if let group = item.groupTitle {
+                        Text(group)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 4)
+
+                // Playing indicator or play icon
+                if isPlaying {
+                    HStack(spacing: 2) {
+                        ForEach(0..<3, id: \.self) { i in
+                            Capsule()
+                                .fill(Color.red)
+                                .frame(width: 3, height: CGFloat([10, 15, 8][i]))
+                        }
+                    }
+                    .frame(width: 18)
+                } else {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .background(Color(.systemGray6))
+                        .clipShape(Circle())
+                }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(isPlaying ? Color.red.opacity(0.06) : .clear)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(IPTVRowButtonStyle())
+    }
+
+    private var logoFallback: some View {
+        Image(systemName: "tv.fill")
+            .font(.system(size: 14))
+            .foregroundStyle(.quaternary)
+            .frame(width: 38, height: 38)
     }
 }
 
-// MARK: - Group Pill
+private struct IPTVRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Color(.systemGray6).opacity(0.5) : .clear)
+    }
+}
 
-private struct GroupPill: View {
+// MARK: - IPTV Pill (sub-group)
+
+private struct IPTVPill: View {
     let name: String
     let count: Int
     let isSelected: Bool
@@ -558,94 +722,16 @@ private struct GroupPill: View {
                 Text(name)
                     .lineLimit(1)
                 Text("\(count)")
-                    .foregroundStyle(isSelected ? .white.opacity(0.6) : .secondary)
+                    .foregroundStyle(isSelected ? .white.opacity(0.5) : .tertiary)
             }
             .font(.caption2.weight(.medium))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(isSelected ? Color.primary : Color(.systemGray6))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(isSelected ? Color(.label) : Color(.systemGray6))
             .foregroundStyle(isSelected ? Color(.systemBackground) : .primary)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Live Channel Row
-
-private struct LiveChannelRow: View {
-    let item: PlaylistItem
-    let isActive: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            // Logo
-            Group {
-                if let logoURL = item.resolvedLogoURL {
-                    AsyncImage(url: logoURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fit)
-                        default:
-                            logoFallback
-                        }
-                    }
-                } else {
-                    logoFallback
-                }
-            }
-            .frame(width: 36, height: 36)
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(isActive ? Color.red.opacity(0.4) : .clear, lineWidth: 1.5)
-            )
-
-            // Name
-            Text(item.name)
-                .font(.subheadline)
-                .foregroundStyle(isActive ? .red : .primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 4)
-
-            // Active indicator or play button
-            if isActive {
-                HStack(spacing: 2) {
-                    ForEach(0..<3, id: \.self) { i in
-                        Capsule()
-                            .fill(Color.red)
-                            .frame(width: 3, height: CGFloat([10, 14, 8][i]))
-                    }
-                }
-                .frame(width: 16)
-            } else {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.red)
-                    .frame(width: 26, height: 26)
-                    .background(.red.opacity(0.1))
-                    .clipShape(Circle())
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 9)
-        .background(isActive ? Color.red.opacity(0.05) : .clear)
-    }
-
-    private var logoFallback: some View {
-        Image(systemName: "tv.fill")
-            .font(.system(size: 14))
-            .foregroundStyle(.secondary)
-            .frame(width: 36, height: 36)
-    }
-}
-
-private struct ChannelButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(configuration.isPressed ? Color.white.opacity(0.05) : .clear)
     }
 }
 
@@ -686,15 +772,18 @@ struct LiveTVCategory: Identifiable {
     let icon: String
     let groups: [ChannelGroup]
     let totalCount: Int
-    let previewLogos: [URL]
 
-    struct ChannelGroup {
+    struct ChannelGroup: Identifiable {
+        var id: String { name }
         let name: String
+        let displayName: String
         let items: [PlaylistItem]
     }
 }
 
-// MARK: - Smart category classification
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MARK: - Advanced IPTV Category Classifier
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 private struct CategoryDef {
     let key: String
@@ -703,40 +792,206 @@ private struct CategoryDef {
     let pattern: NSRegularExpression
 }
 
+/// Robust IPTV group-title classification with smart prefix extraction.
+///
+/// IPTV group_titles commonly use patterns like:
+///   "US | Sports HD"    "DE: Nachrichten"    "FR - Cinema"    "AR ║ MBC"
+///
+/// The classifier:
+///   1. Strips country/language prefixes (2–3 letter ISO codes)
+///   2. Matches the cleaned suffix against 30+ content categories
+///   3. Falls back to matching the full group_title
+///   4. Uses channel NAME as a last-resort signal
+///   5. Only falls back to "Other" when nothing works
+
+// ── Prefix extraction ──
+
+/// Matches common IPTV prefixes: "US | ", "DE: ", "FR - ", "AR ║ ", "UK│", etc.
+private let prefixRegex = try! NSRegularExpression(
+    pattern: #"^([A-Z]{2,3})\s*[\|\-:│║·/\\]\s*"#,
+    options: .caseInsensitive
+)
+
+/// Known country/language codes that appear as IPTV prefixes
+private let knownCountryCodes: Set<String> = [
+    "us", "uk", "gb", "ca", "au", "nz",                               // English-speaking
+    "de", "at", "ch",                                                  // German-speaking
+    "fr", "be",                                                        // French-speaking
+    "es", "mx", "ar", "cl", "co", "pe", "ve",                         // Spanish
+    "pt", "br",                                                        // Portuguese
+    "it",                                                              // Italian
+    "nl",                                                              // Dutch
+    "pl",                                                              // Polish
+    "ro",                                                              // Romanian
+    "tr",                                                              // Turkish
+    "in", "pk", "bd",                                                  // South Asian
+    "sa", "ae", "kw", "qa", "bh", "om", "iq", "jo", "lb", "sy",      // Arabic
+    "eg", "ma", "dz", "tn", "ly", "sd", "ye",                         // North African/Arabic
+    "ru", "ua", "by", "kz",                                           // Russian-speaking
+    "se", "no", "dk", "fi",                                           // Scandinavian
+    "gr", "cy",                                                        // Greek
+    "rs", "hr", "ba", "mk", "si", "me", "bg", "al", "xk",            // Balkan
+    "ir", "af",                                                        // Persian
+    "kr", "jp", "cn", "tw", "hk", "ph", "th", "vn", "id", "my",      // Asian
+    "ng", "gh", "ke", "za", "et", "tz", "cm",                         // African
+    "il",                                                              // Hebrew
+    "cu", "do", "ec", "py", "uy", "bo", "cr", "pa", "gt", "hn",      // Latin America
+]
+
+/// Strip a known country prefix from a group_title and return (prefix, rest).
+/// E.g. "US | Sports HD" → ("us", "Sports HD"),  "Sports" → (nil, "Sports")
+private func extractPrefix(_ raw: String) -> (code: String?, rest: String) {
+    let nsRange = NSRange(raw.startIndex..., in: raw)
+    if let match = prefixRegex.firstMatch(in: raw, range: nsRange),
+       let codeRange = Range(match.range(at: 1), in: raw) {
+        let code = String(raw[codeRange]).lowercased()
+        if knownCountryCodes.contains(code) {
+            let afterPrefix = String(raw[raw.index(raw.startIndex, offsetBy: match.range.length)...])
+                .trimmingCharacters(in: .whitespaces)
+            return (code, afterPrefix.isEmpty ? raw : afterPrefix)
+        }
+    }
+    return (nil, raw)
+}
+
+// ── Category definitions (30+ patterns) ──
+
 private let categoryDefs: [CategoryDef] = {
-    func rx(_ pattern: String) -> NSRegularExpression {
-        try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+    func rx(_ p: String) -> NSRegularExpression {
+        try! NSRegularExpression(pattern: p, options: .caseInsensitive)
     }
     return [
-        CategoryDef(key: "sports",        label: "Sports",        icon: "⚽", pattern: rx("sport|bein|sky\\s?sport|espn|dazn|fox\\s?sport|eurosport|eleven|supersport|arena\\s?sport")),
-        CategoryDef(key: "news",          label: "News",          icon: "📰", pattern: rx("news|cnn|bbc|al\\s?jazeera|sky\\s?news|france\\s?24|euronews|cnbc|bloomberg|rt\\b|dw\\b|trt\\s?world")),
-        CategoryDef(key: "kids",          label: "Kids",          icon: "🧸", pattern: rx("kid|cartoon|nickelodeon|nick\\b|disney|baby|junior|tiji|gulli|boomerang|cneto|spacetoon|karusel")),
-        CategoryDef(key: "movies",        label: "Cinema",        icon: "🎬", pattern: rx("movie|cinema|film|hbo|showtime|starz|paramount|amc\\b|tcm\\b|cinemax")),
-        CategoryDef(key: "music",         label: "Music",         icon: "🎵", pattern: rx("music|mtv|vh1|trace|melody|muzz|rotana\\s?(music|clip)|radio")),
-        CategoryDef(key: "documentary",   label: "Documentary",   icon: "🌍", pattern: rx("document|discovery|nat\\s?geo|national\\s?geo|history|animal\\s?planet|science|planet\\s?earth|bbc\\s?earth|love\\s?nature")),
-        CategoryDef(key: "arabic",        label: "Arabic",        icon: "🌙", pattern: rx("arab|mbc\\b|rotana|lbc\\b|ldc\\b|al[\\s-]|abu\\s?dhabi|dubai|qatar|kuwait|oman|jordan|iraq|syria|lebanon|egypt|tunisia|morocco|algeria|libya|sudan|yemen|saudi|bahrain")),
-        CategoryDef(key: "religious",     label: "Religious",     icon: "🕌", pattern: rx("relig|quran|islam|christian|church|gospel|prayer|bible|catholic|faith|iqra|kanal\\s?7|trt\\s?diyanet|huda")),
-        CategoryDef(key: "turkish",       label: "Turkish",       icon: "🇹🇷", pattern: rx("turk|trt\\b|kanal\\s?d|star\\s?tv|atv\\b|show\\s?tv|fox\\s?tv.*tr|teve2|tv8|beyaz")),
-        CategoryDef(key: "french",        label: "French",        icon: "🇫🇷", pattern: rx("franc|tf1|france\\s?\\d|m6\\b|canal\\+|arte|bfm|lci|rmc|c8\\b|cstar|w9\\b|nrj")),
-        CategoryDef(key: "german",        label: "German",        icon: "🇩🇪", pattern: rx("german|deutsch|ard\\b|zdf\\b|rtl\\b|sat\\.?1|pro\\s?7|vox\\b|kabel|n-tv|ntv|welt|phoenix|3sat|arte.*de")),
-        CategoryDef(key: "english",       label: "English",       icon: "🇬🇧", pattern: rx("\\b(uk|british|england)\\b|bbc\\s?(one|two|three|four)|itv\\b|channel\\s?(4|5)|sky\\s?(one|atlantic|cinema)|dave\\b|e4\\b")),
-        CategoryDef(key: "spanish",       label: "Spanish",       icon: "🇪🇸", pattern: rx("spain|spanish|espanol|tve\\b|antena\\s?3|telecinco|la\\s?sexta|cuatro\\b|movistar|gol\\b|barca")),
-        CategoryDef(key: "indian",        label: "Indian",        icon: "🇮🇳", pattern: rx("india|hindi|tamil|telugu|star\\s?(plus|gold|bharat)|zee\\b|sony.*tv|colors|ndtv|aaj\\s?tak")),
-        CategoryDef(key: "entertainment", label: "Entertainment", icon: "🎭", pattern: rx("entertain|general|variety|comedy|drama|lifestyle|tlc|bravo|e!\\b|fx\\b")),
+        // Content-type categories
+        CategoryDef(key: "sports",       label: "Sports",       icon: "⚽", pattern: rx(#"sport|bein|sky\s?sport|espn|dazn|fox\s?sport|eurosport|eleven|supersport|arena\s?sport|nfl|nba|mlb|nhl|ufc|wwe|boxing|tennis|golf|f1\b|formula|bundesliga|premier\s?league|la\s?liga|serie\s?a|ligue\s?1|futbol|football|soccer|cricket|rugby"#)),
+        CategoryDef(key: "news",         label: "News",         icon: "📰", pattern: rx(#"news|nachrichten|noticias|actualit|cnn|bbc\s?news|al\s?jazeera|sky\s?news|france\s?24|euronews|cnbc|bloomberg|rt\b|dw\b|trt\s?world|fox\s?news|msnbc|n-tv|ntv|welt\b|bfm|lci|tagesschau|ard\s?aktuell|info\b.*kanal|kanal\b.*info"#)),
+        CategoryDef(key: "kids",         label: "Kids",         icon: "🧸", pattern: rx(#"kid|child|cartoon|nickelodeon|nick\b|disney|baby|junior|tiji|gulli|boomerang|cneto|spacetoon|karusel|kinder|enfant|jim\s?jam|duck\s?tv|lala|bumble|toon|animat"#)),
+        CategoryDef(key: "movies",       label: "Cinema",       icon: "🎬", pattern: rx(#"movie|cinema|film|hbo|showtime|starz|paramount|amc\b|tcm\b|cinemax|kino\b|cine\b|pelicul|netflix|prime\s?video|hallmark|lifetime"#)),
+        CategoryDef(key: "music",        label: "Music",        icon: "🎵", pattern: rx(#"music|musik|musique|mtv\b|vh1|trace|melody|muzz|rotana\s?(music|clip)|radio|hit\s?(tv|music)|club\b.*tv|ibiza|deluxe\s?music|viva\b"#)),
+        CategoryDef(key: "documentary",  label: "Documentary",  icon: "🌍", pattern: rx(#"document|discovery|nat\s?geo|national\s?geo|history|animal\s?planet|science|planet\s?earth|bbc\s?earth|love\s?nature|doku|natuur|wildlife|travel|adventure|explore"#)),
+        CategoryDef(key: "religious",    label: "Religious",    icon: "🕌", pattern: rx(#"relig|quran|islam|christian|church|gospel|prayer|bible|catholic|faith|iqra|kanal\s?7|trt\s?diyanet|huda|god\s?tv|daystar|ewtn"#)),
+        CategoryDef(key: "entertainment",label: "Entertainment",icon: "🎭", pattern: rx(#"entertain|general|variety|comedy|drama|lifestyle|reality|tlc|bravo|e!\b|fx\b|usa\s?network|tbs|tnt\b|food|cooking|cuisine|hgtv|diy\b"#)),
+        CategoryDef(key: "education",    label: "Education",    icon: "📚", pattern: rx(#"educat|learn|school|university|lecture|class|wissen|ted\b|pbs\b|knowledge"#)),
+        CategoryDef(key: "adult",        label: "18+",          icon: "🔞", pattern: rx(#"adult|18\+|xxx|eroti|playboy|hustle"#)),
+
+        // Country / language categories
+        CategoryDef(key: "arabic",       label: "Arabic",       icon: "🌙", pattern: rx(#"arab|mbc\b|rotana|lbc\b|ldc\b|al[\s\-]|abu\s?dhabi|dubai\b|qatar|kuwait|oman|jordan|iraq|syria|leban|egypt|tunis|morocco|maroc|algeri|libya|sudan|yemen|saudi|bahrain|mashreq|maghreb|nile\s?sat|beur|شبكة|عربي"#)),
+        CategoryDef(key: "turkish",      label: "Turkish",      icon: "🇹🇷", pattern: rx(#"turk|türk|trt\b|kanal\s?d|star\s?tv|atv\b|show\s?tv|fox\s?tv.*tr|teve2|tv8\b|beyaz|habert|cnn\s?turk|s\s?tv\b"#)),
+        CategoryDef(key: "french",       label: "French",       icon: "🇫🇷", pattern: rx(#"franc|fran[çc]|tf1|france\s?\d|m6\b|canal\s?\+|arte\s?(fr)?|bfm|lci|rmc|c8\b|cstar|w9\b|nrj|tmcfr|chérie|planète"#)),
+        CategoryDef(key: "german",       label: "German",       icon: "🇩🇪", pattern: rx(#"german|deutsch|ard\b|zdf\b|rtl\b|sat\.?1|pro\s?7|vox\b|kabel|n-tv|ntv\b|welt\b|phoenix|3sat|arte\s?de|servus|orf\b|srf\b|swiss"#)),
+        CategoryDef(key: "english_uk",   label: "UK",           icon: "🇬🇧", pattern: rx(#"\b(uk|british|england)\b|bbc\s?(one|two|three|four)|itv\b|channel\s?(4|5)|sky\s?(one|atlantic|cinema)|dave\b|e4\b|film4|more4|quest"#)),
+        CategoryDef(key: "english_us",   label: "USA",          icon: "🇺🇸", pattern: rx(#"\b(usa|america|us\s?tv)\b|abc\b|nbc\b|cbs\b|fox\b(?!.*tr)|pbs\b|hulu|peacock|bet\b|cw\b|freeform"#)),
+        CategoryDef(key: "spanish",      label: "Spanish",      icon: "🇪🇸", pattern: rx(#"spain|spanish|español|espanol|tve\b|antena\s?3|telecinco|la\s?sexta|cuatro\b|movistar|gol\b|barca|univision|telemundo|televisa|atreseries|dmax.*es"#)),
+        CategoryDef(key: "portuguese",   label: "Portuguese",   icon: "🇵🇹", pattern: rx(#"portug|brasil|brazil|rtp\b|sic\b|tvi\b|globo|band\b|record\b|benfica|sporting|porto\s?canal|cmtv|interv"#)),
+        CategoryDef(key: "italian",      label: "Italian",      icon: "🇮🇹", pattern: rx(#"ital|rai\s?\d|rai\b|mediaset|canale\s?5|italia\s?1|rete\s?4|la7\b|sky\s?it|dmax.*it|focus|premium\s?(cinema|sport)|real\s?time"#)),
+        CategoryDef(key: "dutch",        label: "Dutch",        icon: "🇳🇱", pattern: rx(#"dutch|nederland|npo\b|rtl\s?(4|5|7|8)|sbs\s?6|net\s?5|veronica|vtm\b|een\b|canvas"#)),
+        CategoryDef(key: "polish",       label: "Polish",       icon: "🇵🇱", pattern: rx(#"pol(ish|ska|and)|tvp\b|tvn\b|polsat|tv\s?puls|canal\s?\+.*pl|eleven.*pl|superstacja"#)),
+        CategoryDef(key: "romanian",     label: "Romanian",     icon: "🇷🇴", pattern: rx(#"roman|antena\s?(1|3)|pro\s?tv|kanal\s?d.*ro|digi\b|tvr\b|prima\s?tv|look\s?tv|dolce"#)),
+        CategoryDef(key: "indian",       label: "Indian",       icon: "🇮🇳", pattern: rx(#"india|hindi|tamil|telugu|malayalam|kannada|marathi|bengali|punjabi|star\s?(plus|gold|bharat)|zee\b|sony.*tv|colors|ndtv|aaj\s?tak|sun\s?tv|gemini|maa\s?tv"#)),
+        CategoryDef(key: "russian",      label: "Russian",      icon: "🇷🇺", pattern: rx(#"russ|росс|первый|россия|матч|нтв|рен|тнт|стс|домашний|пятница|звезда|мир\b|rtR\b"#)),
+        CategoryDef(key: "balkan",       label: "Balkan",       icon: "🏔️", pattern: rx(#"balkan|serb|croat|bosn|macedon|sloven|montenegr|albani|kosovo|rtv\s?(bih|srbija)|hrt\b|nova\s?tv.*hr|rts\b|pink\b|happy\s?tv|vizion|klan"#)),
+        CategoryDef(key: "greek",        label: "Greek",        icon: "🇬🇷", pattern: rx(#"greek|greece|ελλ|mega\b.*gr|ant1|alpha\s?tv|skai|star\s?tv.*gr|ert\b|open\s?tv"#)),
+        CategoryDef(key: "scandinavian", label: "Nordic",       icon: "🇸🇪", pattern: rx(#"scandinav|nordic|svt\b|tv4\b.*se|nrk\b|tv2\b.*(no|dk)|dr\b.*dk|yle\b|finland|sweden|norway|denmark|viasat|nent"#)),
+        CategoryDef(key: "african",      label: "African",      icon: "🌍", pattern: rx(#"afri(ca|que)|nigeria|ghana|kenya|ethiopia|south\s?africa|cameroon|congo|senegal|cote\s?d|ivory|dstv|gotv|startimes|nollywood|afro"#)),
+        CategoryDef(key: "asian",        label: "Asian",        icon: "🌏", pattern: rx(#"asian|korea|japan|chin(a|ese)|taiwan|filipino|thai|vietnam|malaysia|indonesia|nhk\b|kbs\b|sbs\b.*kr|tvb\b|astro\b|gma\b|abs.?cbn"#)),
+        CategoryDef(key: "persian",      label: "Persian",      icon: "🇮🇷", pattern: rx(#"persian|iran|farsi|من\s?و\s?تو|gem\s?tv|manoto|irib|press\s?tv"#)),
+        CategoryDef(key: "kurdish",      label: "Kurdish",      icon: "☀️", pattern: rx(#"kurd|rudaw|kurdistan|nrt\b|payam"#)),
     ]
 }()
 
-private func classifyGroup(_ name: String) -> String {
-    let range = NSRange(name.startIndex..., in: name)
+/// Map a country-code prefix to a category key.
+private let countryToCategory: [String: String] = {
+    var m: [String: String] = [:]
+    // English
+    for c in ["us"] { m[c] = "english_us" }
+    for c in ["uk", "gb", "au", "nz", "ca"] { m[c] = "english_uk" }
+    // German
+    for c in ["de", "at", "ch"] { m[c] = "german" }
+    // French
+    for c in ["fr", "be"] { m[c] = "french" }
+    // Spanish
+    for c in ["es", "mx", "cl", "co", "pe", "ve", "cu", "do", "ec", "py", "uy", "bo", "cr", "pa", "gt", "hn"] { m[c] = "spanish" }
+    // Portuguese
+    for c in ["pt", "br"] { m[c] = "portuguese" }
+    // Italian
+    m["it"] = "italian"
+    // Dutch
+    m["nl"] = "dutch"
+    // Polish
+    m["pl"] = "polish"
+    // Romanian
+    m["ro"] = "romanian"
+    // Turkish
+    m["tr"] = "turkish"
+    // Arabic (note: "ar" is ISO for Argentina in some contexts, but in IPTV it's almost always Arabic)
+    for c in ["ar", "sa", "ae", "kw", "qa", "bh", "om", "iq", "jo", "lb", "sy", "eg", "ma", "dz", "tn", "ly", "sd", "ye"] { m[c] = "arabic" }
+    // Indian
+    for c in ["in", "pk", "bd"] { m[c] = "indian" }
+    // Russian
+    for c in ["ru", "ua", "by", "kz"] { m[c] = "russian" }
+    // Scandinavian
+    for c in ["se", "no", "dk", "fi"] { m[c] = "scandinavian" }
+    // Greek
+    for c in ["gr", "cy"] { m[c] = "greek" }
+    // Balkan
+    for c in ["rs", "hr", "ba", "mk", "si", "me", "bg", "al", "xk"] { m[c] = "balkan" }
+    // Persian
+    for c in ["ir", "af"] { m[c] = "persian" }
+    // Asian
+    for c in ["kr", "jp", "cn", "tw", "hk", "ph", "th", "vn", "id", "my"] { m[c] = "asian" }
+    // African
+    for c in ["ng", "gh", "ke", "za", "et", "tz", "cm"] { m[c] = "african" }
+    // Hebrew
+    m["il"] = "entertainment" // group with general content
+    return m
+}()
+
+/// Smart classification: prefix extraction → content match → country match → channel name fallback
+private func classifyGroup(_ groupName: String, channelNames: [String] = []) -> String {
+    let (prefix, suffix) = extractPrefix(groupName)
+
+    // 1) Try matching the cleaned suffix against category patterns
+    let suffixResult = matchCategoryPatterns(suffix)
+    if suffixResult != "other" { return suffixResult }
+
+    // 2) Try matching the full group_title (in case prefix is part of the pattern)
+    let fullResult = matchCategoryPatterns(groupName)
+    if fullResult != "other" { return fullResult }
+
+    // 3) If we have a known country prefix, use country→category mapping
+    if let code = prefix, let cat = countryToCategory[code] {
+        return cat
+    }
+
+    // 4) Channel-name heuristics: sample up to 8 names, majority vote
+    if !channelNames.isEmpty {
+        var votes: [String: Int] = [:]
+        for name in channelNames.prefix(8) {
+            let v = matchCategoryPatterns(name)
+            if v != "other" {
+                votes[v, default: 0] += 1
+            }
+        }
+        if let best = votes.max(by: { $0.value < $1.value }), best.value >= 2 {
+            return best.key
+        }
+    }
+
+    return "other"
+}
+
+private func matchCategoryPatterns(_ text: String) -> String {
+    let range = NSRange(text.startIndex..., in: text)
     for def in categoryDefs {
-        if def.pattern.firstMatch(in: name, range: range) != nil {
+        if def.pattern.firstMatch(in: text, range: range) != nil {
             return def.key
         }
     }
     return "other"
 }
 
-// MARK: - ViewModel (playlist-first)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MARK: - ViewModel
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @MainActor
 final class LiveTVViewModel: ObservableObject {
@@ -746,22 +1001,34 @@ final class LiveTVViewModel: ObservableObject {
     @Published var playlistsError: String?
     @Published var activePlaylist: BrowsePlaylistInfo?
 
-    // Channel state (scoped to selected playlist)
+    // Category / channel state
     @Published var categories: [LiveTVCategory] = []
     @Published var isLoading = false
-    @Published var totalChannels = 0
-    @Published var globalSearch = ""
-    @Published var channelSearch = ""
     @Published var activeCategory: LiveTVCategory?
     @Published var activeGroup: String?
-    @Published var currentChannelList: [PlaylistItem] = []
+    @Published var searchQuery = ""
 
-    private var allSections: [BrowseSection] = []
+    // Inline player state
+    @Published var playingItem: PlaylistItem?
+    @Published var inlinePlayer: AVPlayer?
+    @Published var isPlaying = false
+    @Published var playerBuffering = false
+    @Published var playerError: String?
+    @Published var showPlayerControls = false
+
     private var allChannels: [PlaylistItem] = []
+    private var statusObserver: NSKeyValueObservation?
+    private var controlsTimer: Timer?
 
-    var isSearching: Bool { !globalSearch.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// Cascade fallback state
+    private var fallbackURLs: [URL] = []
+    private var fallbackTimer: DispatchWorkItem?
 
-    // Channels shown in the active category
+    var isSearching: Bool { !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    var totalChannels: Int { allChannels.count }
+
+    // Current display items based on selected category + group
     var displayItems: [PlaylistItem] {
         guard let cat = activeCategory else { return [] }
 
@@ -772,28 +1039,34 @@ final class LiveTVViewModel: ObservableObject {
             items = cat.groups.flatMap(\.items)
         }
 
-        if !channelSearch.trimmingCharacters(in: .whitespaces).isEmpty {
-            let q = channelSearch.lowercased()
-            items = items.filter {
-                $0.name.lowercased().contains(q) ||
-                ($0.groupTitle?.lowercased().contains(q) ?? false)
-            }
-        }
-
         return items
     }
 
-    // Global search results (scoped to selected playlist's channels)
     var searchResults: [PlaylistItem] {
         guard isSearching else { return [] }
-        let q = globalSearch.lowercased()
+        let q = searchQuery.lowercased()
         return allChannels.filter {
             $0.name.lowercased().contains(q) ||
             ($0.groupTitle?.lowercased().contains(q) ?? false)
         }
     }
 
-    // Phase 1: Load playlists
+    var hasPrevChannel: Bool {
+        guard let playing = playingItem else { return false }
+        let items = displayItems.isEmpty ? allChannels : displayItems
+        guard let idx = items.firstIndex(where: { $0.id == playing.id }) else { return false }
+        return idx > 0
+    }
+
+    var hasNextChannel: Bool {
+        guard let playing = playingItem else { return false }
+        let items = displayItems.isEmpty ? allChannels : displayItems
+        guard let idx = items.firstIndex(where: { $0.id == playing.id }) else { return false }
+        return idx < items.count - 1
+    }
+
+    // MARK: - Playlist loading
+
     func loadPlaylists() async {
         playlistsLoading = true
         playlistsError = nil
@@ -811,22 +1084,17 @@ final class LiveTVViewModel: ObservableObject {
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode < 300 else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                if statusCode == 401 || statusCode == 307 {
-                    playlistsError = "Session expired. Please sign in again."
-                } else {
-                    playlistsError = "Failed to load playlists."
-                }
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                playlistsError = code == 401 || code == 307
+                    ? "Session expired. Please sign in again."
+                    : "Failed to load playlists."
                 return
             }
 
-            struct PlaylistsResponse: Codable {
-                let playlists: [BrowsePlaylistInfo]
-            }
-            let decoded = try JSONDecoder().decode(PlaylistsResponse.self, from: data)
+            struct Resp: Codable { let playlists: [BrowsePlaylistInfo] }
+            let decoded = try JSONDecoder().decode(Resp.self, from: data)
             self.playlists = decoded.playlists
 
-            // Auto-select if only one playlist
             if decoded.playlists.count == 1 {
                 selectPlaylist(decoded.playlists[0])
             }
@@ -835,35 +1103,37 @@ final class LiveTVViewModel: ObservableObject {
         }
     }
 
-    // Select a playlist and load its channels
     func selectPlaylist(_ playlist: BrowsePlaylistInfo) {
+        // Tear down current player
+        teardownPlayer()
+
         activePlaylist = playlist
-        // Reset channel state
         categories = []
-        allSections = []
         allChannels = []
-        totalChannels = 0
         activeCategory = nil
         activeGroup = nil
-        globalSearch = ""
-        channelSearch = ""
+        searchQuery = ""
 
         Task { await loadChannels(playlistId: playlist.id) }
     }
 
-    // Phase 2: Load channels scoped to a playlist
+    // MARK: - Channel loading & classification
+
     private func loadChannels(playlistId: String) async {
         isLoading = true
         defer { isLoading = false }
 
         do {
             let sections = try await fetchGroupedChannels(playlistId: playlistId)
-            self.allSections = sections
             self.allChannels = sections.flatMap(\.items)
-            self.totalChannels = allChannels.count
             self.categories = buildCategories(from: sections)
+
+            // Auto-select first category
+            if let first = categories.first {
+                activeCategory = first
+            }
         } catch {
-            // Silent — empty state shown
+            // Empty state shown
         }
     }
 
@@ -886,59 +1156,268 @@ final class LiveTVViewModel: ObservableObject {
             throw NSError(domain: "LiveTV", code: 1)
         }
 
-        let decoded = try JSONDecoder.supabase.decode(BrowseGroupedResponse.self, from: data)
-        return decoded.sections
+        return try JSONDecoder.supabase.decode(BrowseGroupedResponse.self, from: data).sections
     }
 
+    /// Build categories using smart multi-signal classification.
     private func buildCategories(from sections: [BrowseSection]) -> [LiveTVCategory] {
-        var buckets: [String: (def: CategoryDef?, groups: [String: [PlaylistItem]])] = [:]
+        // Step 1: Classify each section (group_title) into a category key
+        var buckets: [String: [(sectionName: String, items: [PlaylistItem])]] = [:]
 
         for section in sections {
-            let key = classifyGroup(section.name)
-            if buckets[key] == nil {
-                buckets[key] = (
-                    def: categoryDefs.first(where: { $0.key == key }),
-                    groups: [:]
-                )
-            }
-            var existing = buckets[key]!.groups[section.name] ?? []
-            existing.append(contentsOf: section.items)
-            buckets[key]!.groups[section.name] = existing
+            let channelNames = section.items.prefix(8).map(\.name)
+            let key = classifyGroup(section.name, channelNames: Array(channelNames))
+
+            buckets[key, default: []].append((section.name, section.items))
         }
 
-        var result: [LiveTVCategory] = []
-        for (key, bucket) in buckets {
-            let groups = bucket.groups
-                .map { LiveTVCategory.ChannelGroup(name: $0.key, items: $0.value) }
-                .sorted { $0.items.count > $1.items.count }
-            let total = groups.reduce(0) { $0 + $1.items.count }
+        // Step 2: Try to break up "Other" if it's disproportionately large
+        if let otherBucket = buckets["other"], otherBucket.count > 3 {
+            let totalAll = sections.reduce(0) { $0 + $1.items.count }
+            let otherCount = otherBucket.reduce(0) { $0 + $1.items.count }
 
-            var logos: [URL] = []
-            outer: for g in groups {
-                for item in g.items {
-                    if let url = item.resolvedLogoURL {
-                        logos.append(url)
-                        if logos.count >= 4 { break outer }
+            // If "Other" is more than 40% of total, try harder on each group
+            if Double(otherCount) / Double(max(totalAll, 1)) > 0.4 {
+                var stillOther: [(String, [PlaylistItem])] = []
+                for (name, items) in otherBucket {
+                    // Try harder: check ALL channel names
+                    let allNames = items.map(\.name)
+                    let deepKey = deepClassify(groupName: name, channelNames: allNames)
+                    if deepKey != "other" {
+                        buckets[deepKey, default: []].append((name, items))
+                    } else {
+                        stillOther.append((name, items))
                     }
                 }
+                buckets["other"] = stillOther.isEmpty ? nil : stillOther
             }
+        }
+
+        // Step 3: Build LiveTVCategory objects
+        var result: [LiveTVCategory] = []
+        for (key, entries) in buckets {
+            let def = categoryDefs.first(where: { $0.key == key })
+
+            let groups: [LiveTVCategory.ChannelGroup] = entries
+                .map { entry in
+                    let (_, cleaned) = extractPrefix(entry.sectionName)
+                    let displayName = cleaned.isEmpty ? entry.sectionName : cleaned
+                    return LiveTVCategory.ChannelGroup(
+                        name: entry.sectionName,
+                        displayName: displayName,
+                        items: entry.items
+                    )
+                }
+                .sorted { $0.items.count > $1.items.count }
+
+            let total = groups.reduce(0) { $0 + $1.items.count }
 
             result.append(LiveTVCategory(
                 id: key,
                 key: key,
-                label: bucket.def?.label ?? "Other",
-                icon: bucket.def?.icon ?? "📺",
+                label: def?.label ?? "Other",
+                icon: def?.icon ?? "📺",
                 groups: groups,
-                totalCount: total,
-                previewLogos: logos
+                totalCount: total
             ))
         }
 
-        return result.sorted { $0.totalCount > $1.totalCount }
+        // Sort: largest categories first, but push "Other" to the end
+        return result.sorted {
+            if $0.key == "other" { return false }
+            if $1.key == "other" { return true }
+            return $0.totalCount > $1.totalCount
+        }
+    }
+
+    /// Deep classification using majority vote on ALL channel names in a group.
+    private func deepClassify(groupName: String, channelNames: [String]) -> String {
+        var votes: [String: Int] = [:]
+
+        for name in channelNames {
+            let key = matchCategoryPatterns(name)
+            if key != "other" {
+                votes[key, default: 0] += 1
+            }
+        }
+
+        // Require at least 30% consensus
+        let total = channelNames.count
+        if let best = votes.max(by: { $0.value < $1.value }),
+           Double(best.value) / Double(max(total, 1)) >= 0.3 {
+            return best.key
+        }
+
+        return "other"
+    }
+
+    // MARK: - Category selection
+
+    func selectCategory(_ cat: LiveTVCategory) {
+        activeCategory = cat
+        activeGroup = nil
+    }
+
+    // MARK: - Inline player
+
+    func playChannel(_ item: PlaylistItem) {
+        playingItem = item
+        playerError = nil
+        playerBuffering = true
+        showPlayerControls = false
+        fallbackTimer?.cancel()
+        fallbackURLs = []
+
+        let cascade = AppConfig.streamCascade(for: item.resolvedStreamURL)
+        guard let first = cascade.first else {
+            playerError = "Invalid stream URL"
+            playerBuffering = false
+            return
+        }
+
+        fallbackURLs = Array(cascade.dropFirst())
+
+        if inlinePlayer == nil {
+            let p = AVPlayer()
+            p.automaticallyWaitsToMinimizeStalling = false
+            inlinePlayer = p
+        }
+
+        let playerItem = AVPlayerItem(url: first)
+        statusObserver?.invalidate()
+        statusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.playerBuffering = false
+                    self.isPlaying = true
+                    self.inlinePlayer?.play()
+                    self.fallbackTimer?.cancel()
+                case .failed:
+                    self.tryNextFallback()
+                default:
+                    break
+                }
+            }
+        }
+
+        inlinePlayer?.replaceCurrentItem(with: playerItem)
+        inlinePlayer?.play()
+
+        // Fallback timeout
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.tryNextFallback()
+            }
+        }
+        fallbackTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
+    }
+
+    private func tryNextFallback() {
+        fallbackTimer?.cancel()
+
+        guard !fallbackURLs.isEmpty else {
+            playerBuffering = false
+            if inlinePlayer?.currentItem?.status != .readyToPlay {
+                playerError = "Stream unavailable"
+            }
+            return
+        }
+
+        let next = fallbackURLs.removeFirst()
+        let playerItem = AVPlayerItem(url: next)
+
+        statusObserver?.invalidate()
+        statusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.playerBuffering = false
+                    self.isPlaying = true
+                    self.inlinePlayer?.play()
+                    self.fallbackTimer?.cancel()
+                case .failed:
+                    self.tryNextFallback()
+                default:
+                    break
+                }
+            }
+        }
+
+        inlinePlayer?.replaceCurrentItem(with: playerItem)
+        inlinePlayer?.play()
+
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.tryNextFallback()
+            }
+        }
+        fallbackTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
+    }
+
+    func retryCurrentChannel() {
+        guard let item = playingItem else { return }
+        playChannel(item)
+    }
+
+    func togglePlayPause() {
+        guard let player = inlinePlayer else { return }
+        if isPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+        isPlaying.toggle()
+    }
+
+    func togglePlayerControls() {
+        showPlayerControls.toggle()
+        controlsTimer?.invalidate()
+        if showPlayerControls {
+            controlsTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    withAnimation { self?.showPlayerControls = false }
+                }
+            }
+        }
+    }
+
+    func playNextChannel() {
+        guard let playing = playingItem else { return }
+        let items = displayItems.isEmpty ? allChannels : displayItems
+        guard let idx = items.firstIndex(where: { $0.id == playing.id }),
+              idx < items.count - 1 else { return }
+        playChannel(items[idx + 1])
+    }
+
+    func playPrevChannel() {
+        guard let playing = playingItem else { return }
+        let items = displayItems.isEmpty ? allChannels : displayItems
+        guard let idx = items.firstIndex(where: { $0.id == playing.id }),
+              idx > 0 else { return }
+        playChannel(items[idx - 1])
+    }
+
+    private func teardownPlayer() {
+        fallbackTimer?.cancel()
+        statusObserver?.invalidate()
+        controlsTimer?.invalidate()
+        inlinePlayer?.pause()
+        inlinePlayer?.replaceCurrentItem(with: nil)
+        inlinePlayer = nil
+        playingItem = nil
+        isPlaying = false
+        playerBuffering = false
+        playerError = nil
+        showPlayerControls = false
     }
 }
 
-// MARK: - API response types
+// MARK: - API response types (private)
 
 private struct BrowseGroupedResponse: Codable {
     let sections: [BrowseSection]

@@ -10,6 +10,7 @@ create table public.profiles (
   email text not null,
   display_name text,
   avatar_url text,
+  role text not null default 'user' check (role in ('user', 'admin')),
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null
 );
@@ -95,6 +96,8 @@ alter table public.playlist_items enable row level security;
 create policy "Users can view own profile" on public.profiles for select using (auth.uid() = id);
 create policy "Users can update own profile" on public.profiles for update using (auth.uid() = id);
 create policy "Users can insert own profile" on public.profiles for insert with check (auth.uid() = id);
+-- Admin: allow admins to read all profiles (via service role, RLS bypassed)
+-- Note: Admin queries use the service-role client which bypasses RLS entirely.
 
 -- Playlists policies
 create policy "Users can view own playlists" on public.playlists for select using (auth.uid() = user_id);

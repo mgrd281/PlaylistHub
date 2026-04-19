@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Home, ListMusic, Tv, Film, Clapperboard, LayoutGrid,
   Heart, Clock, History, Smartphone, Settings, LogOut,
-  Menu, Sun, Moon, Play,
+  Menu, Sun, Moon, Play, Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -214,6 +214,24 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/admin/role')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.role === 'admin') setIsAdmin(true); })
+      .catch(() => {});
+  }, []);
+
+  const sections = isAdmin
+    ? [
+        ...NAV_SECTIONS,
+        {
+          label: 'ADMIN',
+          items: [{ name: 'Customers', href: '/customers', icon: Users }],
+        },
+      ]
+    : NAV_SECTIONS;
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -226,7 +244,7 @@ export function Sidebar() {
       <BrandMark />
 
       <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-2">
-        {NAV_SECTIONS.map((section, si) => (
+        {sections.map((section, si) => (
           <div key={si}>
             {section.label && <SectionLabel label={section.label} />}
             <nav className="flex flex-col gap-0.5">

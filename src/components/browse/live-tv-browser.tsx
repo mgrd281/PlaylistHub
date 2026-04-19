@@ -31,27 +31,124 @@ interface CategoryDef {
 }
 
 const CATEGORY_DEFS: CategoryDef[] = [
-  { key: 'sports',        label: 'Sports',          icon: '⚽', patterns: /sport|bein|sky\s?sport|espn|dazn|fox\s?sport|eurosport|eleven|supersport|arena\s?sport/i },
-  { key: 'news',          label: 'News',            icon: '📰', patterns: /news|cnn|bbc|al\s?jazeera|sky\s?news|france\s?24|euronews|cnbc|bloomberg|rt\b|dw\b|trt\s?world/i },
-  { key: 'kids',          label: 'Kids',            icon: '🧸', patterns: /kid|cartoon|nickelodeon|nick\b|disney|baby|junior|tiji|gulli|boomerang|cneto|spacetoon|karusel/i },
-  { key: 'movies',        label: 'Cinema',          icon: '🎬', patterns: /movie|cinema|film|hbo|showtime|starz|paramount|amc\b|tcm\b|cinemax/i },
-  { key: 'music',         label: 'Music',           icon: '🎵', patterns: /music|mtv|vh1|trace|melody|muzz|rotana\s?(music|clip)|radio/i },
-  { key: 'documentary',   label: 'Documentary',     icon: '🌍', patterns: /document|discovery|nat\s?geo|national\s?geo|history|animal\s?planet|science|planet\s?earth|bbc\s?earth|love\s?nature/i },
-  { key: 'arabic',        label: 'Arabic',          icon: '🌙', patterns: /arab|mbc\b|rotana|lbc\b|ldc\b|al[\s-]|abu\s?dhabi|dubai|qatar|kuwait|oman|jordan|iraq|syria|lebanon|egypt|tunisia|morocco|algeria|libya|sudan|yemen|saudi|bahrain/i },
-  { key: 'religious',     label: 'Religious',       icon: '🕌', patterns: /relig|quran|islam|christian|church|gospel|prayer|bible|catholic|faith|iqra|kanal\s?7|trt\s?diyanet|huda/i },
-  { key: 'turkish',       label: 'Turkish',         icon: '🇹🇷', patterns: /turk|trt\b|kanal\s?d|star\s?tv|atv\b|show\s?tv|fox\s?tv.*tr|teve2|tv8|beyaz/i },
-  { key: 'french',        label: 'French',          icon: '🇫🇷', patterns: /franc|tf1|france\s?\d|m6\b|canal\+|arte|bfm|lci|rmc|c8\b|cstar|w9\b|nrj/i },
-  { key: 'german',        label: 'German',          icon: '🇩🇪', patterns: /german|deutsch|ard\b|zdf\b|rtl\b|sat\.?1|pro\s?7|vox\b|kabel|n-tv|ntv|welt|phoenix|3sat|arte.*de/i },
-  { key: 'english',       label: 'English',         icon: '🇬🇧', patterns: /\b(uk|british|england)\b|bbc\s?(one|two|three|four)|itv\b|channel\s?(4|5)|sky\s?(one|atlantic|cinema)|dave\b|e4\b/i },
-  { key: 'spanish',       label: 'Spanish',         icon: '🇪🇸', patterns: /spain|spanish|espanol|tve\b|antena\s?3|telecinco|la\s?sexta|cuatro\b|movistar|gol\b|barca/i },
-  { key: 'indian',        label: 'Indian',          icon: '🇮🇳', patterns: /india|hindi|tamil|telugu|star\s?(plus|gold|bharat)|zee\b|sony.*tv|colors|ndtv|aaj\s?tak/i },
-  { key: 'entertainment', label: 'Entertainment',   icon: '🎭', patterns: /entertain|general|variety|comedy|drama|lifestyle|tlc|bravo|e!\b|fx\b/i },
+  // Content-type categories
+  { key: 'sports',       label: 'Sports',       icon: '⚽', patterns: /sport|bein|sky\s?sport|espn|dazn|fox\s?sport|eurosport|eleven|supersport|arena\s?sport|nfl|nba|mlb|nhl|ufc|wwe|boxing|tennis|golf|f1\b|formula|bundesliga|premier\s?league|la\s?liga|serie\s?a|ligue\s?1|futbol|football|soccer|cricket|rugby/i },
+  { key: 'news',         label: 'News',         icon: '📰', patterns: /news|nachrichten|noticias|actualit|cnn|bbc\s?news|al\s?jazeera|sky\s?news|france\s?24|euronews|cnbc|bloomberg|rt\b|dw\b|trt\s?world|fox\s?news|msnbc|n-tv|ntv|welt\b|bfm|lci|tagesschau/i },
+  { key: 'kids',         label: 'Kids',         icon: '🧸', patterns: /kid|child|cartoon|nickelodeon|nick\b|disney|baby|junior|tiji|gulli|boomerang|cneto|spacetoon|karusel|kinder|enfant|jim\s?jam|duck\s?tv|toon|animat/i },
+  { key: 'movies',       label: 'Cinema',       icon: '🎬', patterns: /movie|cinema|film|hbo|showtime|starz|paramount|amc\b|tcm\b|cinemax|kino\b|cine\b|pelicul|netflix|prime\s?video|hallmark|lifetime/i },
+  { key: 'music',        label: 'Music',        icon: '🎵', patterns: /music|musik|musique|mtv\b|vh1|trace|melody|muzz|rotana\s?(music|clip)|radio|hit\s?(tv|music)|club\b.*tv|ibiza|deluxe\s?music|viva\b/i },
+  { key: 'documentary',  label: 'Documentary',  icon: '🌍', patterns: /document|discovery|nat\s?geo|national\s?geo|history|animal\s?planet|science|planet\s?earth|bbc\s?earth|love\s?nature|doku|wildlife|travel|adventure|explore/i },
+  { key: 'religious',    label: 'Religious',    icon: '🕌', patterns: /relig|quran|islam|christian|church|gospel|prayer|bible|catholic|faith|iqra|kanal\s?7|trt\s?diyanet|huda|god\s?tv|daystar|ewtn/i },
+  { key: 'entertainment',label: 'Entertainment',icon: '🎭', patterns: /entertain|general|variety|comedy|drama|lifestyle|reality|tlc|bravo|e!\b|fx\b|usa\s?network|tbs|tnt\b|food|cooking|cuisine|hgtv|diy\b/i },
+  { key: 'education',    label: 'Education',    icon: '📚', patterns: /educat|learn|school|university|lecture|wissen|ted\b|pbs\b|knowledge/i },
+  { key: 'adult',        label: '18+',          icon: '🔞', patterns: /adult|18\+|xxx|eroti|playboy|hustle/i },
+
+  // Country / language categories
+  { key: 'arabic',       label: 'Arabic',       icon: '🌙', patterns: /arab|mbc\b|rotana|lbc\b|ldc\b|al[\s-]|abu\s?dhabi|dubai\b|qatar|kuwait|oman|jordan|iraq|syria|leban|egypt|tunis|morocco|maroc|algeri|libya|sudan|yemen|saudi|bahrain|nile\s?sat/i },
+  { key: 'turkish',      label: 'Turkish',      icon: '🇹🇷', patterns: /turk|türk|trt\b|kanal\s?d|star\s?tv|atv\b|show\s?tv|fox\s?tv.*tr|teve2|tv8\b|beyaz|habert|cnn\s?turk/i },
+  { key: 'french',       label: 'French',       icon: '🇫🇷', patterns: /franc|fran[çc]|tf1|france\s?\d|m6\b|canal\s?\+|arte\s?(fr)?|bfm|lci|rmc|c8\b|cstar|w9\b|nrj/i },
+  { key: 'german',       label: 'German',       icon: '🇩🇪', patterns: /german|deutsch|ard\b|zdf\b|rtl\b|sat\.?1|pro\s?7|vox\b|kabel|n-tv|ntv\b|welt\b|phoenix|3sat|arte\s?de|servus|orf\b|srf\b|swiss/i },
+  { key: 'english_uk',   label: 'UK',           icon: '🇬🇧', patterns: /\b(uk|british|england)\b|bbc\s?(one|two|three|four)|itv\b|channel\s?(4|5)|sky\s?(one|atlantic|cinema)|dave\b|e4\b|film4|more4|quest/i },
+  { key: 'english_us',   label: 'USA',          icon: '🇺🇸', patterns: /\b(usa|america|us\s?tv)\b|abc\b|nbc\b|cbs\b|fox\b(?!.*tr)|pbs\b|hulu|peacock|bet\b|cw\b|freeform/i },
+  { key: 'spanish',      label: 'Spanish',      icon: '🇪🇸', patterns: /spain|spanish|español|espanol|tve\b|antena\s?3|telecinco|la\s?sexta|cuatro\b|movistar|gol\b|barca|univision|telemundo|televisa/i },
+  { key: 'portuguese',   label: 'Portuguese',   icon: '🇵🇹', patterns: /portug|brasil|brazil|rtp\b|sic\b|tvi\b|globo|band\b|record\b|benfica|sporting|porto\s?canal|cmtv/i },
+  { key: 'italian',      label: 'Italian',      icon: '🇮🇹', patterns: /ital|rai\s?\d|rai\b|mediaset|canale\s?5|italia\s?1|rete\s?4|la7\b|sky\s?it|premium\s?(cinema|sport)|real\s?time/i },
+  { key: 'dutch',        label: 'Dutch',        icon: '🇳🇱', patterns: /dutch|nederland|npo\b|rtl\s?(4|5|7|8)|sbs\s?6|net\s?5|veronica|vtm\b|een\b|canvas/i },
+  { key: 'polish',       label: 'Polish',       icon: '🇵🇱', patterns: /pol(ish|ska|and)|tvp\b|tvn\b|polsat|tv\s?puls|canal\s?\+.*pl|eleven.*pl/i },
+  { key: 'romanian',     label: 'Romanian',     icon: '🇷🇴', patterns: /roman|antena\s?(1|3)|pro\s?tv|kanal\s?d.*ro|digi\b|tvr\b|prima\s?tv|look\s?tv|dolce/i },
+  { key: 'indian',       label: 'Indian',       icon: '🇮🇳', patterns: /india|hindi|tamil|telugu|malayalam|kannada|star\s?(plus|gold|bharat)|zee\b|sony.*tv|colors|ndtv|aaj\s?tak|sun\s?tv/i },
+  { key: 'russian',      label: 'Russian',      icon: '🇷🇺', patterns: /russ|росс|первый|россия|матч|нтв|рен|тнт|стс|домашний|пятница/i },
+  { key: 'balkan',       label: 'Balkan',       icon: '🏔️', patterns: /balkan|serb|croat|bosn|macedon|sloven|montenegr|albani|kosovo|hrt\b|nova\s?tv.*hr|rts\b|pink\b|happy\s?tv|vizion|klan/i },
+  { key: 'greek',        label: 'Greek',        icon: '🇬🇷', patterns: /greek|greece|mega\b.*gr|ant1|alpha\s?tv|skai|star\s?tv.*gr|ert\b|open\s?tv/i },
+  { key: 'scandinavian', label: 'Nordic',        icon: '🇸🇪', patterns: /scandinav|nordic|svt\b|tv4\b.*se|nrk\b|tv2\b.*(no|dk)|dr\b.*dk|yle\b|finland|sweden|norway|denmark|viasat/i },
+  { key: 'african',      label: 'African',      icon: '🌍', patterns: /afri(ca|que)|nigeria|ghana|kenya|ethiopia|south\s?africa|cameroon|congo|dstv|gotv|nollywood|afro/i },
+  { key: 'asian',        label: 'Asian',        icon: '🌏', patterns: /asian|korea|japan|chin(a|ese)|taiwan|filipino|thai|vietnam|malaysia|indonesia|nhk\b|kbs\b|tvb\b|astro\b|gma\b/i },
+  { key: 'persian',      label: 'Persian',      icon: '🇮🇷', patterns: /persian|iran|farsi|gem\s?tv|manoto|irib|press\s?tv/i },
+  { key: 'kurdish',      label: 'Kurdish',      icon: '☀️', patterns: /kurd|rudaw|kurdistan|nrt\b|payam/i },
 ];
 
-function classifyGroup(groupName: string): string {
-  for (const def of CATEGORY_DEFS) {
-    if (def.patterns.test(groupName)) return def.key;
+/* ── Smart prefix extraction ── */
+
+const PREFIX_RX = /^([A-Z]{2,3})\s*[|\-:│║·/\\]\s*/i;
+
+const KNOWN_CODES = new Set([
+  'us','uk','gb','ca','au','nz','de','at','ch','fr','be','es','mx','ar','cl','co','pe','ve',
+  'pt','br','it','nl','pl','ro','tr','in','pk','bd','sa','ae','kw','qa','bh','om','iq','jo',
+  'lb','sy','eg','ma','dz','tn','ly','sd','ye','ru','ua','by','kz','se','no','dk','fi','gr',
+  'cy','rs','hr','ba','mk','si','me','bg','al','xk','ir','af','kr','jp','cn','tw','hk','ph',
+  'th','vn','id','my','ng','gh','ke','za','et','tz','cm','il','cu','do','ec','py','uy','bo',
+  'cr','pa','gt','hn',
+]);
+
+const CODE_TO_CAT: Record<string, string> = {
+  us: 'english_us',
+  uk: 'english_uk', gb: 'english_uk', au: 'english_uk', nz: 'english_uk', ca: 'english_uk',
+  de: 'german', at: 'german', ch: 'german',
+  fr: 'french', be: 'french',
+  es: 'spanish', mx: 'spanish', cl: 'spanish', co: 'spanish', pe: 'spanish', ve: 'spanish',
+  cu: 'spanish', do: 'spanish', ec: 'spanish', py: 'spanish', uy: 'spanish', bo: 'spanish',
+  cr: 'spanish', pa: 'spanish', gt: 'spanish', hn: 'spanish',
+  pt: 'portuguese', br: 'portuguese',
+  it: 'italian', nl: 'dutch', pl: 'polish', ro: 'romanian', tr: 'turkish',
+  ar: 'arabic', sa: 'arabic', ae: 'arabic', kw: 'arabic', qa: 'arabic', bh: 'arabic',
+  om: 'arabic', iq: 'arabic', jo: 'arabic', lb: 'arabic', sy: 'arabic', eg: 'arabic',
+  ma: 'arabic', dz: 'arabic', tn: 'arabic', ly: 'arabic', sd: 'arabic', ye: 'arabic',
+  in: 'indian', pk: 'indian', bd: 'indian',
+  ru: 'russian', ua: 'russian', by: 'russian', kz: 'russian',
+  se: 'scandinavian', no: 'scandinavian', dk: 'scandinavian', fi: 'scandinavian',
+  gr: 'greek', cy: 'greek',
+  rs: 'balkan', hr: 'balkan', ba: 'balkan', mk: 'balkan', si: 'balkan', me: 'balkan',
+  bg: 'balkan', al: 'balkan', xk: 'balkan',
+  ir: 'persian', af: 'persian',
+  kr: 'asian', jp: 'asian', cn: 'asian', tw: 'asian', hk: 'asian', ph: 'asian',
+  th: 'asian', vn: 'asian', id: 'asian', my: 'asian',
+  ng: 'african', gh: 'african', ke: 'african', za: 'african', et: 'african', tz: 'african', cm: 'african',
+};
+
+function extractPrefix(raw: string): { code: string | null; rest: string } {
+  const m = raw.match(PREFIX_RX);
+  if (m) {
+    const code = m[1].toLowerCase();
+    if (KNOWN_CODES.has(code)) {
+      const rest = raw.slice(m[0].length).trim();
+      return { code, rest: rest || raw };
+    }
   }
+  return { code: null, rest: raw };
+}
+
+function matchCategoryPatterns(text: string): string {
+  for (const def of CATEGORY_DEFS) {
+    if (def.patterns.test(text)) return def.key;
+  }
+  return 'other';
+}
+
+function classifyGroup(groupName: string, channelNames: string[] = []): string {
+  const { code, rest } = extractPrefix(groupName);
+
+  // 1) Match cleaned suffix
+  const suffixResult = matchCategoryPatterns(rest);
+  if (suffixResult !== 'other') return suffixResult;
+
+  // 2) Match full group_title
+  const fullResult = matchCategoryPatterns(groupName);
+  if (fullResult !== 'other') return fullResult;
+
+  // 3) Country prefix → category
+  if (code && CODE_TO_CAT[code]) return CODE_TO_CAT[code];
+
+  // 4) Channel-name majority vote
+  if (channelNames.length > 0) {
+    const votes: Record<string, number> = {};
+    for (const name of channelNames.slice(0, 8)) {
+      const v = matchCategoryPatterns(name);
+      if (v !== 'other') votes[v] = (votes[v] || 0) + 1;
+    }
+    const best = Object.entries(votes).sort((a, b) => b[1] - a[1])[0];
+    if (best && best[1] >= 2) return best[0];
+  }
+
   return 'other';
 }
 
@@ -598,7 +695,8 @@ export function LiveTVBrowser() {
     const buckets = new Map<string, { groups: Map<string, PlaylistItem[]>; def: CategoryDef | null }>();
 
     for (const section of sections) {
-      const catKey = classifyGroup(section.name);
+      const channelNames = section.items.slice(0, 8).map((it: PlaylistItem) => it.name);
+      const catKey = classifyGroup(section.name, channelNames);
       if (!buckets.has(catKey)) {
         buckets.set(catKey, {
           groups: new Map(),
@@ -610,10 +708,49 @@ export function LiveTVBrowser() {
       bucket.groups.set(section.name, [...existing, ...section.items]);
     }
 
+    // Break up "Other" if it's disproportionately large (>40% of total)
+    const otherBucket = buckets.get('other');
+    if (otherBucket && otherBucket.groups.size > 3) {
+      const totalAll = sections.reduce((s: number, sec: GroupedSection) => s + sec.items.length, 0);
+      let otherCount = 0;
+      for (const items of otherBucket.groups.values()) otherCount += items.length;
+
+      if (otherCount / Math.max(totalAll, 1) > 0.4) {
+        const stillOther = new Map<string, PlaylistItem[]>();
+        for (const [name, items] of otherBucket.groups.entries()) {
+          // Deep classify: majority-vote on ALL channel names
+          const votes: Record<string, number> = {};
+          for (const item of items) {
+            const v = matchCategoryPatterns(item.name);
+            if (v !== 'other') votes[v] = (votes[v] || 0) + 1;
+          }
+          const best = Object.entries(votes).sort((a, b) => b[1] - a[1])[0];
+          if (best && best[1] / Math.max(items.length, 1) >= 0.3) {
+            if (!buckets.has(best[0])) {
+              buckets.set(best[0], { groups: new Map(), def: CATEGORY_DEFS.find((d) => d.key === best[0]) || null });
+            }
+            const target = buckets.get(best[0])!;
+            const ex = target.groups.get(name) || [];
+            target.groups.set(name, [...ex, ...items]);
+          } else {
+            stillOther.set(name, items);
+          }
+        }
+        if (stillOther.size === 0) {
+          buckets.delete('other');
+        } else {
+          otherBucket.groups = stillOther;
+        }
+      }
+    }
+
     const result: MergedCategory[] = [];
     for (const [key, bucket] of buckets.entries()) {
       const groups = Array.from(bucket.groups.entries())
-        .map(([name, items]) => ({ name, items }))
+        .map(([name, items]) => {
+          const { rest } = extractPrefix(name);
+          return { name: rest || name, items };
+        })
         .sort((a, b) => b.items.length - a.items.length);
       const total = groups.reduce((s, g) => s + g.items.length, 0);
       result.push({
@@ -625,7 +762,12 @@ export function LiveTVBrowser() {
       });
     }
 
-    return result.sort((a, b) => b.totalCount - a.totalCount);
+    // Sort: largest first, but push "Other" to the end
+    return result.sort((a, b) => {
+      if (a.key === 'other') return 1;
+      if (b.key === 'other') return -1;
+      return b.totalCount - a.totalCount;
+    });
   }, [sections]);
 
   // Flat channel list for global search
