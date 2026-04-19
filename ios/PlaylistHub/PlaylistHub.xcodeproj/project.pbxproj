@@ -36,6 +36,7 @@
 		AA11BB22CC33DD44EE55FF01 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF02 /* ImageCache.swift */; };
 		AA11BB22CC33DD44EE55FF03 /* PlaylistCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF04 /* PlaylistCache.swift */; };
 		BB22CC33DD44EE55FF660001 /* BuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF660002 /* BuildInfo.swift */; };
+		CC33DD44EE55FF6600770001 /* RemoteConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC33DD44EE55FF6600770002 /* RemoteConfig.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -68,6 +69,7 @@
 		F1E2D3C4B5A60798A9B0C1D2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA11BB22CC33DD44EE55FF02 /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
 		AA11BB22CC33DD44EE55FF04 /* PlaylistCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistCache.swift; sourceTree = "<group>"; };
+		CC33DD44EE55FF6600770002 /* RemoteConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteConfig.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -255,6 +257,7 @@
 				AA11BB22CC33DD44EE55FF02 /* ImageCache.swift */,
 				8CDA21138AB82340B51337E1 /* KeychainHelper.swift */,
 				AA11BB22CC33DD44EE55FF04 /* PlaylistCache.swift */,
+				CC33DD44EE55FF6600770002 /* RemoteConfig.swift */,
 				BB231FECDEB482DBE4A39EEB /* SupabaseManager.swift */,
 				B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */,
 			);
@@ -451,6 +454,7 @@
 				AA11BB22CC33DD44EE55FF01 /* ImageCache.swift in Sources */,
 				AA11BB22CC33DD44EE55FF03 /* PlaylistCache.swift in Sources */,
 				BB22CC33DD44EE55FF660001 /* BuildInfo.swift in Sources */,
+				CC33DD44EE55FF6600770001 /* RemoteConfig.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
