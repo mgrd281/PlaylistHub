@@ -69,6 +69,9 @@ struct MainTabView: View {
 
     /// Warm shared caches so first tab load is near-instant
     private func prefetch() async {
-        _ = try? await PlaylistCache.shared.fetchPlaylists()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { _ = try? await PlaylistCache.shared.fetchPlaylists() }
+            group.addTask { await preloadLiveTVData() }
+        }
     }
 }

@@ -1067,8 +1067,22 @@ final class LiveTVViewModel: ObservableObject {
     private var fallbackTimer: DispatchWorkItem?
 
     /// In-memory cache: playlistId → (categories, allChannels, timestamp)
-    private static var channelCache: [String: (categories: [LiveTVCategory], channels: [PlaylistItem], ts: CFAbsoluteTime)] = [:]
-    private static let cacheTTL: CFAbsoluteTime = 300 // 5 minutes
+    static var channelCache: [String: (categories: [LiveTVCategory], channels: [PlaylistItem], ts: CFAbsoluteTime)] = [:]
+    private static let cacheTTL: CFAbsoluteTime = 600 // 10 minutes
+
+    /// Pre-fetched playlists from background preloader
+    static var preloadedPlaylists: [BrowsePlaylistInfo]?
+
+    /// Check if channels are cached for a given playlist
+    static func hasChannelCache(for playlistId: String) -> Bool {
+        guard let cached = channelCache[playlistId] else { return false }
+        return CFAbsoluteTimeGetCurrent() - cached.ts < cacheTTL
+    }
+
+    /// Store pre-fetched channel data from background preloader
+    static func storeChannelCache(playlistId: String, categories: [LiveTVCategory], channels: [PlaylistItem]) {
+        channelCache[playlistId] = (categories, channels, CFAbsoluteTimeGetCurrent())
+    }
 
     /// Faster cascade timeout for live TV (4s instead of 6s)
     private static let sourceTimeout: TimeInterval = 4
@@ -1117,6 +1131,17 @@ final class LiveTVViewModel: ObservableObject {
         guard !hasLoadedPlaylists else { return }
 
         setupLifecycleObservers()
+
+        // Check if background preloader already fetched playlists (instant)
+        if let preloaded = Self.preloadedPlaylists, !preloaded.isEmpty {
+            self.playlists = preloaded
+            self.playlistsLoading = false
+            self.hasLoadedPlaylists = true
+            if preloaded.count == 1 {
+                selectPlaylist(preloaded[0])
+            }
+            return
+        }
 
         playlistsLoading = true
         playlistsError = nil
@@ -1171,7 +1196,7 @@ final class LiveTVViewModel: ObservableObject {
     // MARK: - Channel loading & classification (with cache)
 
     private func loadChannels(playlistId: String) async {
-        // Check in-memory cache first
+        // Check in-memory cache first (instant restore from preload or previous visit)
         if let cached = Self.channelCache[playlistId],
            CFAbsoluteTimeGetCurrent() - cached.ts < Self.cacheTTL {
             self.categories = cached.categories
@@ -1179,35 +1204,38 @@ final class LiveTVViewModel: ObservableObject {
             if let first = categories.first {
                 activeCategory = first
             }
-            // Auto-play first channel if nothing is playing
             autoPlayFirstChannelIfNeeded()
             return
         }
 
         isLoading = true
-        defer { isLoading = false }
 
         do {
             let sections = try await fetchGroupedChannels(playlistId: playlistId)
-            self.allChannels = sections.flatMap(\.items)
-            self.categories = buildCategories(from: sections)
+            let channels = sections.flatMap(\.items)
+
+            // Heavy classification — run off main thread
+            let categories = await Task.detached(priority: .userInitiated) {
+                buildLiveTVCategories(from: sections)
+            }.value
+
+            self.allChannels = channels
+            self.categories = categories
+            isLoading = false
 
             // Cache the result
             Self.channelCache[playlistId] = (
-                categories: self.categories,
-                channels: self.allChannels,
+                categories: categories,
+                channels: channels,
                 ts: CFAbsoluteTimeGetCurrent()
             )
 
-            // Auto-select first category
             if let first = categories.first {
                 activeCategory = first
             }
-
-            // Auto-play first channel if nothing is playing
             autoPlayFirstChannelIfNeeded()
         } catch {
-            // Empty state shown
+            isLoading = false
         }
     }
 
@@ -1242,96 +1270,9 @@ final class LiveTVViewModel: ObservableObject {
         return try JSONDecoder.supabase.decode(BrowseGroupedResponse.self, from: data).sections
     }
 
-    /// Build categories using smart multi-signal classification.
+    /// Build categories — delegates to standalone function (can run off main thread)
     private func buildCategories(from sections: [BrowseSection]) -> [LiveTVCategory] {
-        // Step 1: Classify each section (group_title) into a category key
-        var buckets: [String: [(sectionName: String, items: [PlaylistItem])]] = [:]
-
-        for section in sections {
-            let channelNames = section.items.prefix(8).map(\.name)
-            let key = classifyGroup(section.name, channelNames: Array(channelNames))
-
-            buckets[key, default: []].append((section.name, section.items))
-        }
-
-        // Step 2: Try to break up "Other" if it's disproportionately large
-        if let otherBucket = buckets["other"], otherBucket.count > 3 {
-            let totalAll = sections.reduce(0) { $0 + $1.items.count }
-            let otherCount = otherBucket.reduce(0) { $0 + $1.items.count }
-
-            // If "Other" is more than 40% of total, try harder on each group
-            if Double(otherCount) / Double(max(totalAll, 1)) > 0.4 {
-                var stillOther: [(String, [PlaylistItem])] = []
-                for (name, items) in otherBucket {
-                    // Try harder: check ALL channel names
-                    let allNames = items.map(\.name)
-                    let deepKey = deepClassify(groupName: name, channelNames: allNames)
-                    if deepKey != "other" {
-                        buckets[deepKey, default: []].append((name, items))
-                    } else {
-                        stillOther.append((name, items))
-                    }
-                }
-                buckets["other"] = stillOther.isEmpty ? nil : stillOther
-            }
-        }
-
-        // Step 3: Build LiveTVCategory objects
-        var result: [LiveTVCategory] = []
-        for (key, entries) in buckets {
-            let def = categoryDefs.first(where: { $0.key == key })
-
-            let groups: [LiveTVCategory.ChannelGroup] = entries
-                .map { entry in
-                    let (_, cleaned) = extractPrefix(entry.sectionName)
-                    let displayName = cleaned.isEmpty ? entry.sectionName : cleaned
-                    return LiveTVCategory.ChannelGroup(
-                        name: entry.sectionName,
-                        displayName: displayName,
-                        items: entry.items
-                    )
-                }
-                .sorted { $0.items.count > $1.items.count }
-
-            let total = groups.reduce(0) { $0 + $1.items.count }
-
-            result.append(LiveTVCategory(
-                id: key,
-                key: key,
-                label: def?.label ?? "Other",
-                icon: def?.icon ?? "📺",
-                groups: groups,
-                totalCount: total
-            ))
-        }
-
-        // Sort: largest categories first, but push "Other" to the end
-        return result.sorted {
-            if $0.key == "other" { return false }
-            if $1.key == "other" { return true }
-            return $0.totalCount > $1.totalCount
-        }
-    }
-
-    /// Deep classification using majority vote on ALL channel names in a group.
-    private func deepClassify(groupName: String, channelNames: [String]) -> String {
-        var votes: [String: Int] = [:]
-
-        for name in channelNames {
-            let key = matchCategoryPatterns(name)
-            if key != "other" {
-                votes[key, default: 0] += 1
-            }
-        }
-
-        // Require at least 30% consensus
-        let total = channelNames.count
-        if let best = votes.max(by: { $0.value < $1.value }),
-           Double(best.value) / Double(max(total, 1)) >= 0.3 {
-            return best.key
-        }
-
-        return "other"
+        buildLiveTVCategories(from: sections)
     }
 
     // MARK: - Category selection
@@ -1568,7 +1509,152 @@ final class LiveTVViewModel: ObservableObject {
     }
 }
 
-// MARK: - API response types (private)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MARK: - Standalone Category Builder (runs off main thread)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Build categories from sections using smart multi-signal classification.
+/// Designed to run off @MainActor (e.g. in Task.detached or background preloader).
+private func buildLiveTVCategories(from sections: [BrowseSection]) -> [LiveTVCategory] {
+    var buckets: [String: [(sectionName: String, items: [PlaylistItem])]] = [:]
+
+    for section in sections {
+        let channelNames = section.items.prefix(8).map(\.name)
+        let key = classifyGroup(section.name, channelNames: Array(channelNames))
+        buckets[key, default: []].append((section.name, section.items))
+    }
+
+    // Try to break up "Other" if disproportionately large
+    if let otherBucket = buckets["other"], otherBucket.count > 3 {
+        let totalAll = sections.reduce(0) { $0 + $1.items.count }
+        let otherCount = otherBucket.reduce(0) { $0 + $1.items.count }
+
+        if Double(otherCount) / Double(max(totalAll, 1)) > 0.4 {
+            var stillOther: [(String, [PlaylistItem])] = []
+            for (name, items) in otherBucket {
+                let allNames = items.map(\.name)
+                let deepKey = deepClassifyGroup(groupName: name, channelNames: allNames)
+                if deepKey != "other" {
+                    buckets[deepKey, default: []].append((name, items))
+                } else {
+                    stillOther.append((name, items))
+                }
+            }
+            buckets["other"] = stillOther.isEmpty ? nil : stillOther
+        }
+    }
+
+    var result: [LiveTVCategory] = []
+    for (key, entries) in buckets {
+        let def = categoryDefs.first(where: { $0.key == key })
+
+        let groups: [LiveTVCategory.ChannelGroup] = entries
+            .map { entry in
+                let (_, cleaned) = extractPrefix(entry.sectionName)
+                let displayName = cleaned.isEmpty ? entry.sectionName : cleaned
+                return LiveTVCategory.ChannelGroup(
+                    name: entry.sectionName,
+                    displayName: displayName,
+                    items: entry.items
+                )
+            }
+            .sorted { $0.items.count > $1.items.count }
+
+        let total = groups.reduce(0) { $0 + $1.items.count }
+
+        result.append(LiveTVCategory(
+            id: key,
+            key: key,
+            label: def?.label ?? "Other",
+            icon: def?.icon ?? "📺",
+            groups: groups,
+            totalCount: total
+        ))
+    }
+
+    return result.sorted {
+        if $0.key == "other" { return false }
+        if $1.key == "other" { return true }
+        return $0.totalCount > $1.totalCount
+    }
+}
+
+/// Deep classification using majority vote on ALL channel names.
+private func deepClassifyGroup(groupName: String, channelNames: [String]) -> String {
+    var votes: [String: Int] = [:]
+    for name in channelNames {
+        let key = matchCategoryPatterns(name)
+        if key != "other" { votes[key, default: 0] += 1 }
+    }
+    let total = channelNames.count
+    if let best = votes.max(by: { $0.value < $1.value }),
+       Double(best.value) / Double(max(total, 1)) >= 0.3 {
+        return best.key
+    }
+    return "other"
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MARK: - Background Preloader
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Pre-warm Live TV data in background. Called from MainTabView.prefetch()
+/// so the Live TV tab opens instantly with cached data.
+func preloadLiveTVData() async {
+    // 1. Fetch playlists
+    guard let playlists = try? await fetchLiveTVPlaylists(), !playlists.isEmpty else { return }
+    await MainActor.run { LiveTVViewModel.preloadedPlaylists = playlists }
+
+    // 2. Preload channels for the first playlist (most common path)
+    let pid = playlists[0].id
+    let alreadyCached = await MainActor.run { LiveTVViewModel.hasChannelCache(for: pid) }
+    if alreadyCached { return }
+
+    // 3. Fetch channels + classify (all off main thread)
+    guard let sections = try? await fetchLiveTVGroupedChannels(playlistId: pid) else { return }
+    let channels = sections.flatMap(\.items)
+    let categories = buildLiveTVCategories(from: sections)
+
+    // 4. Store in ViewModel's cache
+    await MainActor.run {
+        LiveTVViewModel.storeChannelCache(playlistId: pid, categories: categories, channels: channels)
+    }
+}
+
+private func fetchLiveTVPlaylists() async throws -> [BrowsePlaylistInfo] {
+    let token = try await SupabaseManager.shared.client.auth.session.accessToken
+    var components = URLComponents(url: AppConfig.webAppBaseURL, resolvingAgainstBaseURL: false)!
+    components.path = "/api/browse"
+    components.queryItems = [URLQueryItem(name: "mode", value: "playlists")]
+    var request = URLRequest(url: components.url!)
+    request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, http.statusCode < 300 else {
+        throw NSError(domain: "LiveTV", code: 1)
+    }
+    struct Resp: Codable { let playlists: [BrowsePlaylistInfo] }
+    return try JSONDecoder().decode(Resp.self, from: data).playlists
+}
+
+private func fetchLiveTVGroupedChannels(playlistId: String) async throws -> [BrowseSection] {
+    let token = try await SupabaseManager.shared.client.auth.session.accessToken
+    var components = URLComponents(url: AppConfig.webAppBaseURL, resolvingAgainstBaseURL: false)!
+    components.path = "/api/browse"
+    components.queryItems = [
+        URLQueryItem(name: "type", value: "channel"),
+        URLQueryItem(name: "mode", value: "grouped"),
+        URLQueryItem(name: "playlist_id", value: playlistId),
+    ]
+    var request = URLRequest(url: components.url!)
+    request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, http.statusCode < 300 else {
+        throw NSError(domain: "LiveTV", code: 1)
+    }
+    return try JSONDecoder.supabase.decode(BrowseGroupedResponse.self, from: data).sections
+}
+
+// MARK: - API response types
 
 private struct BrowseGroupedResponse: Codable {
     let sections: [BrowseSection]
