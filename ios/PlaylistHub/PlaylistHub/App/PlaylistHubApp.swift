@@ -7,6 +7,7 @@ struct PlaylistHubApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var deviceManager = DeviceManager.shared
     @StateObject private var themeManager = ThemeManager.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // Configure audio session for media playback — required so audio works
@@ -29,8 +30,35 @@ struct PlaylistHubApp: App {
                 .environmentObject(themeManager)
                 .preferredColorScheme(.dark)
                 .tint(themeManager.accentColor)
+                .onChange(of: scenePhase) { _, phase in
+                    switch phase {
+                    case .active:
+                        // Re-activate audio session on foreground return
+                        do {
+                            let session = AVAudioSession.sharedInstance()
+                            try session.setCategory(.playback, mode: .moviePlayback, options: [])
+                            try session.setActive(true)
+                        } catch {
+                            print("[Audio] Foreground re-activation failed: \(error)")
+                        }
+                        // Notify all active players to resume
+                        NotificationCenter.default.post(name: .appDidBecomeActive, object: nil)
+                    case .background:
+                        // Keep audio session active for background playback
+                        NotificationCenter.default.post(name: .appDidEnterBackground, object: nil)
+                    default:
+                        break
+                    }
+                }
         }
     }
+}
+
+// MARK: - App Lifecycle Notifications
+
+extension Notification.Name {
+    static let appDidBecomeActive = Notification.Name("appDidBecomeActive")
+    static let appDidEnterBackground = Notification.Name("appDidEnterBackground")
 }
 
 @MainActor

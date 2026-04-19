@@ -476,6 +476,9 @@ final class PlayerViewModel: ObservableObject {
     private var statusObserver: NSKeyValueObservation?
     private var currentIndex: Int
     private var lastHistorySave: CFAbsoluteTime = 0
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    /// Whether playback was active before entering background (for auto-resume)
+    private var wasPlayingBeforeBackground = false
 
     /// Cascade fallback state
     private var fallbackURLs: [URL] = []
@@ -554,6 +557,7 @@ final class PlayerViewModel: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(true)
         loadStream(for: currentItem)
         setupTimeObserver()
+        setupLifecycleObservers()
         if currentItem.contentType == .series { loadEpisodes() }
     }
 
@@ -705,6 +709,72 @@ final class PlayerViewModel: ObservableObject {
         player.replaceCurrentItem(with: nil)
         if let obs = timeObserver { player.removeTimeObserver(obs) }
         statusObserver?.invalidate()
+        removeLifecycleObservers()
+    }
+
+    // MARK: - Lifecycle (background/foreground)
+
+    private func setupLifecycleObservers() {
+        // Foreground return — re-activate audio session and resume playback
+        let fg = NotificationCenter.default.addObserver(
+            forName: .appDidBecomeActive, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                try? AVAudioSession.sharedInstance().setActive(true)
+                if self.wasPlayingBeforeBackground && self.player.currentItem != nil {
+                    self.player.play()
+                    self.isPlaying = true
+                    self.wasPlayingBeforeBackground = false
+                }
+            }
+        }
+        lifecycleObservers.append(fg)
+
+        // Background entry — record state for auto-resume
+        let bg = NotificationCenter.default.addObserver(
+            forName: .appDidEnterBackground, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.wasPlayingBeforeBackground = self.player.timeControlStatus == .playing
+                self.saveWatchProgress()
+            }
+        }
+        lifecycleObservers.append(bg)
+
+        // AVAudioSession interruption (phone calls, Siri, alarms)
+        let interrupt = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let info = notification.userInfo,
+                  let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+            else { return }
+            Task { @MainActor in
+                switch type {
+                case .began:
+                    self.wasPlayingBeforeBackground = self.player.timeControlStatus == .playing
+                case .ended:
+                    let optionsValue = info[AVAudioSession.InterruptionOptions.rawValue] as? UInt ?? 0
+                    let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                    if options.contains(.shouldResume) && self.wasPlayingBeforeBackground {
+                        try? AVAudioSession.sharedInstance().setActive(true)
+                        self.player.play()
+                        self.isPlaying = true
+                    }
+                    self.wasPlayingBeforeBackground = false
+                @unknown default: break
+                }
+            }
+        }
+        lifecycleObservers.append(interrupt)
+    }
+
+    private func removeLifecycleObservers() {
+        lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        lifecycleObservers.removeAll()
     }
 
     /// Save current playback position to watch history

@@ -123,6 +123,8 @@ struct SettingsView: View {
                         VStack(spacing: 0) {
                             infoRow(icon: "info.circle.fill", title: "Version", value: appVersion, color: accent)
                             Divider().padding(.leading, 50)
+                            infoRow(icon: "hammer.fill", title: "Build", value: buildIdentifier, color: .orange)
+                            Divider().padding(.leading, 50)
                             infoRow(icon: "server.rack", title: "Backend", value: "Supabase", color: .green)
                             Divider().padding(.leading, 50)
                             infoRow(icon: "shield.checkered", title: "Security", value: "RLS + JWT", color: .blue)
@@ -325,6 +327,14 @@ struct SettingsView: View {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "\(version) (\(build))"
+    }
+
+    /// Unique build identifier — compile-time timestamp ensures every build is distinguishable
+    private var buildIdentifier: String {
+        let date = BuildInfo.compileDate
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, HH:mm"
+        return formatter.string(from: date)
     }
 }
 

@@ -535,8 +535,10 @@ private struct ContinueWatchingCard: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 10)
-
-                // ── Play button overlay ──
+            }
+            .frame(width: cardWidth, height: cardHeight)
+            // ── Play button — centered in the card via overlay ──
+            .overlay {
                 Circle()
                     .fill(.ultraThinMaterial)
                     .frame(width: 42, height: 42)
@@ -547,9 +549,7 @@ private struct ContinueWatchingCard: View {
                             .offset(x: 1)
                     }
                     .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-                    .offset(y: -20)
             }
-            .frame(width: cardWidth, height: cardHeight)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             // ── Below-card metadata ──

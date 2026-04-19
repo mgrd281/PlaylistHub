@@ -1058,6 +1058,9 @@ final class LiveTVViewModel: ObservableObject {
     private var statusObserver: NSKeyValueObservation?
     private var controlsTimer: Timer?
     private var hasLoadedPlaylists = false
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    /// Whether inline player was active before background
+    private var wasPlayingBeforeBackground = false
 
     /// Cascade fallback state
     private var fallbackURLs: [URL] = []
@@ -1112,6 +1115,8 @@ final class LiveTVViewModel: ObservableObject {
     func loadPlaylists() async {
         // Skip if already loaded — preserves player, categories, and scroll state
         guard !hasLoadedPlaylists else { return }
+
+        setupLifecycleObservers()
 
         playlistsLoading = true
         playlistsError = nil
@@ -1491,6 +1496,75 @@ final class LiveTVViewModel: ObservableObject {
         playerBuffering = false
         playerError = nil
         showPlayerControls = false
+        removeLifecycleObservers()
+    }
+
+    // MARK: - Lifecycle (background/foreground auto-resume)
+
+    private func setupLifecycleObservers() {
+        guard lifecycleObservers.isEmpty else { return }
+
+        // Foreground return — re-activate audio and resume inline player
+        let fg = NotificationCenter.default.addObserver(
+            forName: .appDidBecomeActive, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                try? AVAudioSession.sharedInstance().setActive(true)
+                if self.wasPlayingBeforeBackground,
+                   let player = self.inlinePlayer,
+                   player.currentItem != nil {
+                    player.play()
+                    self.isPlaying = true
+                    self.wasPlayingBeforeBackground = false
+                }
+            }
+        }
+        lifecycleObservers.append(fg)
+
+        // Background entry — remember playback state
+        let bg = NotificationCenter.default.addObserver(
+            forName: .appDidEnterBackground, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.wasPlayingBeforeBackground = self.isPlaying && self.inlinePlayer?.currentItem != nil
+            }
+        }
+        lifecycleObservers.append(bg)
+
+        // AVAudioSession interruption (phone calls, Siri)
+        let interrupt = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let info = notification.userInfo,
+                  let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+            else { return }
+            Task { @MainActor in
+                switch type {
+                case .began:
+                    self.wasPlayingBeforeBackground = self.isPlaying
+                case .ended:
+                    let optionsValue = info[AVAudioSession.InterruptionOptions.rawValue] as? UInt ?? 0
+                    let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                    if options.contains(.shouldResume) && self.wasPlayingBeforeBackground {
+                        try? AVAudioSession.sharedInstance().setActive(true)
+                        self.inlinePlayer?.play()
+                        self.isPlaying = true
+                    }
+                    self.wasPlayingBeforeBackground = false
+                @unknown default: break
+                }
+            }
+        }
+        lifecycleObservers.append(interrupt)
+    }
+
+    private func removeLifecycleObservers() {
+        lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        lifecycleObservers.removeAll()
     }
 }
 

@@ -35,11 +35,13 @@
 		FF4257811E55978FCC57C7B9 /* WatchHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */; };
 		AA11BB22CC33DD44EE55FF01 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF02 /* ImageCache.swift */; };
 		AA11BB22CC33DD44EE55FF03 /* PlaylistCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF04 /* PlaylistCache.swift */; };
+		BB22CC33DD44EE55FF660001 /* BuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF660002 /* BuildInfo.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		01E46E374DE46C6DD0B85877 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		02424ED07E2345E8FEE76928 /* DeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceManager.swift; sourceTree = "<group>"; };
+		BB22CC33DD44EE55FF660002 /* BuildInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildInfo.swift; sourceTree = "<group>"; };
 		03B03BB81AD4CB797EB55479 /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
 		0893EB466EF18043F0149485 /* PlaylistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailView.swift; sourceTree = "<group>"; };
 		0DBD14A7EF24BBA3499A6C92 /* PlaylistHubApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistHubApp.swift; sourceTree = "<group>"; };
@@ -247,6 +249,7 @@
 			isa = PBXGroup;
 			children = (
 				44CD09BBC1D508CF1F26967D /* AuthManager.swift */,
+				BB22CC33DD44EE55FF660002 /* BuildInfo.swift */,
 				EF388B01C376C5E4B72CF928 /* DataService.swift */,
 				02424ED07E2345E8FEE76928 /* DeviceManager.swift */,
 				AA11BB22CC33DD44EE55FF02 /* ImageCache.swift */,
@@ -447,6 +450,7 @@
 				FF4257811E55978FCC57C7B9 /* WatchHistoryManager.swift in Sources */,
 				AA11BB22CC33DD44EE55FF01 /* ImageCache.swift in Sources */,
 				AA11BB22CC33DD44EE55FF03 /* PlaylistCache.swift in Sources */,
+				BB22CC33DD44EE55FF660001 /* BuildInfo.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
