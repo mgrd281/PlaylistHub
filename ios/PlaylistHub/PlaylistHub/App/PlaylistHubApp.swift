@@ -32,8 +32,8 @@ struct PlaylistHubApp: App {
                 .environmentObject(remoteConfig)
                 .preferredColorScheme(.dark)
                 .tint(themeManager.accentColor)
-                .onChange(of: scenePhase) { phase in
-                    switch phase {
+                .onChange(of: scenePhase) {
+                    switch scenePhase {
                     case .active:
                         // Re-activate audio session on foreground return
                         do {
