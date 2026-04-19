@@ -101,7 +101,9 @@ struct HomeView: View {
             } message: { playlist in
                 Text("This will permanently delete \"\(playlist.name)\" and all its content.")
             }
-            .fullScreenCover(item: $selectedItem) { item in
+            .fullScreenCover(item: $selectedItem, onDismiss: {
+                vm.refreshWatchHistory()
+            }) { item in
                 PlayerView(item: item, channelList: nil)
             }
         }
@@ -819,6 +821,11 @@ final class HomeViewModel: ObservableObject {
 
     func removeFromHistory(_ itemId: UUID) {
         WatchHistoryManager.shared.remove(itemId: itemId)
+        watchHistory = WatchHistoryManager.shared.continueWatchingItems
+    }
+
+    /// Called when the player is dismissed to pick up newly saved history
+    func refreshWatchHistory() {
         watchHistory = WatchHistoryManager.shared.continueWatchingItems
     }
 

@@ -131,8 +131,15 @@ struct PlaylistItem: Codable, Identifiable {
         AppConfig.streamProxyURL(for: resolvedStreamURL)
     }
 
+    /// Whether this URL looks like an Xtream-codes provider endpoint
+    private var isXtreamURL: Bool {
+        streamUrl.contains("/live/") || streamUrl.contains("/movie/") || streamUrl.contains("/series/")
+    }
+
     var resolvedStreamURL: String {
-        if isLive {
+        // Xtream-codes servers serve HLS for any content type when requested as .m3u8
+        // AVPlayer cannot play MKV/TS containers directly, so we always convert
+        if isXtreamURL {
             let ext = streamUrl.components(separatedBy: ".").last ?? ""
             if ext != "m3u8" {
                 return streamUrl.replacingOccurrences(
