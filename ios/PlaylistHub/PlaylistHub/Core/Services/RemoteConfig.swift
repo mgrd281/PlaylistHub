@@ -287,8 +287,9 @@ extension AppRemoteConfig {
             HomeSectionConfig(id: "stats", enabled: true, order: 2, title: nil, icon: nil, maxItems: nil),
             HomeSectionConfig(id: "continueWatching", enabled: true, order: 3, title: "Continue Watching", icon: "clock.fill", maxItems: nil),
             HomeSectionConfig(id: "featuredMovies", enabled: true, order: 4, title: "Featured Movies", icon: "film.fill", maxItems: 15),
-            HomeSectionConfig(id: "featuredSeries", enabled: true, order: 5, title: "Popular Series", icon: "rectangle.stack.fill", maxItems: 15),
-            HomeSectionConfig(id: "playlists", enabled: true, order: 6, title: "Your Playlists", icon: nil, maxItems: nil)
+            HomeSectionConfig(id: "top10", enabled: true, order: 5, title: nil, icon: nil, maxItems: 10),
+            HomeSectionConfig(id: "featuredSeries", enabled: true, order: 6, title: "Popular Series", icon: "rectangle.stack.fill", maxItems: 15),
+            HomeSectionConfig(id: "playlists", enabled: true, order: 7, title: "Your Playlists", icon: nil, maxItems: nil)
         ],
         quickActions: [
             QuickActionConfig(id: "liveTV", icon: "tv.fill", title: "Live TV", subtitle: nil, gradientColors: ["#3399FF", "#33CCCC"], enabled: true, order: 0, destination: "liveTV"),

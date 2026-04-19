@@ -839,10 +839,14 @@ struct Top10Card: View {
     let rank: Int
     let accentColor: Color
 
-    /// Total width of one card cell (numeral zone + poster)
-    private let cellWidth: CGFloat = 158
     private let posterWidth: CGFloat = 110
     private let posterHeight: CGFloat = 164
+
+    /// Two-digit ranks need more room for the numeral
+    private var isDoubleDigit: Bool { rank >= 10 }
+    private var numeralWidth: CGFloat { isDoubleDigit ? 72 : 48 }
+    private var cellWidth: CGFloat { numeralWidth + posterWidth }
+    private var fontSize: CGFloat { isDoubleDigit ? 120 : 150 }
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -853,7 +857,7 @@ struct Top10Card: View {
             // Layer 2: Poster card (overlapping the numeral, offset right)
             posterCard
                 .frame(width: posterWidth, height: posterHeight)
-                .offset(x: cellWidth - posterWidth)  // push poster to right, overlapping numeral
+                .offset(x: numeralWidth)
         }
         .frame(width: cellWidth, height: posterHeight + 8)
     }
@@ -862,67 +866,61 @@ struct Top10Card: View {
 
     private var rankNumeral: some View {
         Text("\(rank)")
-            .font(.system(size: 150, weight: .black, design: .rounded))
+            .font(.system(size: fontSize, weight: .black, design: .rounded))
             .italic()
-            .foregroundStyle(.clear)
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [
+                        Color(.systemGray4).opacity(0.5),
+                        Color(.systemGray5).opacity(0.2)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
             .overlay(
                 Text("\(rank)")
-                    .font(.system(size: 150, weight: .black, design: .rounded))
+                    .font(.system(size: fontSize, weight: .black, design: .rounded))
                     .italic()
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [
-                                Color(.systemGray4).opacity(0.6),
-                                Color(.systemGray5).opacity(0.3)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .foregroundStyle(.clear)
+                    .background(.clear)
                     .overlay(
                         Text("\(rank)")
-                            .font(.system(size: 150, weight: .black, design: .rounded))
+                            .font(.system(size: fontSize, weight: .black, design: .rounded))
                             .italic()
-                            .foregroundStyle(.clear)
-                            .background(.clear)
-                            .overlay(
-                                // Stroke outline effect
-                                Text("\(rank)")
-                                    .font(.system(size: 150, weight: .black, design: .rounded))
-                                    .italic()
-                                    .foregroundStyle(Color(.systemGray3).opacity(0.5))
-                                    .mask(
-                                        ZStack {
-                                            Text("\(rank)")
-                                                .font(.system(size: 150, weight: .black, design: .rounded))
-                                                .italic()
-                                                .foregroundStyle(.white)
-                                                .offset(x: -1.5)
-                                            Text("\(rank)")
-                                                .font(.system(size: 150, weight: .black, design: .rounded))
-                                                .italic()
-                                                .foregroundStyle(.white)
-                                                .offset(x: 1.5)
-                                            Text("\(rank)")
-                                                .font(.system(size: 150, weight: .black, design: .rounded))
-                                                .italic()
-                                                .foregroundStyle(.white)
-                                                .offset(y: -1.5)
-                                            Text("\(rank)")
-                                                .font(.system(size: 150, weight: .black, design: .rounded))
-                                                .italic()
-                                                .foregroundStyle(.white)
-                                                .offset(y: 1.5)
-                                            Text("\(rank)")
-                                                .font(.system(size: 150, weight: .black, design: .rounded))
-                                                .italic()
-                                                .foregroundStyle(.black)
-                                        }
-                                    )
+                            .foregroundStyle(Color(.systemGray3).opacity(0.45))
+                            .mask(
+                                ZStack {
+                                    Text("\(rank)")
+                                        .font(.system(size: fontSize, weight: .black, design: .rounded))
+                                        .italic()
+                                        .foregroundStyle(.white)
+                                        .offset(x: -1.5)
+                                    Text("\(rank)")
+                                        .font(.system(size: fontSize, weight: .black, design: .rounded))
+                                        .italic()
+                                        .foregroundStyle(.white)
+                                        .offset(x: 1.5)
+                                    Text("\(rank)")
+                                        .font(.system(size: fontSize, weight: .black, design: .rounded))
+                                        .italic()
+                                        .foregroundStyle(.white)
+                                        .offset(y: -1.5)
+                                    Text("\(rank)")
+                                        .font(.system(size: fontSize, weight: .black, design: .rounded))
+                                        .italic()
+                                        .foregroundStyle(.white)
+                                        .offset(y: 1.5)
+                                    Text("\(rank)")
+                                        .font(.system(size: fontSize, weight: .black, design: .rounded))
+                                        .italic()
+                                        .foregroundStyle(.black)
+                                }
                             )
                     )
             )
-            .offset(x: rank >= 10 ? -8 : 2, y: 8)
+            .fixedSize()
+            .offset(x: isDoubleDigit ? -4 : 2, y: 8)
     }
 
     // MARK: - Poster
