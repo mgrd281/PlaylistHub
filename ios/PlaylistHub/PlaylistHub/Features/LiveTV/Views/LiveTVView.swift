@@ -1,6 +1,14 @@
 import SwiftUI
 
-// MARK: - Live TV Browser — 2-phase IPTV navigation
+// MARK: - Playlist info from browse API
+
+private struct BrowsePlaylistInfo: Codable, Identifiable {
+    let id: String
+    let name: String
+    let channels_count: Int
+}
+
+// MARK: - Live TV Browser — playlist-first IPTV navigation
 
 struct LiveTVView: View {
     @StateObject private var vm = LiveTVViewModel()
@@ -9,7 +17,13 @@ struct LiveTVView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let cat = vm.activeCategory {
+                if vm.playlistsLoading {
+                    playlistLoadingSkeleton
+                } else if vm.playlists.isEmpty {
+                    noPlaylistsState
+                } else if vm.activePlaylist == nil {
+                    playlistPickerPhase
+                } else if let cat = vm.activeCategory {
                     channelListPhase(cat)
                 } else if vm.isSearching {
                     searchResultsView
@@ -17,7 +31,7 @@ struct LiveTVView: View {
                     categoryGridPhase
                 }
             }
-            .navigationTitle(vm.activeCategory == nil ? "Live TV" : "")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if vm.activeCategory == nil {
@@ -31,6 +45,12 @@ struct LiveTVView: View {
                         }
                     }
                 }
+                // Playlist switcher in toolbar (when browsing channels)
+                if vm.activePlaylist != nil && vm.playlists.count > 1 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        playlistSwitcherMenu
+                    }
+                }
             }
             .fullScreenCover(item: $selectedItem) { item in
                 PlayerView(
@@ -38,16 +58,148 @@ struct LiveTVView: View {
                     channelList: vm.currentChannelList
                 )
             }
-            .task { await vm.loadChannels() }
+            .task { await vm.loadPlaylists() }
         }
     }
 
-    // MARK: - Phase 1: Category Grid
+    // MARK: - Phase 0: Playlist Loading
+
+    private var playlistLoadingSkeleton: some View {
+        VStack(spacing: 16) {
+            Spacer().frame(height: 40)
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemGray6))
+                    .frame(height: 72)
+                    .shimmering()
+            }
+            .padding(.horizontal, 16)
+            Spacer()
+        }
+    }
+
+    private var noPlaylistsState: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(.quaternary)
+            Text("No active playlists")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text("Add a playlist to start watching Live TV")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+    }
+
+    // MARK: - Phase 1: Playlist Picker
+
+    private var playlistPickerPhase: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "list.bullet.rectangle.portrait.fill")
+                        .font(.system(size: 36, weight: .light))
+                        .foregroundStyle(.red.opacity(0.7))
+                    Text("Select a Playlist")
+                        .font(.title3.weight(.bold))
+                    Text("Choose which playlist to browse.\nChannels are scoped to your selection.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 24)
+
+                // Playlist cards
+                VStack(spacing: 10) {
+                    ForEach(vm.playlists) { p in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                vm.selectPlaylist(p)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "tv.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(.red)
+                                    .frame(width: 44, height: 44)
+                                    .background(.red.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(p.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Text("\(p.channels_count) channels")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(14)
+                            .background(Color(.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    // MARK: - Playlist Switcher Menu
+
+    private var playlistSwitcherMenu: some View {
+        Menu {
+            ForEach(vm.playlists) { p in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        vm.selectPlaylist(p)
+                    }
+                } label: {
+                    Label {
+                        Text(p.name)
+                        Text("\(p.channels_count) ch")
+                    } icon: {
+                        if p.id == vm.activePlaylist?.id {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 11))
+                Text(vm.activePlaylist?.name ?? "")
+                    .font(.caption2.weight(.medium))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color(.systemGray6))
+            .clipShape(Capsule())
+        }
+    }
+
+    // MARK: - Phase 2: Category Grid (playlist selected)
 
     private var categoryGridPhase: some View {
         VStack(spacing: 0) {
-            // Search bar
-            searchBar(text: $vm.globalSearch, placeholder: "Search all channels...")
+            // Search bar scoped to playlist
+            searchBar(text: $vm.globalSearch, placeholder: "Search in \(vm.activePlaylist?.name ?? "channels")...")
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
 
@@ -210,7 +362,7 @@ struct LiveTVView: View {
 
     private var searchResultsView: some View {
         VStack(spacing: 0) {
-            searchBar(text: $vm.globalSearch, placeholder: "Search all channels...")
+            searchBar(text: $vm.globalSearch, placeholder: "Search in \(vm.activePlaylist?.name ?? "channels")...")
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
 
@@ -576,10 +728,16 @@ private func classifyGroup(_ name: String) -> String {
     return "other"
 }
 
-// MARK: - ViewModel
+// MARK: - ViewModel (playlist-first)
 
 @MainActor
 final class LiveTVViewModel: ObservableObject {
+    // Playlist state
+    @Published var playlists: [BrowsePlaylistInfo] = []
+    @Published var playlistsLoading = true
+    @Published var activePlaylist: BrowsePlaylistInfo?
+
+    // Channel state (scoped to selected playlist)
     @Published var categories: [LiveTVCategory] = []
     @Published var isLoading = false
     @Published var totalChannels = 0
@@ -616,7 +774,7 @@ final class LiveTVViewModel: ObservableObject {
         return items
     }
 
-    // Global search results
+    // Global search results (scoped to selected playlist's channels)
     var searchResults: [PlaylistItem] {
         guard isSearching else { return [] }
         let q = globalSearch.lowercased()
@@ -626,13 +784,62 @@ final class LiveTVViewModel: ObservableObject {
         }
     }
 
-    func loadChannels() async {
-        guard categories.isEmpty else { return }
+    // Phase 1: Load playlists
+    func loadPlaylists() async {
+        playlistsLoading = true
+        defer { playlistsLoading = false }
+
+        do {
+            let token = try await SupabaseManager.shared.client.auth.session.accessToken
+
+            var components = URLComponents(url: AppConfig.webAppBaseURL, resolvingAgainstBaseURL: false)!
+            components.path = "/api/browse"
+            components.queryItems = [URLQueryItem(name: "mode", value: "playlists")]
+
+            var request = URLRequest(url: components.url!)
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode < 300 else { return }
+
+            struct PlaylistsResponse: Codable {
+                let playlists: [BrowsePlaylistInfo]
+            }
+            let decoded = try JSONDecoder().decode(PlaylistsResponse.self, from: data)
+            self.playlists = decoded.playlists
+
+            // Auto-select if only one playlist
+            if decoded.playlists.count == 1 {
+                selectPlaylist(decoded.playlists[0])
+            }
+        } catch {
+            // Silent — empty state shown
+        }
+    }
+
+    // Select a playlist and load its channels
+    func selectPlaylist(_ playlist: BrowsePlaylistInfo) {
+        activePlaylist = playlist
+        // Reset channel state
+        categories = []
+        allSections = []
+        allChannels = []
+        totalChannels = 0
+        activeCategory = nil
+        activeGroup = nil
+        globalSearch = ""
+        channelSearch = ""
+
+        Task { await loadChannels(playlistId: playlist.id) }
+    }
+
+    // Phase 2: Load channels scoped to a playlist
+    private func loadChannels(playlistId: String) async {
         isLoading = true
         defer { isLoading = false }
 
         do {
-            let sections = try await fetchGroupedChannels()
+            let sections = try await fetchGroupedChannels(playlistId: playlistId)
             self.allSections = sections
             self.allChannels = sections.flatMap(\.items)
             self.totalChannels = allChannels.count
@@ -642,7 +849,7 @@ final class LiveTVViewModel: ObservableObject {
         }
     }
 
-    private func fetchGroupedChannels() async throws -> [BrowseSection] {
+    private func fetchGroupedChannels(playlistId: String) async throws -> [BrowseSection] {
         let token = try await SupabaseManager.shared.client.auth.session.accessToken
 
         var components = URLComponents(url: AppConfig.webAppBaseURL, resolvingAgainstBaseURL: false)!
@@ -650,6 +857,7 @@ final class LiveTVViewModel: ObservableObject {
         components.queryItems = [
             URLQueryItem(name: "type", value: "channel"),
             URLQueryItem(name: "mode", value: "grouped"),
+            URLQueryItem(name: "playlist_id", value: playlistId),
         ]
 
         var request = URLRequest(url: components.url!)

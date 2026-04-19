@@ -19,14 +19,36 @@ export async function GET(request: Request) {
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '60'), 200);
   const offset = (page - 1) * limit;
 
-  // Get user's playlist IDs
+  // Support scoping to a single playlist via ?playlist_id=
+  const requestedPlaylistId = url.searchParams.get('playlist_id');
+
+  // Get user's playlist IDs (or verify ownership of requested one)
   const { data: playlists } = await supabase
     .from('playlists')
-    .select('id')
+    .select('id, name, channels_count')
     .eq('user_id', user.id)
     .eq('status', 'active');
 
-  const playlistIds = (playlists || []).map((p) => p.id);
+  const userPlaylists = playlists || [];
+  let playlistIds: string[];
+
+  if (requestedPlaylistId) {
+    // Verify ownership
+    if (!userPlaylists.find(p => p.id === requestedPlaylistId)) {
+      return NextResponse.json({ error: 'Playlist not found' }, { status: 404 });
+    }
+    playlistIds = [requestedPlaylistId];
+  } else {
+    playlistIds = userPlaylists.map((p) => p.id);
+  }
+
+  // Mode: playlists — return the user's playlists with channel counts (for playlist picker)
+  const mode = url.searchParams.get('mode');
+  if (mode === 'playlists') {
+    return NextResponse.json({
+      playlists: userPlaylists.map(p => ({ id: p.id, name: p.name, channels_count: p.channels_count })),
+    });
+  }
 
   if (playlistIds.length === 0) {
     return NextResponse.json({
@@ -40,7 +62,6 @@ export async function GET(request: Request) {
   }
 
   // Mode: groups — return distinct group_titles with counts
-  const mode = url.searchParams.get('mode');
   if (mode === 'groups') {
     const { data: groupData } = await supabase
       .from('playlist_items')

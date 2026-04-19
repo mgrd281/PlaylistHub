@@ -5,9 +5,19 @@ import { PlaylistItem } from '@/types/database';
 import { Skeleton } from '@/components/ui/skeleton';
 import { VideoPlayerDialog } from '@/components/playlists/video-player-dialog';
 import {
-  Play, Search, Tv, X, ChevronLeft,
-  Radio, Hash, Layers,
+  Play, Search, Tv, X, ChevronLeft, ChevronDown,
+  Radio, Hash, Layers, ListMusic,
 } from 'lucide-react';
+
+/* ═══════════════════════════════════════════════
+   Playlist type for the picker
+   ═══════════════════════════════════════════════ */
+
+interface BrowsePlaylist {
+  id: string;
+  name: string;
+  channels_count: number;
+}
 
 /* ═══════════════════════════════════════════════
    Smart category classification
@@ -377,15 +387,129 @@ function ChannelListView({
 }
 
 /* ═══════════════════════════════════════════════
-   Main LiveTV Browser — 2-phase navigation
+   Playlist Picker — shown when no playlist is selected
+   ═══════════════════════════════════════════════ */
+
+function PlaylistPicker({
+  playlists,
+  onSelect,
+}: {
+  playlists: BrowsePlaylist[];
+  onSelect: (p: BrowsePlaylist) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="text-center space-y-2 pt-4">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 mx-auto mb-3">
+          <ListMusic className="h-7 w-7 text-primary" />
+        </div>
+        <h2 className="text-xl font-bold text-foreground tracking-tight">Select a Playlist</h2>
+        <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+          Choose which playlist to browse. Channels are scoped to your selection.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {playlists.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onSelect(p)}
+            className="group flex items-center gap-3 rounded-2xl bg-card border border-border/50 hover:border-primary/30 hover:bg-primary/5 p-4 text-left transition-all duration-200 active:scale-[0.97]"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 group-hover:bg-primary/20 transition-colors flex-shrink-0">
+              <Tv className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[15px] font-semibold text-foreground truncate">{p.name}</p>
+              <p className="text-[12px] text-muted-foreground">{(p.channels_count || 0).toLocaleString()} channels</p>
+            </div>
+            <ChevronLeft className="h-4 w-4 text-muted-foreground/30 rotate-180 group-hover:text-primary/50 transition-colors flex-shrink-0" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Playlist Switcher — dropdown when browsing
+   ═══════════════════════════════════════════════ */
+
+function PlaylistSwitcher({
+  playlists,
+  active,
+  onSwitch,
+}: {
+  playlists: BrowsePlaylist[];
+  active: BrowsePlaylist;
+  onSwitch: (p: BrowsePlaylist) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  if (playlists.length <= 1) return null;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 rounded-lg bg-muted/60 hover:bg-muted px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ListMusic className="h-3.5 w-3.5" />
+        <span className="truncate max-w-[120px] sm:max-w-[200px]">{active.name}</span>
+        <ChevronDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 min-w-[200px] max-w-[300px] rounded-xl bg-popover border border-border shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-150">
+          {playlists.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => { onSwitch(p); setOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-[13px] transition-colors ${
+                p.id === active.id
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'text-foreground/80 hover:bg-muted/60'
+              }`}
+            >
+              <span className="truncate block">{p.name}</span>
+              <span className="text-[11px] text-muted-foreground">{(p.channels_count || 0).toLocaleString()} ch</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Main LiveTV Browser — playlist-first architecture
    ═══════════════════════════════════════════════ */
 
 export function LiveTVBrowser() {
+  // Playlist state
+  const [playlists, setPlaylists] = useState<BrowsePlaylist[]>([]);
+  const [playlistsLoading, setPlaylistsLoading] = useState(true);
+  const [activePlaylist, setActivePlaylist] = useState<BrowsePlaylist | null>(null);
+
+  // Channel state (scoped to selected playlist)
   const [sections, setSections] = useState<GroupedSection[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [channelsLoading, setChannelsLoading] = useState(false);
+  const [totalChannels, setTotalChannels] = useState(0);
+
+  // UI state
   const [globalSearch, setGlobalSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [totalChannels, setTotalChannels] = useState(0);
   const [playerItem, setPlayerItem] = useState<PlaylistItem | null>(null);
   const [playerChannelList, setPlayerChannelList] = useState<PlaylistItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -397,12 +521,46 @@ export function LiveTVBrowser() {
     return () => clearTimeout(t);
   }, [globalSearch]);
 
-  // Fetch all channels grouped (once on mount — search is client-side)
+  // Phase 1: Fetch playlists on mount
   useEffect(() => {
     let cancelled = false;
-    async function loadData() {
-      setLoading(true);
-      const params = new URLSearchParams({ type: 'channel', mode: 'grouped' });
+    async function loadPlaylists() {
+      setPlaylistsLoading(true);
+      try {
+        const res = await fetch('/api/browse?mode=playlists');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const list: BrowsePlaylist[] = data.playlists || [];
+        setPlaylists(list);
+        // Auto-select if only one playlist
+        if (list.length === 1) {
+          setActivePlaylist(list[0]);
+        }
+      } catch { /* network error */ }
+      if (!cancelled) setPlaylistsLoading(false);
+    }
+    loadPlaylists();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Phase 2: Load channels when a playlist is selected
+  useEffect(() => {
+    if (!activePlaylist) {
+      setSections([]);
+      setTotalChannels(0);
+      return;
+    }
+    let cancelled = false;
+    async function loadChannels() {
+      setChannelsLoading(true);
+      setActiveCategory(null);
+      setGlobalSearch('');
+      const params = new URLSearchParams({
+        type: 'channel',
+        mode: 'grouped',
+        playlist_id: activePlaylist!.id,
+      });
       try {
         const res = await fetch(`/api/browse?${params}`);
         if (!res.ok) return;
@@ -412,11 +570,11 @@ export function LiveTVBrowser() {
           setTotalChannels(data.total || 0);
         }
       } catch { /* network error */ }
-      if (!cancelled) setLoading(false);
+      if (!cancelled) setChannelsLoading(false);
     }
-    loadData();
+    loadChannels();
     return () => { cancelled = true; };
-  }, []);
+  }, [activePlaylist]);
 
   // Build categories from raw group_title sections
   const categories = useMemo<MergedCategory[]>(() => {
@@ -456,7 +614,7 @@ export function LiveTVBrowser() {
   // Flat channel list for global search
   const allChannels = useMemo(() => sections.flatMap((s) => s.items), [sections]);
 
-  // Global search results (client-side — instant, no API calls)
+  // Global search results (client-side)
   const searchResults = useMemo(() => {
     if (!debouncedSearch.trim()) return [];
     const q = debouncedSearch.toLowerCase();
@@ -467,7 +625,6 @@ export function LiveTVBrowser() {
 
   const isSearching = debouncedSearch.trim().length > 0;
 
-  // Currently viewed category object
   const activeCategoryObj = activeCategory
     ? categories.find((c) => c.key === activeCategory) || null
     : null;
@@ -481,7 +638,50 @@ export function LiveTVBrowser() {
     setPlayerItem(item);
   }, []);
 
-  /* ── Render: Category Channel List view ── */
+  const handleSelectPlaylist = useCallback((p: BrowsePlaylist) => {
+    setActivePlaylist(p);
+  }, []);
+
+  /* ── Phase 0: Loading playlists ── */
+  if (playlistsLoading) {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-xl" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-6 w-32 rounded-md" />
+            <Skeleton className="h-3 w-24 rounded-md" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-[72px] rounded-2xl bg-muted/40" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Phase 0b: No playlists at all ── */
+  if (playlists.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50 mb-4">
+          <Radio className="h-6 w-6 text-muted-foreground/30" />
+        </div>
+        <p className="text-sm text-muted-foreground font-medium">
+          No active playlists. Add a playlist to start watching Live TV.
+        </p>
+      </div>
+    );
+  }
+
+  /* ── Phase 1: Playlist Picker (multiple playlists, none selected) ── */
+  if (!activePlaylist) {
+    return <PlaylistPicker playlists={playlists} onSelect={handleSelectPlaylist} />;
+  }
+
+  /* ── Phase 2: Category Channel List view (drilled into a category) ── */
   if (activeCategoryObj && !isSearching) {
     return (
       <>
@@ -504,31 +704,40 @@ export function LiveTVBrowser() {
     );
   }
 
-  /* ── Render: Home / category overview + global search ── */
+  const loading = channelsLoading;
+
+  /* ── Phase 2: Channel browser (playlist selected) ── */
   return (
     <div className="space-y-5">
-      {/* ── Header ── */}
+      {/* ── Header with playlist switcher ── */}
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
           <Tv className="h-5 w-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">Live TV</h1>
-          {!loading && totalChannels > 0 && (
-            <p className="text-[12px] text-muted-foreground">
-              {totalChannels.toLocaleString()} channels &middot; {categories.length} categories
-            </p>
-          )}
+          <div className="flex items-center gap-2 mt-0.5">
+            {!loading && totalChannels > 0 && (
+              <p className="text-[12px] text-muted-foreground">
+                {totalChannels.toLocaleString()} channels &middot; {categories.length} categories
+              </p>
+            )}
+          </div>
         </div>
+        <PlaylistSwitcher
+          playlists={playlists}
+          active={activePlaylist}
+          onSwitch={handleSelectPlaylist}
+        />
       </div>
 
-      {/* ── Global Search ── */}
+      {/* ── Search (scoped to selected playlist) ── */}
       <div className="relative">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
         <input
           ref={searchInputRef}
           type="text"
-          placeholder="Search all channels..."
+          placeholder={`Search in ${activePlaylist.name}...`}
           value={globalSearch}
           onChange={(e) => setGlobalSearch(e.target.value)}
           className="w-full h-11 pl-10 pr-10 rounded-2xl bg-muted/50 border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-border focus:bg-muted/70 transition-all"
@@ -552,7 +761,7 @@ export function LiveTVBrowser() {
         </div>
       )}
 
-      {/* ── Global search results ── */}
+      {/* ── Search results ── */}
       {!loading && isSearching && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -581,7 +790,7 @@ export function LiveTVBrowser() {
         </div>
       )}
 
-      {/* ── Category Grid (home state) ── */}
+      {/* ── Category Grid ── */}
       {!loading && !isSearching && categories.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
@@ -607,7 +816,7 @@ export function LiveTVBrowser() {
             <Radio className="h-6 w-6 text-muted-foreground/30" />
           </div>
           <p className="text-sm text-muted-foreground font-medium">
-            No channels available. Add a playlist to get started.
+            No channels in this playlist.
           </p>
         </div>
       )}
