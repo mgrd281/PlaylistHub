@@ -26,7 +26,7 @@ struct BrowsePlaylistInfo: Codable, Identifiable {
 //   └──────────────────────────────────┘
 
 struct LiveTVView: View {
-    @StateObject private var vm = LiveTVViewModel()
+    @ObservedObject private var vm = LiveTVViewModel.shared
 
     var body: some View {
         NavigationStack {
@@ -60,6 +60,7 @@ struct LiveTVView: View {
                 }
             }
             .task { await vm.loadPlaylists() }
+            .onAppear { vm.handleTabReturn() }
         }
         .fullScreenCover(isPresented: $vm.showFullscreen, onDismiss: {
             vm.reclaimPlayerAfterFullscreen()
@@ -1375,6 +1376,8 @@ private func matchCategoryPatterns(_ text: String) -> String {
 
 @MainActor
 final class LiveTVViewModel: ObservableObject {
+    static let shared = LiveTVViewModel()
+
     // MARK: - Persistence keys
     private static let lastChannelStreamKey = "ph_livetv_last_channel_stream"
     private static let lastChannelNameKey   = "ph_livetv_last_channel_name"
@@ -1873,6 +1876,32 @@ final class LiveTVViewModel: ObservableObject {
         guard let player = inlinePlayer else { return }
         // Player is still alive and playing — just ensure we track state
         isPlaying = player.timeControlStatus == .playing
+    }
+
+    /// Called on every tab return (.onAppear) — resume or refresh playback
+    func handleTabReturn() {
+        guard let player = inlinePlayer, let item = playingItem else {
+            // No active session — autoplay will handle it via loadPlaylists/loadChannels
+            return
+        }
+
+        // Re-activate audio session in case another tab deactivated it
+        try? AVAudioSession.sharedInstance().setActive(true)
+
+        let status = player.currentItem?.status
+        let timeControl = player.timeControlStatus
+
+        if status == .failed || player.currentItem == nil {
+            // Stream died while away — silently refresh the same channel
+            playChannel(item)
+        } else if timeControl == .paused && !playerBuffering {
+            // Player got paused (system interruption, etc.) — resume
+            player.play()
+            isPlaying = true
+        } else if timeControl == .playing {
+            // Already playing — just sync state
+            isPlaying = true
+        }
     }
 
     // MARK: - Inline player
