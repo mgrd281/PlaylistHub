@@ -192,6 +192,7 @@ struct MovieDetailView: View {
                     heroFallback(width: width, height: heroHeight)
                 }
 
+
                 // Layer 2: Video preview (crossfades in over artwork when ready)
                 if previewVM.state == .ready {
                     PreviewVideoLayer(player: previewVM.player)
@@ -200,7 +201,7 @@ struct MovieDetailView: View {
                         .transition(.opacity.animation(.easeIn(duration: 0.6)))
                 }
 
-                // Premium loading overlay: centered play icon with animated red ring
+                // Overlay: loading or unavailable state (poster always visible)
                 if previewVM.state == .loading || previewVM.state == .idle {
                     VStack {
                         Spacer()
@@ -225,6 +226,26 @@ struct MovieDetailView: View {
                                     .font(.system(size: 32, weight: .bold))
                                     .foregroundStyle(Color.white)
                                     .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 2)
+                            }
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                    .frame(width: width, height: heroHeight)
+                } else if previewVM.state == .unavailable {
+                    // Fallback: show poster/artwork with a warning icon and message
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 10) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 32, weight: .bold))
+                                    .foregroundStyle(Color.yellow)
+                                    .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 2)
+                                Text("Preview unavailable")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Color.white.opacity(0.85))
                             }
                             Spacer()
                         }
