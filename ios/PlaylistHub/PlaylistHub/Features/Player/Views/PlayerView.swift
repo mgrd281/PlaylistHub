@@ -39,24 +39,30 @@ struct PlayerView: View {
             // 1) Black canvas
             Color.black.ignoresSafeArea()
 
-            // 2) Video layer
+            // 2) Poster backdrop — stays visible until first video frame is rendered
+            if !vm.hasFirstFrame {
+                posterBackdrop
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+
+            // 3) Video layer
             PiPVideoSurface(player: vm.player,
                             gravity: vm.currentItem.isLive ? .resizeAspectFill : .resizeAspect,
                             pipController: $vm.pipController)
                 .ignoresSafeArea()
+                .opacity(vm.hasFirstFrame ? 1 : 0)
 
-            // 3) Gesture layer — handles tap, swipe, brightness/volume drag
+            // 4) Gesture layer — handles tap, swipe, brightness/volume drag
             gestureLayer
 
-            // 4) Buffering spinner
+            // 5) Buffering indicator — prominent centered play icon with loading ring
             if vm.isBuffering && vm.error == nil {
-                ProgressView()
-                    .scaleEffect(1.3)
-                    .tint(.white)
+                bufferingOverlay
                     .transition(.opacity)
             }
 
-            // 5) Error overlay
+            // 6) Error overlay
             if let error = vm.error {
                 VStack(spacing: 14) {
                     Image(systemName: "wifi.exclamationmark")
@@ -79,37 +85,38 @@ struct PlayerView: View {
                 .padding(32)
             }
 
-            // 6) Controls overlay (hidden when locked)
+            // 7) Controls overlay (hidden when locked)
             if showControls && !isLocked {
                 controlsOverlay
                     .transition(.opacity)
             }
 
-            // 7) Double-tap seek ripple
+            // 8) Double-tap seek ripple
             if let side = seekSide {
                 seekRipple(side: side)
                     .transition(.opacity)
             }
 
-            // 8) Brightness/volume HUD
+            // 9) Brightness/volume HUD
             if let kind = gestureKind {
                 gestureHUD(kind: kind)
                     .transition(.opacity)
             }
 
-            // 9) Lock hint (shown briefly when tapping while locked)
+            // 10) Lock hint (shown briefly when tapping while locked)
             if showLockHint {
                 lockHintOverlay
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
 
-            // 10) Channel name flash on switch
+            // 11) Channel name flash on switch
             if vm.showChannelFlash {
                 channelFlashOverlay
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
         .animation(.easeOut(duration: 0.2), value: showControls)
+        .animation(.easeOut(duration: 0.5), value: vm.hasFirstFrame)
         .animation(.easeOut(duration: 0.2), value: vm.isBuffering)
         .animation(.easeOut(duration: 0.25), value: vm.showChannelFlash)
         .animation(.easeOut(duration: 0.15), value: gestureKind == nil)
@@ -560,6 +567,83 @@ struct PlayerView: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
+    }
+
+    // MARK: - Poster Backdrop (visible until first frame)
+
+    private var posterBackdrop: some View {
+        ZStack {
+            // Poster image or gradient fallback
+            if let url = vm.currentItem.resolvedLogoURL {
+                CachedAsyncImage(url: url) {
+                    posterFallbackGradient
+                }
+                .aspectRatio(contentMode: .fill)
+            } else {
+                posterFallbackGradient
+            }
+
+            // Darkening overlay for readability
+            Color.black.opacity(0.45)
+
+            // Top and bottom vignette
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.black.opacity(0.6), .clear],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 100)
+                Spacer()
+                LinearGradient(colors: [.clear, .black.opacity(0.6)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 100)
+            }
+        }
+    }
+
+    private var posterFallbackGradient: some View {
+        ZStack {
+            LinearGradient(
+                colors: PosterCard.gradientColors(for: vm.displayName) + [.black],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            VStack(spacing: 12) {
+                Image(systemName: vm.currentItem.contentType == .series ? "rectangle.stack.fill" : "film.fill")
+                    .font(.system(size: 48, weight: .ultraLight))
+                    .foregroundStyle(.white.opacity(0.15))
+                Text(vm.displayName)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, 40)
+            }
+        }
+    }
+
+    // MARK: - Buffering Overlay (prominent centered indicator)
+
+    private var bufferingOverlay: some View {
+        ZStack {
+            // Animated loading ring
+            Circle()
+                .trim(from: 0, to: 0.75)
+                .stroke(
+                    AngularGradient(
+                        gradient: Gradient(colors: [.red, .red.opacity(0.3), .red]),
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                )
+                .frame(width: 64, height: 64)
+                .rotationEffect(.degrees(vm.isBuffering ? 360 : 0))
+                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: vm.isBuffering)
+
+            // Play icon in center
+            Image(systemName: "play.fill")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 2)
+        }
     }
 
     // MARK: - Channel Flash
