@@ -18,6 +18,36 @@
             endingLineNumber = "227"
             landmarkName = "tryURLsFast(_:)"
             landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "1516644C-F9A5-4531-B666-9558F0D5576A - 2fe53429822ef55e"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "closure #1 (Swift.CheckedContinuation&lt;Swift.Bool, Swift.Never&gt;) -&gt; () in PlaylistHub.PreviewPlayerModel.tryURLsFast(Swift.Array&lt;Foundation.URL&gt;) async -&gt; Swift.Bool"
+                  moduleName = "PlaylistHub.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/m/Downloads/PlaylistHub-pro/ios/PlaylistHub/PlaylistHub/Core/Services/PreviewPlayerModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "227"
+                  endingLineNumber = "227">
+               </Location>
+               <Location
+                  uuid = "1516644C-F9A5-4531-B666-9558F0D5576A - 6d3d5ba8c99cf4dc"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "closure #1 (Swift.CheckedContinuation&lt;Swift.Optional&lt;__C.AVPlayerItem&gt;, Swift.Never&gt;) -&gt; () in closure #1 () async -&gt; Swift.Optional&lt;__C.AVPlayerItem&gt; in PlaylistHub.PreviewPlayerModel.tryURLsFast(Swift.Array&lt;Foundation.URL&gt;) async -&gt; Swift.Bool"
+                  moduleName = "PlaylistHub.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/m/Downloads/PlaylistHub-pro/ios/PlaylistHub/PlaylistHub/Core/Services/PreviewPlayerModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "227"
+                  endingLineNumber = "227">
+               </Location>
+            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>

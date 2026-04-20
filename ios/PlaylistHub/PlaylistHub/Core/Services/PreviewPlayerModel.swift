@@ -195,97 +195,78 @@ final class PreviewPlayerModel: ObservableObject {
         return ordered
     }
 
-    /// Fast URL probing: race all URLs in parallel OFF the main thread — first to play wins
+    /// Fast URL probing: check playability off main thread, then play the winner on main
     private func tryURLsFast(_ urls: [URL]) async -> Bool {
         guard !urls.isEmpty else { return false }
 
-        // Run the heavy AVPlayer creation + racing on a background thread
-        // to avoid blocking the UI. Only the winning item is brought to main.
-        let winningItem: AVPlayerItem? = await Task.detached(priority: .userInitiated) {
-            await withCheckedContinuation { continuation in
-                var resolved = false
-                var racers: [AVPlayer] = []
-                var observers: [AnyCancellable] = []
-                let lock = NSLock()
-
-                let timeoutTimer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
-                timeoutTimer.schedule(deadline: .now() + PreviewPlayerModel.loadTimeout)
-                timeoutTimer.setEventHandler {
-                    lock.lock()
-                    guard !resolved else { lock.unlock(); return }
-                    resolved = true
-                    lock.unlock()
-                    timeoutTimer.cancel()
-                    for p in racers { p.pause(); p.replaceCurrentItem(with: nil) }
-                    observers.removeAll()
-                    continuation.resume(returning: nil)
-                }
-                timeoutTimer.resume()
-
+        // Probe all URLs in parallel on background — no AVPlayer needed for probing.
+        // AVURLAsset.load(.isPlayable) is safe off main thread.
+        let winningURL: URL? = await Task.detached(priority: .userInitiated) {
+            await withTaskGroup(of: URL?.self) { group in
                 for url in urls {
-                    lock.lock()
-                    guard !resolved else { lock.unlock(); break }
-                    lock.unlock()
-
-                    let asset = AVURLAsset(url: url, options: [
-                        "AVURLAssetHTTPHeaderFieldsKey": [
-                            "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
-                        ]
-                    ])
-
-                    let playerItem = AVPlayerItem(asset: asset)
-                    playerItem.preferredForwardBufferDuration = 0
-                    playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-
-                    let racer = AVPlayer()
-                    racer.automaticallyWaitsToMinimizeStalling = false
-                    racer.replaceCurrentItem(with: playerItem)
-                    racer.isMuted = true
-                    racer.playImmediately(atRate: 1.0)
-                    racers.append(racer)
-
-                    let observer = racer.publisher(for: \.timeControlStatus)
-                        .filter { $0 == .playing }
-                        .first()
-                        .sink { _ in
-                            lock.lock()
-                            guard !resolved else { lock.unlock(); return }
-                            resolved = true
-                            lock.unlock()
-                            timeoutTimer.cancel()
-
-                            // Detach winning item from racer
-                            racer.pause()
-                            let item = racer.currentItem
-                            racer.replaceCurrentItem(with: nil)
-
-                            // Clean up losers
-                            for p in racers where p !== racer {
-                                p.pause()
-                                p.replaceCurrentItem(with: nil)
-                            }
-                            observers.removeAll()
-                            continuation.resume(returning: item)
+                    group.addTask {
+                        let asset = AVURLAsset(url: url, options: [
+                            "AVURLAssetHTTPHeaderFieldsKey": [
+                                "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
+                            ]
+                        ])
+                        do {
+                            let playable = try await asset.load(.isPlayable)
+                            return playable ? url : nil
+                        } catch {
+                            return nil
                         }
-                    observers.append(observer)
+                    }
                 }
+                // Return the first playable URL (fastest responder wins)
+                for await result in group {
+                    if let url = result {
+                        group.cancelAll()
+                        return url
+                    }
+                }
+                return nil
             }
         }.value
 
-        // Back on MainActor — assign the winning item to the UI player
-        guard let winningItem else { return false }
+        guard let winningURL else { return false }
+
+        // Back on MainActor — single AVPlayer setup (lightweight, one player only)
+        let asset = AVURLAsset(url: winningURL, options: [
+            "AVURLAssetHTTPHeaderFieldsKey": [
+                "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
+            ]
+        ])
+        let playerItem = AVPlayerItem(asset: asset)
+        playerItem.preferredForwardBufferDuration = 0
+        playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
 
         player.automaticallyWaitsToMinimizeStalling = false
-        player.replaceCurrentItem(with: winningItem)
+        player.replaceCurrentItem(with: playerItem)
         player.isMuted = true
         player.playImmediately(atRate: 1.0)
         previewStartTime = .zero
+
+        // Wait briefly for playback to actually start (up to loadTimeout)
+        let started = await waitForPlayback()
+        guard started else { return false }
 
         if !isTrailerSource {
             Task { [weak self] in await self?.seekToStrongScene() }
         }
         setupClipLoop()
         return true
+    }
+
+    /// Wait for the player to start playing, with timeout
+    private func waitForPlayback() async -> Bool {
+        let deadline = Date().addingTimeInterval(Self.loadTimeout)
+        while Date() < deadline {
+            if player.timeControlStatus == .playing { return true }
+            if player.currentItem?.status == .failed { return false }
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        }
+        return player.timeControlStatus == .playing
     }
 
     /// Compute smart seek offset based on content type and total duration.
