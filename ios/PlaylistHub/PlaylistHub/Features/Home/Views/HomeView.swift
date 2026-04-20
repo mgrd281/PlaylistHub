@@ -541,6 +541,115 @@ private struct ContinueWatchingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if entry.isLive {
+                liveTVCard
+            } else {
+                vodCard
+            }
+
+            // ── Below-card metadata ──
+            HStack(spacing: 4) {
+                Text(entry.watchedAgoText)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.top, 6)
+            .padding(.horizontal, 2)
+        }
+        .frame(width: cardWidth)
+    }
+
+    // MARK: - Live TV Card (clean, no background image)
+
+    private var liveTVCard: some View {
+        ZStack {
+            // Solid dark surface — no image, no noise
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(.systemGray6), Color(.systemGray5).opacity(0.6)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Top row: LIVE badge
+                HStack {
+                    HStack(spacing: 4) {
+                        Circle().fill(.red).frame(width: 6, height: 6)
+                        Text("LIVE")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(.red)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.red.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+
+                    Spacer()
+
+                    contentTypeBadge
+                }
+                .padding(.top, 14)
+                .padding(.horizontal, 14)
+
+                Spacer()
+
+                // Channel name — large and centered
+                VStack(spacing: 4) {
+                    if let url = entry.resolvedLogoURL {
+                        CachedAsyncImage(url: url) {
+                            Image(systemName: "tv.fill")
+                                .font(.system(size: 26, weight: .light))
+                                .foregroundStyle(.secondary)
+                        }
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 32)
+                    } else {
+                        Image(systemName: "tv.fill")
+                            .font(.system(size: 26, weight: .light))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(entry.name)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+
+                    if let group = entry.groupTitle {
+                        Text(group)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+
+                Spacer()
+            }
+        }
+        .frame(width: cardWidth, height: cardHeight)
+        .overlay {
+            Circle()
+                .fill(.ultraThinMaterial)
+                .frame(width: 42, height: 42)
+                .overlay {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .offset(x: 1)
+                }
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    // MARK: - VOD Card (Movie / Series — unchanged artwork design)
+
+    private var vodCard: some View {
+        ZStack(alignment: .bottom) {
             // ── Cinematic Thumbnail ──
             ZStack(alignment: .bottom) {
                 // Thumbnail / poster image
@@ -579,15 +688,7 @@ private struct ContinueWatchingCard: View {
 
                         Spacer(minLength: 0)
 
-                        // Time info
-                        if entry.isLive {
-                            HStack(spacing: 3) {
-                                Circle().fill(.red).frame(width: 4, height: 4)
-                                Text("LIVE")
-                                    .font(.system(size: 8, weight: .heavy))
-                                    .foregroundStyle(.red)
-                            }
-                        } else if let remaining = entry.remainingText {
+                        if let remaining = entry.remainingText {
                             Text(remaining)
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.5))
@@ -595,15 +696,12 @@ private struct ContinueWatchingCard: View {
                     }
 
                     // ── Progress bar ──
-                    if !entry.isLive && entry.duration > 0 {
+                    if entry.duration > 0 {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                // Track
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(.white.opacity(0.15))
                                     .frame(height: 3)
-
-                                // Fill
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(accent)
                                     .frame(width: geo.size.width * entry.progress, height: 3)
@@ -631,17 +729,7 @@ private struct ContinueWatchingCard: View {
                     .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
             }
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            // ── Below-card metadata ──
-            HStack(spacing: 4) {
-                Text(entry.watchedAgoText)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.top, 6)
-            .padding(.horizontal, 2)
         }
-        .frame(width: cardWidth)
     }
 
     // MARK: - Thumbnail Layer
