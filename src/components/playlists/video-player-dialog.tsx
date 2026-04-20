@@ -2185,7 +2185,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           </div>
         </header>
       )}
-      /* ═══ Live TV / Fullscreen: Dark immersive overlay ═══ */
+      {/* ═══ Live TV / Fullscreen: Dark immersive overlay ═══ */}
       <div
         ref={containerRef}
         className={`relative flex ${containerClass} transition-all duration-300 ease-out`}
