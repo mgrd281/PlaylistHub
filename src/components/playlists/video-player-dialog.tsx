@@ -63,6 +63,34 @@ function clearPosition(streamUrl: string) {
 
 /* ── Helpers ── */
 
+/* Deterministic gradient + initials for channel logo fallback (Desktop side panel) */
+const CHANNEL_GRADIENTS = [
+  'from-blue-500/80 to-indigo-800/90',
+  'from-violet-500/80 to-purple-800/90',
+  'from-emerald-500/80 to-teal-800/90',
+  'from-amber-500/80 to-orange-800/90',
+  'from-rose-500/80 to-red-800/90',
+  'from-cyan-500/80 to-sky-800/90',
+  'from-fuchsia-500/80 to-purple-800/90',
+  'from-pink-500/80 to-rose-800/90',
+  'from-lime-500/80 to-green-800/90',
+  'from-slate-500/80 to-zinc-800/90',
+];
+
+function stableChannelGradient(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return CHANNEL_GRADIENTS[Math.abs(h) % CHANNEL_GRADIENTS.length];
+}
+
+function channelInitials(name: string): string {
+  const cleaned = name.replace(/[^\w\s\u00C0-\uFFFF]/gi, ' ').trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'CH';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 function resolveStreamUrl(item: PlaylistItem, episodeUrl?: string): string {
   const url = episodeUrl || item.stream_url;
   // Live channels: always use HLS (.m3u8)
@@ -310,6 +338,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const [mainVideoLoaded, setMainVideoLoaded] = useState(false);
   const initInProgressRef = useRef(false);
   const [autoplayMuted, setAutoplayMuted] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   /* ── Seek preview thumbnails ── */
   const thumbnailCacheRef = useRef<Map<number, string>>(new Map());
@@ -924,9 +953,11 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           initInProgressRef.current = false;
           return;
         }
-        // Chrome/Firefox — use hls.js
+        // Chrome/Firefox — use hls.js through proxy
         if (await attachHls(video, proxied, { live: isLive, timeoutMs: 10000 })) return;
-        setError('تعذّر تشغيل البث.');
+        // Last-resort: try the raw upstream URL directly (works only if provider sends CORS headers)
+        if (await attachHls(video, url, { live: isLive, timeoutMs: 8000 })) return;
+        setError('Live stream proxy is unavailable. The IPTV server may be blocking our servers — try again or use VLC.');
         setLoading(false);
         initInProgressRef.current = false;
         return;
@@ -1000,7 +1031,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [item, isLive, isSeries, activeEpisode]);
+  }, [item, isLive, isSeries, activeEpisode, retryNonce]);
 
   /* ── Video event handlers ── */
   useEffect(() => {
@@ -2317,17 +2348,31 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           {/* Error */}
           {error && !seriesLoading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-white/80 p-8 text-center z-20">
-              <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center ring-1 ring-red-500/20">
                 <AlertCircle className="h-8 w-8 text-red-400" />
               </div>
-              <div>
-                <p className="text-base font-medium text-white/90 mb-1">Playback Error</p>
-                <p className="text-sm text-white/50">{error}</p>
+              <div className="max-w-sm">
+                <p className="text-base font-semibold text-white/90 mb-1">Playback Error</p>
+                <p className="text-sm text-white/50 leading-relaxed">{error}</p>
               </div>
-              <button onClick={copyUrl}
-                className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]">
-                <Copy className="h-4 w-4" /> Copy URL
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setLoading(true);
+                    setRetryNonce(n => n + 1);
+                  }}
+                  className="flex items-center gap-2 rounded-xl bg-primary/90 hover:bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors shadow-lg shadow-primary/20"
+                >
+                  <Loader2 className="h-4 w-4" /> Retry
+                </button>
+                <button
+                  onClick={copyUrl}
+                  className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white/80 hover:text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]"
+                >
+                  <Copy className="h-4 w-4" /> Copy URL
+                </button>
+              </div>
             </div>
           )}
 
@@ -2713,101 +2758,200 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
         </div>
         </div>
 
-        {/* ═══════ SIDE PANEL — Live channels (desktop only, hidden on mobile) ═══════ */}
+        {/* ═══════ PREMIUM SIDE PANEL — Live channels (desktop only, hidden on mobile) ═══════ */}
         {sideVisible && !isVod && (
-          <div className={`hidden md:flex flex-col bg-card/70 border border-border/60 ${
-            viewMode === 'theater' ? 'w-[360px]' : 'w-[330px]'
-          } rounded-2xl overflow-hidden backdrop-blur-sm`}>
-            <div className="shrink-0 px-4 pt-4 pb-3">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <Tv className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[13px] font-semibold text-foreground">
-                    {item.group_title || 'Related'}
-                  </span>
+          <aside
+            className={`hidden md:flex flex-col relative ${
+              viewMode === 'theater' ? 'w-[380px]' : 'w-[350px]'
+            } ml-3 rounded-2xl overflow-hidden
+               bg-gradient-to-b from-[#0e0e12]/95 via-[#0a0a0c]/95 to-[#050507]/95
+               backdrop-blur-2xl
+               border border-white/[0.06]
+               shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8),inset_0_1px_0_0_rgba(255,255,255,0.04)]`}
+          >
+            {/* Ambient accent glow — subtle violet wash from the top */}
+            <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-primary/[0.12] via-primary/[0.03] to-transparent pointer-events-none" />
+
+            {/* ── Header ── */}
+            <div className="relative shrink-0 px-4 pt-4 pb-3 border-b border-white/[0.05]">
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/25">
+                    <Tv className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-[13px] font-bold text-white truncate leading-tight tracking-tight">
+                      {item.group_title || 'Related Channels'}
+                    </h3>
+                    <p className="text-[11px] text-white/40 mt-0.5 tabular-nums">
+                      {liveSupportReady
+                        ? `${filteredLiveChannels.length} ${filteredLiveChannels.length === 1 ? 'channel' : 'channels'}`
+                        : 'Loading…'}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground tabular-nums">
-                    {liveSupportReady ? filteredLiveChannels.length : '...'}
-                  </span>
+                <button
+                  onClick={() => setShowSidePanel(false)}
+                  className="shrink-0 -mr-1 flex h-7 w-7 items-center justify-center rounded-lg text-white/40 hover:text-white hover:bg-white/[0.06] transition-colors"
+                  title="Hide panel"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {/* In-panel search */}
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/30 group-focus-within:text-primary/70 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search channels…"
+                  value={liveChannelSearch}
+                  onChange={(e) => setLiveChannelSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-9 rounded-xl bg-white/[0.04] border border-white/[0.06]
+                             text-[12.5px] text-white placeholder:text-white/25
+                             focus:outline-none focus:border-primary/30 focus:bg-white/[0.06]
+                             focus:ring-2 focus:ring-primary/20 transition-all"
+                />
+                {liveChannelSearch && (
                   <button
-                    onClick={() => setShowSidePanel(false)}
-                    className="p-1 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
-                    title="Close panel"
+                    onClick={() => setLiveChannelSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-md text-white/30 hover:text-white hover:bg-white/[0.06] transition-colors"
                   >
                     <X className="h-3 w-3" />
                   </button>
-                </div>
+                )}
               </div>
-              <div className="h-px bg-border/60 mt-2" />
             </div>
 
-            <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-3">
-              {!liveSupportReady ? (
-                <div className="space-y-2 p-1">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="h-12 rounded-xl bg-muted animate-pulse" />
-                  ))}
-                </div>
-              ) : (
-              <div className="space-y-0.5">
-                {filteredLiveChannels.map((ch) => {
-                  const isActive = ch.id === item.id;
-                  return (
-                    <button
-                      key={ch.id}
-                      onClick={() => navigateChannel(ch)}
-                      className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all ${
-                        isActive
-                          ? 'bg-primary/15 text-foreground border border-primary/30'
-                          : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground border border-transparent'
-                      }`}
-                    >
-                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
-                        isActive ? 'bg-primary/20' : 'bg-muted/70'
-                      }`}>
-                        {ch.tvg_logo ? (
-                          <img src={ch.tvg_logo} alt="" className="h-full w-full object-contain p-1"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        ) : (
-                          <Radio className="h-3 w-3 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-[12px] truncate leading-tight ${isActive ? 'font-semibold' : 'font-medium'}`}>
-                          {ch.name}
-                        </p>
-                        {ch.group_title && (
-                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{ch.group_title}</p>
-                        )}
-                      </div>
-                      {isActive && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-500">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                          LIVE
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              )}
+            {/* ── Channel list ── */}
+            <div className="flex-1 overflow-y-auto scrollbar-none relative">
+              {/* Top gradient fade for scroll polish */}
+              <div className="sticky top-0 h-3 bg-gradient-to-b from-[#0a0a0c] to-transparent pointer-events-none z-10" />
 
-              {liveSupportReady && filteredLiveChannels.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-14 text-center">
-                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                    <Search className="h-5 w-5 text-muted-foreground/40" />
+              <div className="px-2 py-1">
+                {!liveSupportReady ? (
+                  <div className="space-y-1.5 px-1 pt-1">
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="h-[52px] rounded-xl bg-gradient-to-r from-white/[0.03] via-white/[0.05] to-white/[0.03] animate-pulse"
+                        style={{ animationDelay: `${i * 70}ms` }}
+                      />
+                    ))}
                   </div>
-                  <p className="text-sm text-muted-foreground/70">No channels match your search</p>
-                  {liveChannelSearch && (
-                    <button onClick={() => setLiveChannelSearch('')} className="text-xs text-primary hover:underline mt-2">
-                      Clear search
-                    </button>
-                  )}
-                </div>
-              )}
+                ) : filteredLiveChannels.length > 0 ? (
+                  <div className="space-y-1">
+                    {filteredLiveChannels.map((ch, idx) => {
+                      const isActive = ch.id === item.id;
+                      const gradient = stableChannelGradient(ch.name);
+                      const initials = channelInitials(ch.name);
+
+                      return (
+                        <button
+                          key={ch.id}
+                          onClick={() => navigateChannel(ch)}
+                          className={`group relative flex items-center gap-2.5 w-full rounded-xl px-2 py-2 text-left transition-all duration-200 ${
+                            isActive
+                              ? 'bg-gradient-to-r from-primary/[0.18] via-primary/[0.08] to-transparent ring-1 ring-primary/40 shadow-[0_0_24px_-4px_rgba(139,92,246,0.35)]'
+                              : 'ring-1 ring-transparent hover:bg-white/[0.035] hover:ring-white/[0.06]'
+                          }`}
+                        >
+                          {/* Active left accent bar */}
+                          {isActive && (
+                            <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-primary to-primary/60" />
+                          )}
+
+                          {/* Index */}
+                          <span
+                            className={`w-5 shrink-0 text-center text-[10px] font-bold tabular-nums tracking-tight ${
+                              isActive
+                                ? 'text-primary'
+                                : 'text-white/20 group-hover:text-white/40'
+                            }`}
+                          >
+                            {String(idx + 1).padStart(2, '0')}
+                          </span>
+
+                          {/* Logo with gradient fallback */}
+                          <div
+                            className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden ring-1 bg-gradient-to-br ${gradient} ${
+                              isActive ? 'ring-primary/40' : 'ring-white/[0.06] group-hover:ring-white/[0.12]'
+                            }`}
+                          >
+                            {/* Initials always visible beneath (in case logo fails) */}
+                            <span className="text-[11px] font-black text-white/85 tracking-tighter select-none pointer-events-none">
+                              {initials}
+                            </span>
+                            {ch.tvg_logo && (
+                              <img
+                                src={ch.tvg_logo}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                className="absolute inset-0 h-full w-full object-contain p-1 bg-black/30"
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            )}
+                          </div>
+
+                          {/* Name + group */}
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className={`text-[12.5px] truncate leading-tight transition-colors ${
+                                isActive
+                                  ? 'font-semibold text-white'
+                                  : 'font-medium text-white/80 group-hover:text-white'
+                              }`}
+                            >
+                              {ch.name}
+                            </p>
+                            {ch.group_title && ch.group_title !== item.group_title && (
+                              <p className="text-[10px] text-white/35 truncate mt-0.5 font-medium tracking-wide uppercase">
+                                {ch.group_title}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Trailing state */}
+                          {isActive ? (
+                            <div className="flex items-center gap-1 shrink-0 bg-red-500/15 border border-red-500/30 rounded-md px-1.5 py-0.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                              <span className="text-[9px] font-black text-red-300 tracking-widest">
+                                LIVE
+                              </span>
+                            </div>
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 text-white/15 group-hover:text-white/50 transition-colors shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                    <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-4">
+                      <Search className="h-5 w-5 text-white/30" />
+                    </div>
+                    <p className="text-[13px] font-semibold text-white/70 mb-1">No matches</p>
+                    <p className="text-[11px] text-white/35 mb-3">Try a different search term</p>
+                    {liveChannelSearch && (
+                      <button
+                        onClick={() => setLiveChannelSearch('')}
+                        className="text-[11px] font-semibold text-primary/80 hover:text-primary transition-colors"
+                      >
+                        Clear search
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom gradient fade */}
+              <div className="sticky bottom-0 h-3 bg-gradient-to-t from-[#050507] to-transparent pointer-events-none" />
             </div>
-          </div>
+          </aside>
         )}
       </div>
 
