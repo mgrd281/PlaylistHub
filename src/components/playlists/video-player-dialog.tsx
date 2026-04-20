@@ -340,6 +340,28 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const [autoplayMuted, setAutoplayMuted] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
 
+  /* ── Stream diagnostics (shown inside the error overlay on demand) ── */
+  type StrategyResult = {
+    name: string;
+    configured: boolean;
+    endpoint?: string;
+    status?: number;
+    ok: boolean;
+    durationMs?: number;
+    error?: string;
+    contentType?: string;
+    bodyPreview?: string;
+    hint?: string;
+  };
+  type DiagnosticsReport = {
+    target: string;
+    region: string;
+    summary: { total: number; working: number; verdict: string };
+    strategies: StrategyResult[];
+  };
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+
   /* ── Seek preview thumbnails ── */
   const thumbnailCacheRef = useRef<Map<number, string>>(new Map());
   const thumbCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -792,6 +814,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     hlsRef.current?.destroy();
     hlsRef.current = null;
     setError(null);
+    setDiagnostics(null);
     setLoading(true);
     setPlaying(false);
     setCurrentTime(0);
@@ -1369,6 +1392,24 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   function copyUrl() {
     void navigator.clipboard.writeText(streamUrl);
     toast.success('Stream URL copied');
+  }
+
+  async function runDiagnostics() {
+    if (diagnosticsLoading) return;
+    setDiagnosticsLoading(true);
+    setDiagnostics(null);
+    try {
+      const res = await fetch(`/api/stream/diagnose?url=${encodeURIComponent(streamUrl)}`);
+      if (res.ok) {
+        const data = (await res.json()) as DiagnosticsReport;
+        setDiagnostics(data);
+      } else {
+        toast.error('Diagnostics request failed');
+      }
+    } catch {
+      toast.error('Diagnostics request failed');
+    }
+    setDiagnosticsLoading(false);
   }
 
   /* ── VOD full-page layout vs Live dark overlay ── */
@@ -2358,18 +2399,20 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
 
           {/* Error */}
           {error && !seriesLoading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-white/80 p-8 text-center z-20">
-              <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center ring-1 ring-red-500/20">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white/80 p-6 text-center z-20 overflow-y-auto">
+              <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center ring-1 ring-red-500/20 shrink-0">
                 <AlertCircle className="h-8 w-8 text-red-400" />
               </div>
-              <div className="max-w-sm">
+              <div className="max-w-md">
                 <p className="text-base font-semibold text-white/90 mb-1">Playback Error</p>
                 <p className="text-sm text-white/50 leading-relaxed">{error}</p>
               </div>
-              <div className="flex items-center gap-2">
+
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 <button
                   onClick={() => {
                     setError(null);
+                    setDiagnostics(null);
                     setLoading(true);
                     setRetryNonce(n => n + 1);
                   }}
@@ -2378,12 +2421,117 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                   <Loader2 className="h-4 w-4" /> Retry
                 </button>
                 <button
+                  onClick={runDiagnostics}
+                  disabled={diagnosticsLoading}
+                  className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white/80 hover:text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06] disabled:opacity-50"
+                >
+                  {diagnosticsLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Running tests…
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-4 w-4" /> Run diagnostics
+                    </>
+                  )}
+                </button>
+                <button
                   onClick={copyUrl}
                   className="flex items-center gap-2 rounded-xl bg-white/[0.08] px-5 py-2.5 text-sm text-white/80 hover:text-white hover:bg-white/[0.12] transition-colors border border-white/[0.06]"
                 >
                   <Copy className="h-4 w-4" /> Copy URL
                 </button>
               </div>
+
+              {/* Diagnostics report */}
+              {diagnostics && (
+                <div className="w-full max-w-xl text-left mt-2 rounded-2xl bg-black/60 border border-white/[0.06] p-4 backdrop-blur-xl">
+                  <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/[0.05]">
+                    <div>
+                      <p className="text-[11px] font-bold text-white/40 uppercase tracking-wider">
+                        Proxy diagnostics
+                      </p>
+                      <p className="text-sm text-white font-semibold mt-0.5">
+                        {diagnostics.summary.working}/{diagnostics.summary.total} strategies work
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md ${
+                        diagnostics.summary.working > 0
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                      }`}
+                    >
+                      {diagnostics.summary.working > 0 ? 'Has fallback' : 'All failed'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {diagnostics.strategies.map(s => (
+                      <div
+                        key={s.name}
+                        className={`rounded-lg border p-3 ${
+                          !s.configured
+                            ? 'border-white/[0.04] bg-white/[0.02]'
+                            : s.ok
+                              ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
+                              : 'border-red-500/20 bg-red-500/[0.04]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-1">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`h-2 w-2 rounded-full shrink-0 ${
+                                !s.configured ? 'bg-white/20' : s.ok ? 'bg-emerald-400' : 'bg-red-400'
+                              }`}
+                            />
+                            <p className="text-[12.5px] font-semibold text-white truncate">
+                              {s.name}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 text-[10px] tabular-nums text-white/40">
+                            {s.status != null && (
+                              <span
+                                className={`font-bold ${
+                                  s.ok ? 'text-emerald-400' : 'text-red-400'
+                                }`}
+                              >
+                                {s.status}
+                              </span>
+                            )}
+                            {s.durationMs != null && <span>{s.durationMs}ms</span>}
+                          </div>
+                        </div>
+                        {!s.configured && s.error && (
+                          <p className="text-[11px] text-white/40 ml-4">{s.error}</p>
+                        )}
+                        {s.configured && s.hint && (
+                          <p className="text-[11px] text-amber-300/80 ml-4 mt-1">💡 {s.hint}</p>
+                        )}
+                        {s.configured && s.error && !s.hint && (
+                          <p className="text-[11px] text-red-300/70 ml-4 mt-1">{s.error}</p>
+                        )}
+                        {s.bodyPreview && !s.ok && s.bodyPreview.length < 120 && (
+                          <p className="text-[10px] text-white/30 ml-4 mt-1 font-mono truncate">
+                            {s.bodyPreview}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {diagnostics.summary.working === 0 && (
+                    <p className="text-[11px] text-white/40 mt-3 leading-relaxed">
+                      No proxy strategy reached the IPTV server. Most likely fix: deploy
+                      your own Cloudflare Worker from{' '}
+                      <code className="px-1 py-0.5 rounded bg-white/[0.06] text-white/60">
+                        cf-proxy/worker.js
+                      </code>{' '}
+                      and set <code className="px-1 py-0.5 rounded bg-white/[0.06] text-white/60">STREAM_PROXY_URL</code> in Vercel.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
