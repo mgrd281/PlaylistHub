@@ -293,25 +293,15 @@ struct MovieDetailView: View {
                                 .frame(width: width * previewVM.previewProgress, height: 3)
                                 .animation(.linear(duration: 0.1), value: previewVM.previewProgress)
                         }
-                        .padding(.bottom, 6)
+                        .padding(.bottom, 24)
                     }
                     .frame(width: width, height: heroHeight)
                 }
 
-                // Mute toggle + preview badge (bottom-right of hero)
+                // Mute toggle (bottom-right of hero)
                 if previewVM.state == .ready {
                     HStack(spacing: 8) {
                         Spacer()
-
-                        // "PREVIEW" badge
-                        Text("PREVIEW")
-                            .font(.system(size: 9, weight: .bold))
-                            .tracking(0.8)
-                            .foregroundStyle(.white.opacity(0.7))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.black.opacity(0.4), in: Capsule())
-                            .overlay(Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
 
                         Button {
                             previewVM.toggleMute()

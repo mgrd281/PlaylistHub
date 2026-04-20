@@ -969,9 +969,9 @@ final class PlayerViewModel: ObservableObject {
     private var raceTasks: [Task<Void, Never>] = []
 
     /// Timeout per source in cascade (seconds)
-    private static let sourceTimeout: TimeInterval = 5
-    /// Timeout for VOD — slightly longer but we race in parallel
-    private static let vodSourceTimeout: TimeInterval = 8
+    private static let sourceTimeout: TimeInterval = 4
+    /// Timeout for VOD — race in parallel so can be tighter
+    private static let vodSourceTimeout: TimeInterval = 5
 
     var prevChannel: PlaylistItem? {
         guard currentIndex > 0 else { return nil }
@@ -1227,7 +1227,7 @@ final class PlayerViewModel: ObservableObject {
             AVURLAssetPreferPreciseDurationAndTimingKey: false
         ])
         let playerItem = AVPlayerItem(asset: asset)
-        playerItem.preferredForwardBufferDuration = currentItem.isLive ? 2 : 10
+        playerItem.preferredForwardBufferDuration = currentItem.isLive ? 2 : 4
 
         // Cancel previous observers
         statusObserver?.invalidate()
@@ -1267,7 +1267,7 @@ final class PlayerViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + timeoutDuration, execute: timeout)
 
         player.replaceCurrentItem(with: playerItem)
-        player.play()
+        player.playImmediately(atRate: 1.0)
         isPlaying = true
     }
 

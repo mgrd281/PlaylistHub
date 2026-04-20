@@ -45,8 +45,8 @@ final class PreviewPlayerModel: ObservableObject {
 
     /// Duration of the preview clip in seconds
     private static let clipDuration: Double = 45
-    /// Timeout to wait for playback start
-    private static let loadTimeout: TimeInterval = 1.5
+    /// Timeout to wait for playback start — aggressive for instant feel
+    private static let loadTimeout: TimeInterval = 3.0
 
     // -- Smart seek offsets by content type --
     // Movies: skip deep past logos, certificates, studio cards, title sequence
@@ -171,7 +171,8 @@ final class PreviewPlayerModel: ObservableObject {
                         season.episodes.sorted { $0.episode < $1.episode }
                     }
 
-                for episode in sorted.prefix(3) {
+                // Only use first episode for speed — no need to try 3
+                if let episode = sorted.first {
                     let ext = episode.streamUrl.components(separatedBy: ".").last ?? ""
                     let hlsFallback = ext != "m3u8"
                         ? episode.streamUrl.replacingOccurrences(
@@ -194,42 +195,95 @@ final class PreviewPlayerModel: ObservableObject {
         return ordered
     }
 
-    /// Fast URL probing: skip asset pre-validation, play directly, seek after first frame
+    /// Fast URL probing: race all URLs in parallel — first to play wins
     private func tryURLsFast(_ urls: [URL]) async -> Bool {
-        for url in urls {
-            guard !Task.isCancelled else { return false }
+        guard !urls.isEmpty else { return false }
 
-            let asset = AVURLAsset(url: url, options: [
-                "AVURLAssetHTTPHeaderFieldsKey": [
-                    "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
-                ]
-            ])
+        // Race all URLs in parallel — first readyToPlay wins
+        return await withCheckedContinuation { continuation in
+            var resolved = false
+            var activePlayers: [AVPlayer] = []
+            var observers: [AnyCancellable] = []
 
-            let playerItem = AVPlayerItem(asset: asset)
-            playerItem.preferredForwardBufferDuration = 0
-            playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-
-            player.automaticallyWaitsToMinimizeStalling = false
-            player.replaceCurrentItem(with: playerItem)
-            player.isMuted = true
-            previewStartTime = .zero
-            player.playImmediately(atRate: 1.0)
-
-            let ready = await waitForPlayback(timeout: Self.loadTimeout)
-            if ready {
-                // Trailer/teaser sources are already good content — no seek needed.
-                // For main streams, seek past logos/intros to a strong scene.
-                if !isTrailerSource {
-                    Task { [weak self] in await self?.seekToStrongScene() }
+            let timeoutTimer = DispatchSource.makeTimerSource(queue: .main)
+            timeoutTimer.schedule(deadline: .now() + Self.loadTimeout)
+            timeoutTimer.setEventHandler {
+                guard !resolved else { return }
+                resolved = true
+                timeoutTimer.cancel()
+                // Clean up all racers
+                for p in activePlayers where p !== self.player {
+                    p.pause()
+                    p.replaceCurrentItem(with: nil)
                 }
-                setupClipLoop()
-                return true
-            } else {
-                player.pause()
-                player.replaceCurrentItem(with: nil)
+                observers.removeAll()
+                continuation.resume(returning: false)
+            }
+            timeoutTimer.resume()
+
+            for url in urls {
+                guard !resolved else { break }
+
+                let asset = AVURLAsset(url: url, options: [
+                    "AVURLAssetHTTPHeaderFieldsKey": [
+                        "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
+                    ]
+                ])
+
+                let playerItem = AVPlayerItem(asset: asset)
+                playerItem.preferredForwardBufferDuration = 0
+                playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+
+                // Use the main player for the first URL, throwaway players for the rest
+                let racer: AVPlayer
+                if activePlayers.isEmpty {
+                    racer = self.player
+                } else {
+                    racer = AVPlayer()
+                }
+                racer.automaticallyWaitsToMinimizeStalling = false
+                racer.replaceCurrentItem(with: playerItem)
+                racer.isMuted = true
+                racer.playImmediately(atRate: 1.0)
+                activePlayers.append(racer)
+
+                let observer = racer.publisher(for: \.timeControlStatus)
+                    .filter { $0 == .playing }
+                    .first()
+                    .receive(on: DispatchQueue.main)
+                    .sink { [weak self] _ in
+                        guard !resolved, let self else { return }
+                        resolved = true
+                        timeoutTimer.cancel()
+
+                        // If a non-main player won, steal its item
+                        if racer !== self.player {
+                            racer.pause()
+                            let winningItem = racer.currentItem
+                            racer.replaceCurrentItem(with: nil)
+                            self.player.automaticallyWaitsToMinimizeStalling = false
+                            self.player.replaceCurrentItem(with: winningItem)
+                            self.player.isMuted = true
+                            self.player.playImmediately(atRate: 1.0)
+                        }
+                        self.previewStartTime = .zero
+
+                        // Clean up losers
+                        for p in activePlayers where p !== self.player && p !== racer {
+                            p.pause()
+                            p.replaceCurrentItem(with: nil)
+                        }
+                        observers.removeAll()
+
+                        if !self.isTrailerSource {
+                            Task { [weak self] in await self?.seekToStrongScene() }
+                        }
+                        self.setupClipLoop()
+                        continuation.resume(returning: true)
+                    }
+                observers.append(observer)
             }
         }
-        return false
     }
 
     /// Compute smart seek offset based on content type and total duration.
@@ -307,34 +361,6 @@ final class PreviewPlayerModel: ObservableObject {
         await player.seek(to: fallbackOffset, toleranceBefore: .zero,
                           toleranceAfter: CMTime(seconds: 5, preferredTimescale: 600))
         previewStartTime = fallbackOffset
-    }
-
-    private func waitForPlayback(timeout: TimeInterval) async -> Bool {
-        await withCheckedContinuation { continuation in
-            var resolved = false
-
-            let timer = DispatchSource.makeTimerSource(queue: .main)
-            timer.schedule(deadline: .now() + timeout)
-            timer.setEventHandler {
-                guard !resolved else { return }
-                resolved = true
-                timer.cancel()
-                continuation.resume(returning: false)
-            }
-            timer.resume()
-
-            statusObserver = player.publisher(for: \.timeControlStatus)
-                .filter { $0 == .playing }
-                .first()
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] _ in
-                    guard !resolved else { return }
-                    resolved = true
-                    timer.cancel()
-                    self?.statusObserver = nil
-                    continuation.resume(returning: true)
-                }
-        }
     }
 
     /// Start observing actual playback status (retained properly)
