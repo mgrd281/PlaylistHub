@@ -26,6 +26,9 @@ struct MovieDetailView: View {
     // Preview player
     @StateObject private var previewVM = PreviewPlayerModel()
 
+    // Related item navigation (More Like This)
+    @State private var selectedRelatedItem: PlaylistItem?
+
     // Ken Burns animation for artwork fallback
     @State private var kenBurnsActive = false
 
@@ -138,6 +141,9 @@ struct MovieDetailView: View {
         .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $showPlayer) {
             PlayerView(item: item, channelList: channelList)
+        }
+        .fullScreenCover(item: $selectedRelatedItem) { relatedItem in
+            MovieDetailView(item: relatedItem)
         }
         .onChange(of: showPlayer) { _, isShowing in
             if isShowing {
@@ -565,7 +571,7 @@ struct MovieDetailView: View {
     }
 
     private func relatedPoster(_ relatedItem: PlaylistItem) -> some View {
-        Button {} label: {
+        Button { selectedRelatedItem = relatedItem } label: {
             ZStack(alignment: .bottomLeading) {
                 if let url = relatedItem.resolvedLogoURL {
                     CachedAsyncImage(url: url) {
