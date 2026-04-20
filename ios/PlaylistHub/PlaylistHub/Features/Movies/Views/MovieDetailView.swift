@@ -169,7 +169,7 @@ struct MovieDetailView: View {
     private var heroSection: some View {
         GeometryReader { geo in
             let width = geo.size.width
-            let heroHeight: CGFloat = width * 1.3
+            let heroHeight: CGFloat = width * 1.13 // reduced height for a sleeker look
             let topInset = max(geo.safeAreaInsets.top, 20)
 
             ZStack(alignment: .bottom) {
@@ -198,6 +198,39 @@ struct MovieDetailView: View {
                         .frame(width: width, height: heroHeight)
                         .clipped()
                         .transition(.opacity.animation(.easeIn(duration: 0.6)))
+                }
+
+                // Premium loading overlay: centered play icon with animated red ring
+                if previewVM.state == .loading || previewVM.state == .idle {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            ZStack {
+                                // Animated red loading ring
+                                Circle()
+                                    .trim(from: 0, to: 0.85)
+                                    .stroke(
+                                        AngularGradient(
+                                            gradient: Gradient(colors: [Color.red, Color.red.opacity(0.3), Color.red]),
+                                            center: .center
+                                        ),
+                                        style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                                    )
+                                    .frame(width: 64, height: 64)
+                                    .rotationEffect(.degrees(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360))
+                                    .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: previewVM.state)
+                                // Play icon
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 32, weight: .bold))
+                                    .foregroundStyle(Color.white)
+                                    .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 2)
+                            }
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                    .frame(width: width, height: heroHeight)
                 }
 
                 // Bottom gradient fade to black
@@ -291,7 +324,7 @@ struct MovieDetailView: View {
             .frame(width: width, height: heroHeight)
             .animation(.easeInOut(duration: 0.5), value: previewVM.state)
         }
-        .aspectRatio(1 / 1.3, contentMode: .fit)
+        .aspectRatio(1 / 1.13, contentMode: .fit)
     }
 
     private func previewLoadingLayer(width: CGFloat, height: CGFloat) -> some View {
