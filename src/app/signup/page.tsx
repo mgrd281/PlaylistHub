@@ -64,21 +64,21 @@ export default function SignUpPage() {
     return (
       <FloatingPostersLayout>
       <div className="flex min-h-screen items-center justify-center px-4">
-        <Card className="w-full max-w-md border-white/[0.08] bg-black/50 shadow-[0_8px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
+        <Card className="w-full max-w-md border-0 bg-white/80 shadow-xl backdrop-blur-xl">
           <CardHeader className="space-y-4 pb-6 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10">
-              <ListMusic className="h-7 w-7 text-white" />
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
+              <ListMusic className="h-7 w-7 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white">Check your email</h1>
-              <p className="mt-2 text-sm text-white/50">
+              <h1 className="text-2xl font-bold tracking-tight">Check your email</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
                 We&apos;ve sent a confirmation link to <strong>{email}</strong>.
                 Click the link to activate your account.
               </p>
             </div>
           </CardHeader>
           <CardFooter className="justify-center">
-            <Button variant="outline" className="border-white/10 text-white hover:bg-white/10" onClick={() => router.push('/login')}>
+            <Button variant="outline" onClick={() => router.push('/login')}>
               Back to Sign In
             </Button>
           </CardFooter>
@@ -91,14 +91,14 @@ export default function SignUpPage() {
   return (
     <FloatingPostersLayout>
     <div className="flex min-h-screen items-center justify-center px-4">
-      <Card className="w-full max-w-md border-white/[0.08] bg-black/50 shadow-[0_8px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
+      <Card className="w-full max-w-md border-0 bg-white/80 shadow-xl backdrop-blur-xl">
         <CardHeader className="space-y-4 pb-6 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10">
-            <ListMusic className="h-7 w-7 text-white" />
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
+            <ListMusic className="h-7 w-7 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Create an account</h1>
-            <p className="mt-1 text-sm text-white/50">
+            <h1 className="text-2xl font-bold tracking-tight">Create an account</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               Get started with PlaylistHub
             </p>
           </div>
@@ -106,12 +106,12 @@ export default function SignUpPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
+              <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-white/70">Email</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -120,11 +120,10 @@ export default function SignUpPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                className="border-white/10 bg-white/5 text-white placeholder:text-white/30"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-white/70">Password</Label>
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -134,11 +133,10 @@ export default function SignUpPage() {
                 required
                 autoComplete="new-password"
                 minLength={6}
-                className="border-white/10 bg-white/5 text-white placeholder:text-white/30"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword" className="text-white/70">Confirm Password</Label>
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -148,19 +146,18 @@ export default function SignUpPage() {
                 required
                 autoComplete="new-password"
                 minLength={6}
-                className="border-white/10 bg-white/5 text-white placeholder:text-white/30"
               />
             </div>
-            <Button type="submit" className="w-full bg-white text-black hover:bg-white/90" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create Account
             </Button>
           </form>
         </CardContent>
         <CardFooter className="justify-center">
-          <p className="text-sm text-white/40">
+          <p className="text-sm text-muted-foreground">
             Already have an account?{' '}
-            <Link href="/login" className="font-medium text-white/70 hover:text-white hover:underline">
+            <Link href="/login" className="font-medium text-primary hover:underline">
               Sign in
             </Link>
           </p>
