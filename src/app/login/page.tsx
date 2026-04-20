@@ -47,14 +47,14 @@ export default function LoginPage() {
   return (
     <FloatingPostersLayout>
       <div className="flex min-h-screen items-center justify-center px-4">
-        <Card className="w-full max-w-md border-0 bg-white/80 shadow-xl backdrop-blur-xl">
+        <Card className="w-full max-w-md border-white/[0.08] bg-black/50 shadow-[0_8px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
         <CardHeader className="space-y-4 pb-6 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
-            <ListMusic className="h-7 w-7 text-primary-foreground" />
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10">
+            <ListMusic className="h-7 w-7 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <h1 className="text-2xl font-bold tracking-tight text-white">Welcome back</h1>
+            <p className="mt-1 text-sm text-white/50">
               Sign in to your PlaylistHub account
             </p>
           </div>
@@ -62,12 +62,12 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+              <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
                 {error}
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-white/70">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -76,10 +76,11 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
+                className="border-white/10 bg-white/5 text-white placeholder:text-white/30"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-white/70">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -88,18 +89,19 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
+                className="border-white/10 bg-white/5 text-white placeholder:text-white/30"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full bg-white text-black hover:bg-white/90" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign In
             </Button>
           </form>
         </CardContent>
         <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-white/40">
             Don&apos;t have an account?{' '}
-            <Link href="/signup" className="font-medium text-primary hover:underline">
+            <Link href="/signup" className="font-medium text-white/70 hover:text-white hover:underline">
               Sign up
             </Link>
           </p>
