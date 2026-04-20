@@ -66,6 +66,61 @@ struct MovieDetailView: View {
         return pills
     }
 
+    // MARK: - Premium Metadata Row
+
+    private var metadataRow: some View {
+        HStack(spacing: 8) {
+            // Year — green accent (Netflix "match" style)
+            if let year = item.parsedYear {
+                Text(year)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(red: 0.27, green: 0.78, blue: 0.44))
+            }
+
+            // Type badge — bordered pill
+            Text(typeLabel)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(.white.opacity(0.25), lineWidth: 1)
+                )
+
+            // Genre
+            if let genre {
+                metadataDot
+                Text(genre)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+
+            // Duration (movies) or series info
+            if let mediaDuration {
+                metadataDot
+                Text(mediaDuration)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+
+            if let seriesInfo {
+                metadataDot
+                Text(seriesInfo)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+
+            Spacer()
+        }
+    }
+
+    private var metadataDot: some View {
+        Circle()
+            .fill(.white.opacity(0.3))
+            .frame(width: 3, height: 3)
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
@@ -160,15 +215,20 @@ struct MovieDetailView: View {
                     Spacer()
                 }
 
-                // Netflix-style red progress line
+                // Netflix-style red progress line (above gradient, clearly visible)
                 if previewVM.state == .ready {
-                    VStack {
+                    VStack(spacing: 0) {
                         Spacer()
-                        Rectangle()
-                            .fill(Color(red: 0.898, green: 0.035, blue: 0.078))
-                            .frame(width: width * previewVM.previewProgress, height: 3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .animation(.linear(duration: 0.1), value: previewVM.previewProgress)
+                        // Track background
+                        ZStack(alignment: .leading) {
+                            Rectangle()
+                                .fill(.white.opacity(0.08))
+                                .frame(height: 3)
+                            Rectangle()
+                                .fill(Color(red: 0.898, green: 0.035, blue: 0.078))
+                                .frame(width: width * previewVM.previewProgress, height: 3)
+                                .animation(.linear(duration: 0.1), value: previewVM.previewProgress)
+                        }
                     }
                     .frame(width: width, height: heroHeight)
                 }
@@ -277,24 +337,9 @@ struct MovieDetailView: View {
                 .lineLimit(3)
                 .padding(.bottom, 8)
 
-            // Metadata row
-            if !metadataPills.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(metadataPills, id: \.self) { pill in
-                        Text(pill)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.6))
-                        if pill != metadataPills.last {
-                            Circle()
-                                .fill(.white.opacity(0.3))
-                                .frame(width: 3, height: 3)
-                        }
-                    }
-                }
+            // Metadata row — premium compact layout
+            metadataRow
                 .padding(.bottom, 16)
-            } else {
-                Spacer().frame(height: 16)
-            }
 
             // Play button
             Button { showPlayer = true } label: {
