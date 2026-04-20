@@ -722,8 +722,8 @@ struct MovieDetailView: View {
     }
 
     private func extractDurationFromPreview() async -> String? {
-        // Wait up to 8s for the player item to have a valid duration
-        for _ in 0..<40 {
+        // Wait up to 3s for the player item to have a valid duration
+        for _ in 0..<15 {
             if let playerItem = previewVM.player.currentItem {
                 let dur = playerItem.duration
                 if dur.isValid && !dur.isIndefinite {

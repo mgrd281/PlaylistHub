@@ -162,9 +162,21 @@ final class PreviewPlayerModel: ObservableObject {
         }
 
         // Series: preview should come from real episode media when possible.
+        // Use a timeout so a slow episode fetch doesn't block preview entirely.
         if item.contentType == .series {
             do {
-                let episodes = try await DataService.shared.fetchSeriesEpisodes(streamUrl: item.streamUrl)
+                let episodes = try await withThrowingTaskGroup(of: SeriesEpisodesResponse.self) { group in
+                    group.addTask {
+                        try await DataService.shared.fetchSeriesEpisodes(streamUrl: item.streamUrl)
+                    }
+                    group.addTask {
+                        try await Task.sleep(nanoseconds: 2_000_000_000) // 2s timeout
+                        throw CancellationError()
+                    }
+                    let result = try await group.next()!
+                    group.cancelAll()
+                    return result
+                }
                 let sorted = episodes.seasons
                     .sorted { $0.season < $1.season }
                     .flatMap { season in
@@ -195,78 +207,58 @@ final class PreviewPlayerModel: ObservableObject {
         return ordered
     }
 
-    /// Fast URL probing: check playability off main thread, then play the winner on main
+    /// Sequential URL trial with single AVPlayer — fast, no probing overhead.
+    /// Tries each URL with a short per-URL timeout. First to play wins.
     private func tryURLsFast(_ urls: [URL]) async -> Bool {
         guard !urls.isEmpty else { return false }
 
-        // Probe all URLs in parallel on background — no AVPlayer needed for probing.
-        // AVURLAsset.load(.isPlayable) is safe off main thread.
-        let winningURL: URL? = await Task.detached(priority: .userInitiated) {
-            await withTaskGroup(of: URL?.self) { group in
-                for url in urls {
-                    group.addTask {
-                        let asset = AVURLAsset(url: url, options: [
-                            "AVURLAssetHTTPHeaderFieldsKey": [
-                                "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
-                            ]
-                        ])
-                        do {
-                            let playable = try await asset.load(.isPlayable)
-                            return playable ? url : nil
-                        } catch {
-                            return nil
-                        }
-                    }
+        let perURLTimeout: TimeInterval = 1.5  // fast fail per URL
+        let totalDeadline = Date().addingTimeInterval(Self.loadTimeout)
+
+        for url in urls {
+            guard Date() < totalDeadline else { break }
+
+            let asset = AVURLAsset(url: url, options: [
+                "AVURLAssetHTTPHeaderFieldsKey": [
+                    "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
+                ]
+            ])
+            let playerItem = AVPlayerItem(asset: asset)
+            playerItem.preferredForwardBufferDuration = 0
+            playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+
+            player.replaceCurrentItem(with: playerItem)
+            player.automaticallyWaitsToMinimizeStalling = false
+            player.isMuted = true
+            player.playImmediately(atRate: 1.0)
+
+            // Wait for this URL to start playing (short timeout)
+            let urlDeadline = Date().addingTimeInterval(perURLTimeout)
+            var started = false
+            while Date() < urlDeadline && Date() < totalDeadline {
+                if player.timeControlStatus == .playing {
+                    started = true
+                    break
                 }
-                // Return the first playable URL (fastest responder wins)
-                for await result in group {
-                    if let url = result {
-                        group.cancelAll()
-                        return url
-                    }
-                }
-                return nil
+                if playerItem.status == .failed { break }
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                guard !Task.isCancelled else { return false }
             }
-        }.value
 
-        guard let winningURL else { return false }
-
-        // Back on MainActor — single AVPlayer setup (lightweight, one player only)
-        let asset = AVURLAsset(url: winningURL, options: [
-            "AVURLAssetHTTPHeaderFieldsKey": [
-                "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
-            ]
-        ])
-        let playerItem = AVPlayerItem(asset: asset)
-        playerItem.preferredForwardBufferDuration = 0
-        playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-
-        player.automaticallyWaitsToMinimizeStalling = false
-        player.replaceCurrentItem(with: playerItem)
-        player.isMuted = true
-        player.playImmediately(atRate: 1.0)
-        previewStartTime = .zero
-
-        // Wait briefly for playback to actually start (up to loadTimeout)
-        let started = await waitForPlayback()
-        guard started else { return false }
-
-        if !isTrailerSource {
-            Task { [weak self] in await self?.seekToStrongScene() }
+            if started {
+                previewStartTime = .zero
+                if !isTrailerSource {
+                    Task { [weak self] in await self?.seekToStrongScene() }
+                }
+                setupClipLoop()
+                return true
+            }
+            // This URL failed — try next
         }
-        setupClipLoop()
-        return true
-    }
 
-    /// Wait for the player to start playing, with timeout
-    private func waitForPlayback() async -> Bool {
-        let deadline = Date().addingTimeInterval(Self.loadTimeout)
-        while Date() < deadline {
-            if player.timeControlStatus == .playing { return true }
-            if player.currentItem?.status == .failed { return false }
-            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
-        }
-        return player.timeControlStatus == .playing
+        // All URLs exhausted
+        player.replaceCurrentItem(with: nil)
+        return false
     }
 
     /// Compute smart seek offset based on content type and total duration.
