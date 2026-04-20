@@ -309,6 +309,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   /* ── Playback lifecycle guards ── */
   const [mainVideoLoaded, setMainVideoLoaded] = useState(false);
   const initInProgressRef = useRef(false);
+  const [autoplayMuted, setAutoplayMuted] = useState(false);
 
   /* ── Seek preview thumbnails ── */
   const thumbnailCacheRef = useRef<Map<number, string>>(new Map());
@@ -768,6 +769,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     setDuration(0);
     setBuffered(0);
     setMainVideoLoaded(false);
+    setAutoplayMuted(false);
     initInProgressRef.current = true;
 
     const video = videoRef.current;
@@ -800,11 +802,11 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
           enableWorker: true,
           lowLatencyMode: opts.live,
           startLevel: opts.live ? 0 : -1,
-          maxBufferLength: opts.live ? 4 : 60,
-          maxMaxBufferLength: opts.live ? 15 : 240,
-          backBufferLength: opts.live ? 0 : 60,
-          liveSyncDurationCount: 2,
-          liveMaxLatencyDurationCount: 4,
+          maxBufferLength: opts.live ? 10 : 60,
+          maxMaxBufferLength: opts.live ? 30 : 240,
+          backBufferLength: opts.live ? 5 : 60,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 6,
           liveDurationInfinity: opts.live,
           fragLoadingTimeOut: 10000,
           fragLoadingMaxRetry: 3,
@@ -861,7 +863,16 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
               setCurrentQuality(q[0].index);
             }
           }
-          try { await vid.play(); } catch { /* user presses play */ }
+          try {
+            await vid.play();
+          } catch {
+            // Desktop Chrome blocks unmuted autoplay — retry muted
+            try {
+              vid.muted = true;
+              await vid.play();
+              setAutoplayMuted(true);
+            } catch { /* user presses play */ }
+          }
           resolve(true);
         });
 
@@ -903,7 +914,11 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = proxied;
           video.load();
-          try { await video.play(); } catch { /* user presses play */ }
+          try {
+            await video.play();
+          } catch {
+            try { video.muted = true; await video.play(); setAutoplayMuted(true); } catch { /* user presses play */ }
+          }
           setLoading(false);
           setMainVideoLoaded(true);
           initInProgressRef.current = false;
@@ -1247,6 +1262,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
+    if (!video.muted) setAutoplayMuted(false);
   };
 
   const seek = (delta: number) => {
@@ -1429,6 +1445,16 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                           <Play className="h-9 w-9 text-white fill-white ml-1" />
                         </div>
                       </div>
+                    )}
+
+                    {/* Unmute banner — shown when autoplay required muting */}
+                    {autoplayMuted && playing && muted && (
+                      <button
+                        onClick={() => { const v = videoRef.current; if (v) { v.muted = false; } setAutoplayMuted(false); }}
+                        className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-white/[0.15] backdrop-blur-md px-4 py-2 text-sm text-white border border-white/[0.1] hover:bg-white/[0.25] transition-all animate-in fade-in slide-in-from-top-2"
+                      >
+                        <Volume2 className="h-4 w-4" /> Tap to unmute
+                      </button>
                     )}
 
                     {/* Error */}
@@ -1900,6 +1926,16 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
               </div>
             )}
 
+            {/* Unmute banner */}
+            {autoplayMuted && playing && muted && (
+              <button
+                onClick={() => { const v = videoRef.current; if (v) { v.muted = false; } setAutoplayMuted(false); }}
+                className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-white/[0.15] backdrop-blur-md px-3 py-1.5 text-xs text-white border border-white/[0.1] hover:bg-white/[0.25] transition-all"
+              >
+                <Volume2 className="h-3.5 w-3.5" /> Tap to unmute
+              </button>
+            )}
+
             {/* Live badge + Fullscreen */}
             <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-20 pointer-events-none">
               {isLive && (
@@ -2354,6 +2390,16 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                 <Play className="h-9 w-9 text-white fill-white ml-1" />
               </div>
             </div>
+          )}
+
+          {/* Unmute banner */}
+          {autoplayMuted && playing && muted && (
+            <button
+              onClick={() => { const v = videoRef.current; if (v) { v.muted = false; } setAutoplayMuted(false); }}
+              className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-white/[0.15] backdrop-blur-md px-4 py-2 text-sm text-white border border-white/[0.1] hover:bg-white/[0.25] transition-all animate-in fade-in slide-in-from-top-2"
+            >
+              <Volume2 className="h-4 w-4" /> Tap to unmute
+            </button>
           )}
 
           {/* Seek indicator */}

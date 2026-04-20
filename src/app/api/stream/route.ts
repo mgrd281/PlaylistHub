@@ -193,6 +193,18 @@ async function streamResponse(upstream: Response, targetUrl: string): Promise<Ne
     // but on Vercel the endpoint is /api/stream. Also rewrite any
     // bare http:// URLs to go through our proxy.
     const text = await upstream.text();
+
+    /** Unwrap proxy URLs (CF Worker / Scanner) — extract the embedded original URL
+     *  so segments route directly through our Edge proxy instead of double-proxying. */
+    function unwrapProxyUrl(rawUrl: string): string {
+      try {
+        const parsed = new URL(rawUrl);
+        const embedded = parsed.searchParams.get('url');
+        if (embedded) return embedded; // already decoded by URLSearchParams
+      } catch { /* not a valid URL */ }
+      return rawUrl;
+    }
+
     const rewritten = text
       .split('\n')
       .map((line) => {
@@ -200,9 +212,10 @@ async function streamResponse(upstream: Response, targetUrl: string): Promise<Ne
         if (!trimmed || trimmed.startsWith('#')) {
           // Rewrite URIs inside #EXT-X-MAP or similar tags
           return line.replace(/URI="([^"]+)"/g, (_m, uri: string) => {
-            const abs = uri.startsWith('http') ? uri : (() => {
+            let abs = uri.startsWith('http') ? uri : (() => {
               try { return new URL(uri, new URL(targetUrl)).href; } catch { return uri; }
             })();
+            abs = unwrapProxyUrl(abs);
             return `URI="/api/stream?url=${encodeURIComponent(abs)}"`;
           });
         }
@@ -210,9 +223,10 @@ async function streamResponse(upstream: Response, targetUrl: string): Promise<Ne
         if (trimmed.startsWith('/stream?url=')) {
           return '/api' + trimmed;
         }
-        // Absolute http URL — proxy it
+        // Absolute http URL — unwrap any proxy wrapper, then proxy through our Edge
         if (trimmed.startsWith('http')) {
-          return `/api/stream?url=${encodeURIComponent(trimmed)}`;
+          const original = unwrapProxyUrl(trimmed);
+          return `/api/stream?url=${encodeURIComponent(original)}`;
         }
         // Relative path — resolve against original target URL base
         try {
