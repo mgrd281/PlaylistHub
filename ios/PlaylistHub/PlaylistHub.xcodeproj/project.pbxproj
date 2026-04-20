@@ -44,6 +44,7 @@
 		ED3CE299AB2013DD8821CEF8 /* DataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF388B01C376C5E4B72CF928 /* DataService.swift */; };
 		ED519D0C51D4C3981A5FFA7C /* ChannelFavoritesManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9DC2C26F0671B00EBBB2D0D /* ChannelFavoritesManager.swift */; };
 		F8EB489C0E41D523015301B8 /* MyListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB8CACB71BA77BC906D8E3 /* MyListView.swift */; };
+		FA1B7C3D2E5A9B0012345678 /* FavoriteChannelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1B7C3E2E5A9B0012345679 /* FavoriteChannelsView.swift */; };
 		FF4257811E55978FCC57C7B9 /* WatchHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -76,6 +77,7 @@
 		92DB8CACB71BA77BC906D8E3 /* MyListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyListView.swift; sourceTree = "<group>"; };
 		93BC1FCA187ABB8E7620396B /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		982D7813C33AD3CD1F313FAD /* ChannelHealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelHealthManager.swift; sourceTree = "<group>"; };
+		FA1B7C3E2E5A9B0012345679 /* FavoriteChannelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteChannelsView.swift; sourceTree = "<group>"; };
 		A16A13EF96F0187ACFC70B2A /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		B00FC575C15D1FC08C386E3E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		B21EAD68AC39E3521C66C393 /* WatchHistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHistoryManager.swift; sourceTree = "<group>"; };
@@ -145,6 +147,7 @@
 			isa = PBXGroup;
 			children = (
 				23AD53101C88C3935A572D80 /* DeviceInfoView.swift */,
+				FA1B7C3E2E5A9B0012345679 /* FavoriteChannelsView.swift */,
 				92DB8CACB71BA77BC906D8E3 /* MyListView.swift */,
 				D5A218A5C63769BD1CFFAB98 /* SettingsView.swift */,
 			);
@@ -477,6 +480,7 @@
 				1AE809DE8F6FCD04463A3A09 /* MovieDetailView.swift in Sources */,
 				432D8F57ED08184F94952F3A /* MoviesView.swift in Sources */,
 				A51C296DAA47B9CEBF31F920 /* MyListManager.swift in Sources */,
+				FA1B7C3D2E5A9B0012345678 /* FavoriteChannelsView.swift in Sources */,
 				F8EB489C0E41D523015301B8 /* MyListView.swift in Sources */,
 				B7C169D965E864F99B184B92 /* PlayerView.swift in Sources */,
 				171FE8A4B289F204C75DDC28 /* PlaylistCache.swift in Sources */,

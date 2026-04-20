@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject private var deviceManager: DeviceManager
     @EnvironmentObject private var themeManager: ThemeManager
     @StateObject private var myList = MyListManager.shared
+    @StateObject private var channelFavorites = ChannelFavoritesManager.shared
     @State private var showSignOutConfirm = false
 
     private var accent: Color { themeManager.accentColor }
@@ -94,6 +95,46 @@ struct SettingsView: View {
                                         .foregroundStyle(.white)
                                         .frame(minWidth: 22, minHeight: 22)
                                         .background(accent, in: Circle())
+                                }
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.quaternary)
+                            }
+                            .padding(14)
+                        }
+                        .buttonStyle(.plain)
+
+                        Divider().padding(.leading, 66)
+
+                        NavigationLink(destination: FavoriteChannelsView().environmentObject(themeManager)) {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(.red.opacity(0.12))
+                                        .frame(width: 40, height: 40)
+                                    Image(systemName: "heart.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.red)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Favorite Channels")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    Text(channelFavorites.count == 0 ? "No favorites" : "\(channelFavorites.count) channel\(channelFavorites.count == 1 ? "" : "s")")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if channelFavorites.count > 0 {
+                                    Text("\(channelFavorites.count)")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .frame(minWidth: 22, minHeight: 22)
+                                        .background(.red, in: Circle())
                                 }
 
                                 Image(systemName: "chevron.right")

@@ -6,6 +6,7 @@ struct HomeView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var remoteConfig: RemoteConfigService
     @StateObject private var vm = HomeViewModel()
+    @StateObject private var channelFavorites = ChannelFavoritesManager.shared
     @State private var showAddSheet = false
     @State private var selectedItem: PlaylistItem?
 
@@ -107,6 +108,29 @@ struct HomeView: View {
                 .padding(.bottom, 10)
 
                 continueWatchingRail
+                    .padding(.bottom, 28)
+            }
+
+        case "favoriteChannels":
+            if !channelFavorites.sortedFavorites.isEmpty {
+                let sec = remoteConfig.homeSection("favoriteChannels")
+                HStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: sec?.icon ?? "heart.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.red)
+                        Text(sec?.title ?? "Favorite Channels")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    Spacer()
+                    Text("\(channelFavorites.count)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
+
+                favoriteChannelsRail
                     .padding(.bottom, 28)
             }
 
@@ -278,6 +302,23 @@ struct HomeView: View {
                             Label("Remove", systemImage: "xmark.circle")
                         }
                     }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    // MARK: - Favorite Channels Rail
+
+    private var favoriteChannelsRail: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 12) {
+                ForEach(channelFavorites.sortedFavorites, id: \.streamURL) { entry in
+                    FavoriteChannelTile(entry: entry, onRemove: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            channelFavorites.remove(entry.streamURL)
+                        }
+                    })
                 }
             }
             .padding(.horizontal, 20)
@@ -825,6 +866,72 @@ private struct ContinueWatchingCard: View {
         case "movie": return .purple
         case "series": return .orange
         default: return .blue
+        }
+    }
+}
+
+// MARK: - Favorite Channel Tile (Home Rail)
+
+private struct FavoriteChannelTile: View {
+    let entry: ChannelFavoritesManager.FavoriteEntry
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+                    .frame(width: 100, height: 100)
+
+                VStack(spacing: 6) {
+                    if let urlStr = entry.logoURL, let url = URL(string: urlStr) {
+                        CachedAsyncImage(url: url) {
+                            Image(systemName: "tv.fill")
+                                .font(.system(size: 20, weight: .light))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 30)
+                    } else {
+                        Image(systemName: "tv.fill")
+                            .font(.system(size: 20, weight: .light))
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Text(entry.channelName)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .frame(width: 80)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 2) {
+                    Circle().fill(.red).frame(width: 4, height: 4)
+                    Text("LIVE")
+                        .font(.system(size: 6, weight: .heavy))
+                        .foregroundStyle(.red)
+                }
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(.red.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .padding(5)
+            }
+            .contextMenu {
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove from Favorites", systemImage: "heart.slash")
+                }
+            }
+
+            if let group = entry.groupTitle {
+                Text(group)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(width: 100)
+            }
         }
     }
 }
