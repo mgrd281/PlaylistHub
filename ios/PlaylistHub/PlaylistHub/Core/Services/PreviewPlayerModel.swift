@@ -41,9 +41,9 @@ final class PreviewPlayerModel: ObservableObject {
     private var currentContentType: ContentType = .movie
 
     /// Duration of the preview clip in seconds
-    private static let clipDuration: Double = 30
+    private static let clipDuration: Double = 45
     /// Timeout to wait for playback start
-    private static let loadTimeout: TimeInterval = 2.5
+    private static let loadTimeout: TimeInterval = 1.5
 
     // -- Smart seek offsets by content type --
     // Movies: skip deep past logos, certificates, studio cards, title sequence
@@ -203,13 +203,14 @@ final class PreviewPlayerModel: ObservableObject {
             ])
 
             let playerItem = AVPlayerItem(asset: asset)
-            playerItem.preferredForwardBufferDuration = 1
+            playerItem.preferredForwardBufferDuration = 0
+            playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
 
             player.automaticallyWaitsToMinimizeStalling = false
             player.replaceCurrentItem(with: playerItem)
             player.isMuted = true
             previewStartTime = .zero
-            player.play()
+            player.playImmediately(atRate: 1.0)
 
             let ready = await waitForPlayback(timeout: Self.loadTimeout)
             if ready {
@@ -261,7 +262,7 @@ final class PreviewPlayerModel: ObservableObject {
     /// Seek to a strong cinematic scene after playback has started (non-blocking).
     /// If the initial seek lands on a stall/black region, nudge forward automatically.
     private func seekToStrongScene() async {
-        // Wait for duration to become available (up to 2 seconds)
+        // Wait for duration to become available (up to 1 second)
         for _ in 0..<10 {
             guard !Task.isCancelled else { return }
             guard let item = player.currentItem else { return }
@@ -277,9 +278,9 @@ final class PreviewPlayerModel: ObservableObject {
                 previewStartTime = seekTarget
 
                 // Black-frame / stall avoidance: check if playback advances.
-                // If the player is stuck at the same position after 0.8s, nudge forward.
+                // If the player is stuck at the same position after 0.4s, nudge forward.
                 let posAfterSeek = CMTimeGetSeconds(player.currentTime())
-                try? await Task.sleep(nanoseconds: 800_000_000)
+                try? await Task.sleep(nanoseconds: 400_000_000)
                 guard !Task.isCancelled else { return }
                 let posAfterWait = CMTimeGetSeconds(player.currentTime())
 
@@ -293,7 +294,7 @@ final class PreviewPlayerModel: ObservableObject {
                 }
                 return
             }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
 
         // Duration never became available — apply a safe absolute offset

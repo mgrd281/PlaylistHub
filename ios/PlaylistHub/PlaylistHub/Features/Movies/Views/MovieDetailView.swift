@@ -153,10 +153,11 @@ struct MovieDetailView: View {
             }
         }
         .task {
-            await loadRelated()
-            loadSavedRating()
             previewVM.startPreview(for: item)
-            await loadMediaMetadata()
+            async let r: () = loadRelated()
+            async let m: () = loadMediaMetadata()
+            loadSavedRating()
+            _ = await (r, m)
         }
         .onDisappear {
             previewVM.stop()
@@ -221,7 +222,7 @@ struct MovieDetailView: View {
                     Spacer()
                 }
 
-                // Netflix-style red progress line (above gradient, clearly visible)
+                // Netflix-style red progress line (above gradient, with spacing from title)
                 if previewVM.state == .ready {
                     VStack(spacing: 0) {
                         Spacer()
@@ -235,6 +236,7 @@ struct MovieDetailView: View {
                                 .frame(width: width * previewVM.previewProgress, height: 3)
                                 .animation(.linear(duration: 0.1), value: previewVM.previewProgress)
                         }
+                        .padding(.bottom, 6)
                     }
                     .frame(width: width, height: heroHeight)
                 }
