@@ -242,6 +242,39 @@ struct SettingsView: View {
                         .padding(.vertical, 2)
                     }
 
+                    // ── Security ──
+                    settingsSection("Security") {
+                        NavigationLink(destination: URLProtectionSettingsView().environmentObject(themeManager)) {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(.orange.opacity(0.12))
+                                        .frame(width: 40, height: 40)
+                                    Image(systemName: "lock.shield.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.orange)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("URL Protection")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    Text("Password-protect stream URL viewing")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.quaternary)
+                            }
+                            .padding(14)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     // ── App Info ──
                     settingsSection("About") {
                         VStack(spacing: 0) {
@@ -554,6 +587,36 @@ struct SettingsView: View {
                         adminRow("Accent Color", value: themeManager.matchingPreset()?.rawValue.capitalized ?? "Custom")
                     }
                 }
+
+                // URL Manager (admin navigation)
+                NavigationLink(destination: AdminURLManagerView().environmentObject(authManager).environmentObject(themeManager)) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "link.badge.plus")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.red)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("URL Manager")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.primary)
+                            Text("Source URLs, stream URLs & protection")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.quaternary)
+                    }
+                    .padding(14)
+                    .background(Color(.systemGray6).opacity(0.7))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(.red.opacity(0.08), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
         }
