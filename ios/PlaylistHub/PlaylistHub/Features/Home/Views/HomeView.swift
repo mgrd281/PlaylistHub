@@ -440,8 +440,8 @@ struct HomeView: View {
     // MARK: - Helpers
 
     private var userName: String {
-        authManager.currentUser?.displayName ??
-        authManager.currentUser?.email.components(separatedBy: "@").first ?? "User"
+        (authManager.currentUser?.displayName ??
+        authManager.currentUser?.email.components(separatedBy: "@").first ?? "User").displayCapitalized
     }
 
     private var initials: String {

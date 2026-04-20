@@ -42,3 +42,14 @@ extension Color {
     static let phSecondary = Color(.secondarySystemBackground)
     static let phGrouped = Color(.systemGroupedBackground)
 }
+
+// MARK: - Display name formatting
+
+extension String {
+    /// Returns the string with its first character uppercased (display-only, does not mutate stored data).
+    /// "mgrdegh" → "Mgrdegh", "already Fine" → "Already Fine", "" → ""
+    var displayCapitalized: String {
+        guard let first = first else { return self }
+        return first.uppercased() + dropFirst()
+    }
+}

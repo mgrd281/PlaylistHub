@@ -251,10 +251,10 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 if let name = authManager.currentUser?.displayName, !name.isEmpty {
-                    Text(name)
+                    Text(name.displayCapitalized)
                         .font(.headline)
                 } else {
-                    Text(authManager.currentUser?.email.components(separatedBy: "@").first ?? "User")
+                    Text((authManager.currentUser?.email.components(separatedBy: "@").first ?? "User").displayCapitalized)
                         .font(.headline)
                 }
                 Text(authManager.currentUser?.email ?? "")

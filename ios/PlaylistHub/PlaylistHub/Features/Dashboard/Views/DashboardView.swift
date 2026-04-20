@@ -14,7 +14,7 @@ struct DashboardView: View {
                             Text("Welcome back")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Text(authManager.currentUser?.displayName ?? authManager.currentUser?.email.components(separatedBy: "@").first ?? "User")
+                            Text((authManager.currentUser?.displayName ?? authManager.currentUser?.email.components(separatedBy: "@").first ?? "User").displayCapitalized)
                                 .font(.title2.bold())
                         }
                         Spacer()

@@ -248,7 +248,7 @@ struct ProfilePickerView: View {
                     value: isEditing
                 )
 
-                Text(profile.name)
+                Text(profile.name.displayCapitalized)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
@@ -295,9 +295,9 @@ struct ProfilePickerView: View {
 
     private func ensureDefaultProfile() {
         if profileManager.profiles.isEmpty {
-            let name = authManager.currentUser?.displayName
+            let name = (authManager.currentUser?.displayName
                 ?? authManager.currentUser?.email.components(separatedBy: "@").first
-                ?? "User"
+                ?? "User").displayCapitalized
             profileManager.createDefault(name: name)
         }
     }
