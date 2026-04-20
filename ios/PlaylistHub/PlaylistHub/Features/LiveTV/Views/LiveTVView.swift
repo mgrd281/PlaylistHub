@@ -1375,6 +1375,13 @@ private func matchCategoryPatterns(_ text: String) -> String {
 
 @MainActor
 final class LiveTVViewModel: ObservableObject {
+    // MARK: - Persistence keys
+    private static let lastChannelStreamKey = "ph_livetv_last_channel_stream"
+    private static let lastChannelNameKey   = "ph_livetv_last_channel_name"
+    private static let lastPlaylistIdKey    = "ph_livetv_last_playlist_id"
+    private static let lastCategoryKey      = "ph_livetv_last_category"
+    private static let lastGroupKey         = "ph_livetv_last_group"
+
     // Playlist state
     @Published var playlists: [BrowsePlaylistInfo] = []
     @Published var playlistsLoading = true
@@ -1473,6 +1480,7 @@ final class LiveTVViewModel: ObservableObject {
     var totalChannels: Int { allChannels.count }
 
     // Current display items based on selected category + group, sorted by health
+    // Favorites are always surfaced first within the list
     var displayItems: [PlaylistItem] {
         guard let cat = activeCategory else { return [] }
 
@@ -1483,9 +1491,12 @@ final class LiveTVViewModel: ObservableObject {
             raw = cat.groups.flatMap(\.items)
         }
 
-        // Smart ordering: working first, unknown middle, failed last
+        // Smart ordering: favorites first, then working, unknown, failed
         return raw.sorted { a, b in
-            health.sortScore(for: a.resolvedStreamURL) > health.sortScore(for: b.resolvedStreamURL)
+            let aFav = favorites.isFavorite(a.resolvedStreamURL)
+            let bFav = favorites.isFavorite(b.resolvedStreamURL)
+            if aFav != bFav { return aFav }
+            return health.sortScore(for: a.resolvedStreamURL) > health.sortScore(for: b.resolvedStreamURL)
         }
     }
 
@@ -1693,9 +1704,7 @@ final class LiveTVViewModel: ObservableObject {
             self.categories = cached.categories
             self.allChannels = cached.channels
             rebuildSearchIndex()
-            if let first = categories.first {
-                activeCategory = first
-            }
+            restoreSavedCategoryAndGroup()
             autoPlayFirstChannelIfNeeded()
             return
         }
@@ -1726,17 +1735,49 @@ final class LiveTVViewModel: ObservableObject {
             if let first = categories.first {
                 activeCategory = first
             }
+            restoreSavedCategoryAndGroup()
             autoPlayFirstChannelIfNeeded()
         } catch {
             isLoading = false
         }
     }
 
-    /// Auto-play the first channel in the active category if no channel is currently playing
+    /// Restore the saved category/group from UserDefaults if available
+    private func restoreSavedCategoryAndGroup() {
+        if let savedCat = UserDefaults.standard.string(forKey: Self.lastCategoryKey),
+           let match = categories.first(where: { $0.key == savedCat }) {
+            activeCategory = match
+            if let savedGroup = UserDefaults.standard.string(forKey: Self.lastGroupKey),
+               match.groups.contains(where: { $0.name == savedGroup }) {
+                activeGroup = savedGroup
+            }
+        }
+    }
+
+    /// Auto-play: resume last channel, then try favorites, then first healthy
     private func autoPlayFirstChannelIfNeeded() {
         guard playingItem == nil else { return }
+
+        // 1. Try to resume last-watched channel
+        if let lastStream = UserDefaults.standard.string(forKey: Self.lastChannelStreamKey),
+           let lastItem = allChannels.first(where: { $0.resolvedStreamURL == lastStream }) {
+            playChannel(lastItem)
+            return
+        }
+
+        // 2. Try a favorite channel (working ones first)
+        let favItems = favoriteItems
+        if let fav = favItems.first(where: { health.status(for: $0.resolvedStreamURL) == .working }) {
+            playChannel(fav)
+            return
+        }
+        if let fav = favItems.first(where: { !health.isKnownDead($0.resolvedStreamURL) }) {
+            playChannel(fav)
+            return
+        }
+
+        // 3. First healthy channel from current display
         let items = displayItems
-        // Prefer a known-working channel, otherwise take first unknown
         if let working = items.first(where: { health.status(for: $0.resolvedStreamURL) == .working }) {
             playChannel(working)
         } else if let first = items.first(where: { !health.isKnownDead($0.resolvedStreamURL) }) {
@@ -1780,12 +1821,17 @@ final class LiveTVViewModel: ObservableObject {
         activeGroup = nil
         showFavorites = false
         memory.visitCategory(cat.key)
+        UserDefaults.standard.set(cat.key, forKey: Self.lastCategoryKey)
+        UserDefaults.standard.removeObject(forKey: Self.lastGroupKey)
     }
 
     func selectGroup(_ groupName: String?) {
         activeGroup = activeGroup == groupName ? nil : groupName
         if let g = groupName, let cat = activeCategory {
             memory.visitGroup(category: cat.key, group: g)
+            UserDefaults.standard.set(g, forKey: Self.lastGroupKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.lastGroupKey)
         }
     }
 
@@ -1843,6 +1889,13 @@ final class LiveTVViewModel: ObservableObject {
         // Reset channel-level fallback counter on manual selection
         if !isAutoFallback {
             channelFallbackAttempts = 0
+        }
+
+        // Persist last channel for auto-resume
+        UserDefaults.standard.set(item.resolvedStreamURL, forKey: Self.lastChannelStreamKey)
+        UserDefaults.standard.set(item.name, forKey: Self.lastChannelNameKey)
+        if let playlist = activePlaylist {
+            UserDefaults.standard.set(playlist.id, forKey: Self.lastPlaylistIdKey)
         }
 
         let cascade = AppConfig.streamCascade(for: item.resolvedStreamURL)
