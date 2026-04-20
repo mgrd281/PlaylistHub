@@ -341,6 +341,7 @@ struct MovieDetailView: View {
                 .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(3)
+                .padding(.top, 14)
                 .padding(.bottom, 8)
 
             // Metadata row — premium compact layout
