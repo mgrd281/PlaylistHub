@@ -311,90 +311,6 @@ struct MovieDetailView: View {
                     }
                     .frame(width: width, height: heroHeight)
                 }
-// MARK: - Interactive Preview Video Layer (with controls)
-
-private struct InteractivePreviewVideoLayer: View {
-    let player: AVPlayer
-    @Binding var isActuallyPlaying: Bool
-    @Binding var showControls: Bool
-    var onClose: () -> Void
-    var onPausePlay: () -> Void
-
-    @State private var timeControlStatus: AVPlayer.TimeControlStatus = .paused
-    @State private var autoHideTask: Task<Void, Never>? = nil
-
-    var body: some View {
-        ZStack {
-            PreviewVideoLayer(player: player)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    showControls = true
-                    autoHideControls()
-                }
-                .onAppear {
-                    observePlayer()
-                }
-            if showControls {
-                Color.black.opacity(0.18)
-                    .ignoresSafeArea()
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button(action: {
-                            onClose()
-                        }) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 22, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(16)
-                                .background(.black.opacity(0.5), in: Circle())
-                        }
-                    }
-                    Spacer()
-                    Button(action: {
-                        onPausePlay()
-                        autoHideControls()
-                    }) {
-                        Image(systemName: isActuallyPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 44, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(24)
-                            .background(.black.opacity(0.5), in: Circle())
-                    }
-                    Spacer().frame(height: 40)
-                }
-                .padding(.top, 24)
-                .padding(.horizontal, 24)
-                .transition(.opacity)
-            }
-        }
-        .onDisappear {
-            autoHideTask?.cancel()
-        }
-    }
-
-    private func observePlayer() {
-        let _ = player.publisher(for: \.timeControlStatus)
-            .sink { status in
-                timeControlStatus = status
-                if status == .playing {
-                    isActuallyPlaying = true
-                } else {
-                    isActuallyPlaying = false
-                }
-            }
-    }
-
-    private func autoHideControls() {
-        autoHideTask?.cancel()
-        autoHideTask = Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            withAnimation {
-                showControls = false
-            }
-        }
-    }
-}
 
                 // Mute toggle + preview badge (bottom-right of hero)
                 if previewVM.state == .ready {
@@ -869,6 +785,86 @@ private struct InteractivePreviewVideoLayer: View {
             return "\(mins) min/ep"
         }
         return nil
+    }
+}
+
+// MARK: - Interactive Preview Video Layer (with controls)
+
+struct InteractivePreviewVideoLayer: View {
+    let player: AVPlayer
+    @Binding var isActuallyPlaying: Bool
+    @Binding var showControls: Bool
+    var onClose: () -> Void
+    var onPausePlay: () -> Void
+
+    @State private var timeControlStatus: AVPlayer.TimeControlStatus = .paused
+    @State private var autoHideTask: Task<Void, Never>? = nil
+
+    var body: some View {
+        ZStack {
+            PreviewVideoLayer(player: player)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    showControls = true
+                    InteractivePreviewVideoLayer.autoHideControls(task: &autoHideTask, showControls: $showControls)
+                }
+                .onAppear {
+                    InteractivePreviewVideoLayer.observePlayer(player: player, isActuallyPlaying: $isActuallyPlaying)
+                }
+            if showControls {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            onClose()
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(16)
+                                .background(.black.opacity(0.5), in: Circle())
+                        }
+                    }
+                    Spacer()
+                    Button(action: {
+                        onPausePlay()
+                        InteractivePreviewVideoLayer.autoHideControls(task: &autoHideTask, showControls: $showControls)
+                    }) {
+                        Image(systemName: isActuallyPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 44, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(24)
+                            .background(.black.opacity(0.5), in: Circle())
+                    }
+                    Spacer().frame(height: 40)
+                }
+                .padding(.top, 24)
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            }
+        }
+        .onDisappear {
+            autoHideTask?.cancel()
+        }
+    }
+
+    static func observePlayer(player: AVPlayer, isActuallyPlaying: Binding<Bool>) {
+        let _ = player.publisher(for: \.timeControlStatus)
+            .sink { status in
+                isActuallyPlaying.wrappedValue = status == .playing
+            }
+    }
+
+    static func autoHideControls(task: inout Task<Void, Never>?, showControls: Binding<Bool>) {
+        task?.cancel()
+        task = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation {
+                showControls.wrappedValue = false
+            }
+        }
     }
 }
 
