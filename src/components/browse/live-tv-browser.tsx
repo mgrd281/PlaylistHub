@@ -803,14 +803,40 @@ export function LiveTVBrowser() {
   // Flat channel list for global search
   const allChannels = useMemo(() => sections.flatMap((s) => s.items), [sections]);
 
-  // Global search results (client-side)
+  // Normalize for search: strip diacritics (ü→u, é→e, ß→ss), lowercase
+  const normalizeSearch = useCallback((s: string) =>
+    s.replace(/ß/g, 'ss').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  , []);
+
+  // Global search results (client-side, normalized + multi-field)
   const searchResults = useMemo(() => {
     if (!debouncedSearch.trim()) return [];
-    const q = debouncedSearch.toLowerCase();
-    return allChannels.filter(
-      (ch) => ch.name.toLowerCase().includes(q) || ch.group_title?.toLowerCase().includes(q),
-    );
-  }, [allChannels, debouncedSearch]);
+    const q = normalizeSearch(debouncedSearch);
+    const tokens = q.split(/\s+/).filter(Boolean);
+    if (!tokens.length) return [];
+
+    const scored: { item: PlaylistItem; score: number }[] = [];
+    for (const ch of allChannels) {
+      const nName = normalizeSearch(ch.name);
+      const nGroup = normalizeSearch(ch.group_title ?? '');
+      const nTvgName = normalizeSearch((ch as any).tvg_name ?? '');
+      const nTvgId = normalizeSearch((ch as any).tvg_id ?? '');
+
+      let allMatch = true;
+      let total = 0;
+      for (const tok of tokens) {
+        let matched = false;
+        if (nName.includes(tok)) { matched = true; total += nName.startsWith(tok) ? 10 : 5; }
+        if (nGroup.includes(tok)) { matched = true; total += 3; }
+        if (nTvgName.includes(tok)) { matched = true; total += 2; }
+        if (nTvgId.includes(tok)) { matched = true; total += 1; }
+        if (!matched) { allMatch = false; break; }
+      }
+      if (allMatch) scored.push({ item: ch, score: total });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 100).map((s) => s.item);
+  }, [allChannels, debouncedSearch, normalizeSearch]);
 
   const isSearching = debouncedSearch.trim().length > 0;
 

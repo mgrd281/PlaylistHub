@@ -1,6 +1,7 @@
 import SwiftUI
 import AVKit
 import AVFoundation
+import Combine
 
 // MARK: - Playlist info from browse API
 
@@ -1404,6 +1405,26 @@ final class LiveTVViewModel: ObservableObject {
     /// Whether inline player was active before background
     private var wasPlayingBeforeBackground = false
 
+    /// Pre-built search index for fast, normalized lookups
+    private var searchIndex: [SearchIndexEntry] = []
+    /// Debounced search results (published for UI)
+    @Published private(set) var searchResults: [PlaylistItem] = []
+    /// Combine pipeline for debouncing search input
+    private var searchCancellable: AnyCancellable?
+
+    /// Lightweight search index entry — pre-normalized strings for instant matching
+    private struct SearchIndexEntry {
+        let item: PlaylistItem
+        /// Normalized (diacritics-stripped + lowercased) channel name
+        let normalizedName: String
+        /// Normalized group title
+        let normalizedGroup: String
+        /// Normalized tvgName
+        let normalizedTvgName: String
+        /// Normalized tvgId
+        let normalizedTvgId: String
+    }
+
     /// Cascade fallback state
     private var fallbackURLs: [URL] = []
     private var fallbackTimer: DispatchWorkItem?
@@ -1468,15 +1489,108 @@ final class LiveTVViewModel: ObservableObject {
         health.status(for: item.resolvedStreamURL)
     }
 
-    var searchResults: [PlaylistItem] {
-        guard isSearching else { return [] }
-        let q = searchQuery.lowercased()
-        return allChannels.filter {
-            $0.name.lowercased().contains(q) ||
-            ($0.groupTitle?.lowercased().contains(q) ?? false)
-        }.sorted { a, b in
-            health.sortScore(for: a.resolvedStreamURL) > health.sortScore(for: b.resolvedStreamURL)
+    // MARK: - Search index & debounce
+
+    /// Normalize a string for search: strip diacritics (ü→u, é→e, ß→ss), lowercase
+    private static func normalizeForSearch(_ input: String) -> String {
+        // Replace ß first since folding doesn't handle it
+        let cleaned = input.replacingOccurrences(of: "ß", with: "ss")
+        // Use ICU folding: strips diacritics, lowercases, folds width variants
+        return cleaned.folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive], locale: nil)
+    }
+
+    /// Build the pre-computed search index from the current channel list
+    private func rebuildSearchIndex() {
+        searchIndex = allChannels.map { item in
+            SearchIndexEntry(
+                item: item,
+                normalizedName: Self.normalizeForSearch(item.name),
+                normalizedGroup: Self.normalizeForSearch(item.groupTitle ?? ""),
+                normalizedTvgName: Self.normalizeForSearch(item.tvgName ?? ""),
+                normalizedTvgId: Self.normalizeForSearch(item.tvgId ?? "")
+            )
         }
+    }
+
+    /// Set up Combine debounce pipeline for search queries
+    func setupSearchDebounce() {
+        searchCancellable = $searchQuery
+            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
+            .removeDuplicates()
+            .sink { [weak self] query in
+                self?.performSearch(query: query)
+            }
+    }
+
+    /// Execute the actual search against the pre-built index
+    private func performSearch(query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            searchResults = []
+            return
+        }
+
+        let q = Self.normalizeForSearch(trimmed)
+        // Split into tokens for multi-word search (all tokens must match)
+        let tokens = q.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+        guard !tokens.isEmpty else {
+            searchResults = []
+            return
+        }
+
+        struct ScoredItem {
+            let item: PlaylistItem
+            let score: Int  // higher = better match
+        }
+
+        var scored: [ScoredItem] = []
+        scored.reserveCapacity(min(searchIndex.count, 200))
+
+        for entry in searchIndex {
+            // All tokens must match at least one field
+            var allTokensMatch = true
+            var totalScore = 0
+
+            for token in tokens {
+                var tokenMatched = false
+
+                // Name match (highest priority)
+                if entry.normalizedName.contains(token) {
+                    tokenMatched = true
+                    totalScore += entry.normalizedName.hasPrefix(token) ? 10 : 5
+                }
+                // Group title match
+                if entry.normalizedGroup.contains(token) {
+                    tokenMatched = true
+                    totalScore += 3
+                }
+                // tvgName match
+                if entry.normalizedTvgName.contains(token) {
+                    tokenMatched = true
+                    totalScore += 2
+                }
+                // tvgId match
+                if entry.normalizedTvgId.contains(token) {
+                    tokenMatched = true
+                    totalScore += 1
+                }
+
+                if !tokenMatched {
+                    allTokensMatch = false
+                    break
+                }
+            }
+
+            if allTokensMatch {
+                // Boost working channels
+                let healthBoost = health.sortScore(for: entry.item.resolvedStreamURL)
+                scored.append(ScoredItem(item: entry.item, score: totalScore * 100 + healthBoost))
+            }
+        }
+
+        // Sort by score descending, cap at 100 results for UI performance
+        scored.sort { $0.score > $1.score }
+        searchResults = scored.prefix(100).map(\.item)
     }
 
     var hasPrevChannel: Bool {
@@ -1500,6 +1614,7 @@ final class LiveTVViewModel: ObservableObject {
         guard !hasLoadedPlaylists else { return }
 
         setupLifecycleObservers()
+        setupSearchDebounce()
 
         // Check if background preloader already fetched playlists (instant)
         if let preloaded = Self.preloadedPlaylists, !preloaded.isEmpty {
@@ -1555,6 +1670,8 @@ final class LiveTVViewModel: ObservableObject {
         activePlaylist = playlist
         categories = []
         allChannels = []
+        searchIndex = []
+        searchResults = []
         activeCategory = nil
         activeGroup = nil
         searchQuery = ""
@@ -1570,6 +1687,7 @@ final class LiveTVViewModel: ObservableObject {
            CFAbsoluteTimeGetCurrent() - cached.ts < Self.cacheTTL {
             self.categories = cached.categories
             self.allChannels = cached.channels
+            rebuildSearchIndex()
             if let first = categories.first {
                 activeCategory = first
             }
@@ -1589,6 +1707,7 @@ final class LiveTVViewModel: ObservableObject {
             }.value
 
             self.allChannels = channels
+            rebuildSearchIndex()
             self.categories = categories
             isLoading = false
 
