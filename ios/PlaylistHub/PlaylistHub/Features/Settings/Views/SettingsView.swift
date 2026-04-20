@@ -87,16 +87,19 @@ struct SettingsView: View {
                                             lineWidth: 2.5
                                         )
                                         .frame(width: 26, height: 26)
+                                        .allowsHitTesting(false)
 
                                     if themeManager.matchingPreset() == nil {
                                         Circle()
                                             .fill(themeManager.accentColor)
                                             .frame(width: 18, height: 18)
+                                            .allowsHitTesting(false)
                                     }
 
                                     ColorPicker("", selection: $themeManager.accentColor, supportsOpacity: false)
                                         .labelsHidden()
-                                        .opacity(0.015) // invisible but tappable
+                                        .scaleEffect(1.6)
+                                        .opacity(0.02)
                                         .frame(width: 26, height: 26)
                                 }
                                 .frame(maxWidth: .infinity)
