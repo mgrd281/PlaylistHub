@@ -297,12 +297,13 @@ struct LiveTVView: View {
                 }
             }
 
-            // Now-playing info bar at bottom
-            if vm.playingItem != nil {
+            // Now-playing info bar at bottom (auto-hides)
+            if vm.playingItem != nil && vm.showNowPlaying {
                 VStack {
                     Spacer()
                     nowPlayingBar
                 }
+                .transition(.opacity)
             }
         }
         .aspectRatio(16/9, contentMode: .fit)
@@ -369,23 +370,11 @@ struct LiveTVView: View {
     }
 
     private var playerControlsOverlay: some View {
-        VStack {
-            // Top row — fullscreen button
-            HStack {
-                Spacer()
-                Button { vm.openFullscreen() } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .padding(12)
-            }
+        ZStack {
+            // Scrim
+            Color.black.opacity(0.4)
 
-            Spacer()
-
-            // Center row — prev/play/next
+            // Center — play/pause controls (always perfectly centered)
             HStack(spacing: 32) {
                 Button { vm.playPrevChannel() } label: {
                     Image(systemName: "backward.end.fill")
@@ -407,10 +396,24 @@ struct LiveTVView: View {
                 }
                 .disabled(!vm.hasNextChannel)
             }
-            Spacer()
+
+            // Top-right — fullscreen button
+            VStack {
+                HStack {
+                    Spacer()
+                    Button { vm.openFullscreen() } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .padding(12)
+                }
+                Spacer()
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.black.opacity(0.4))
     }
 
     // MARK: - Search Bar
@@ -1393,6 +1396,7 @@ final class LiveTVViewModel: ObservableObject {
     @Published var playerBuffering = false
     @Published var playerError: String?
     @Published var showPlayerControls = false
+    @Published var showNowPlaying = false
 
     // Fullscreen
     @Published var showFullscreen = false
@@ -1400,6 +1404,7 @@ final class LiveTVViewModel: ObservableObject {
     private var allChannels: [PlaylistItem] = []
     private var statusObserver: NSKeyValueObservation?
     private var controlsTimer: Timer?
+    private var nowPlayingTimer: Timer?
     private var hasLoadedPlaylists = false
     private var lifecycleObservers: [NSObjectProtocol] = []
     /// Whether inline player was active before background
@@ -1831,6 +1836,7 @@ final class LiveTVViewModel: ObservableObject {
         playerError = nil
         playerBuffering = true
         showPlayerControls = false
+        flashNowPlaying()
         fallbackTimer?.cancel()
         fallbackURLs = []
 
@@ -1995,10 +2001,21 @@ final class LiveTVViewModel: ObservableObject {
         showPlayerControls.toggle()
         controlsTimer?.invalidate()
         if showPlayerControls {
+            flashNowPlaying()
             controlsTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     withAnimation { self?.showPlayerControls = false }
                 }
+            }
+        }
+    }
+
+    func flashNowPlaying() {
+        nowPlayingTimer?.invalidate()
+        withAnimation(.easeIn(duration: 0.2)) { showNowPlaying = true }
+        nowPlayingTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                withAnimation(.easeOut(duration: 0.4)) { self?.showNowPlaying = false }
             }
         }
     }
@@ -2033,6 +2050,7 @@ final class LiveTVViewModel: ObservableObject {
         fallbackTimer?.cancel()
         statusObserver?.invalidate()
         controlsTimer?.invalidate()
+        nowPlayingTimer?.invalidate()
         inlinePlayer?.pause()
         inlinePlayer?.replaceCurrentItem(with: nil)
         inlinePlayer = nil
