@@ -1,4 +1,5 @@
 import SwiftUI
+import Supabase
 
 /// Admin-only view for managing channel/source URLs across playlists.
 /// Shows source URLs, stream URL samples, and URL protection status.
