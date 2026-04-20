@@ -196,8 +196,6 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Divider().padding(.leading, 66)
-
                         NavigationLink(destination: FavoriteChannelsView().environmentObject(themeManager)) {
                             HStack(spacing: 12) {
                                 ZStack {
