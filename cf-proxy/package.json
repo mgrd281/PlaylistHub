@@ -1,0 +1,15 @@
+{
+  "name": "iptv-proxy-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker proxy for IPTV streams",
+  "scripts": {
+    "login": "wrangler login",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
