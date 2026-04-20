@@ -41,11 +41,12 @@ struct Profile: Codable, Identifiable {
     let email: String
     var displayName: String?
     var avatarUrl: String?
+    var role: String?
     let createdAt: Date
     var updatedAt: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, email
+        case id, email, role
         case displayName = "display_name"
         case avatarUrl = "avatar_url"
         case createdAt = "created_at"

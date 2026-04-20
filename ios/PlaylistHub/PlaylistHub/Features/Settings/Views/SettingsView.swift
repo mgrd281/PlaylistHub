@@ -258,6 +258,11 @@ struct SettingsView: View {
                         .padding(.vertical, 2)
                     }
 
+                    // ── Admin Panel (admin only) ──
+                    if authManager.isAdmin {
+                        adminSection
+                    }
+
                     // ── Account ──
                     settingsSection("Account") {
                         VStack(spacing: 0) {
@@ -433,6 +438,176 @@ struct SettingsView: View {
         .padding(.vertical, 4)
         .background(color.opacity(0.1))
         .clipShape(Capsule())
+    }
+
+    // MARK: - Admin Section
+
+    @ViewBuilder
+    private var adminSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Section header with admin badge
+            HStack(spacing: 8) {
+                Text("ADMIN PANEL")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .tracking(0.8)
+
+                Text("ADMIN")
+                    .font(.system(size: 8, weight: .heavy))
+                    .tracking(0.5)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.red.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, 24)
+
+            VStack(spacing: 12) {
+                // Account Info
+                adminCard(title: "Account", icon: "person.crop.circle.fill", iconColor: accent) {
+                    VStack(spacing: 0) {
+                        adminRow("User ID", value: authManager.currentUser?.id.uuidString ?? "—")
+                        Divider().padding(.leading, 14)
+                        adminRow("Email", value: authManager.currentUser?.email ?? "—")
+                        Divider().padding(.leading, 14)
+                        adminRow("Display Name", value: authManager.currentUser?.displayName ?? "Not set")
+                        Divider().padding(.leading, 14)
+                        adminRow("Role", value: authManager.currentUser?.role?.capitalized ?? "user")
+                        Divider().padding(.leading, 14)
+                        adminRow("Created", value: authManager.currentUser?.createdAt.fullString ?? "—")
+                        Divider().padding(.leading, 14)
+                        adminRow("Updated", value: authManager.currentUser?.updatedAt.fullString ?? "—")
+                    }
+                }
+
+                // System Info
+                adminCard(title: "System", icon: "cpu.fill", iconColor: .orange) {
+                    VStack(spacing: 0) {
+                        adminRow("iOS Version", value: UIDevice.current.systemVersion)
+                        Divider().padding(.leading, 14)
+                        adminRow("Device Model", value: deviceModelName)
+                        Divider().padding(.leading, 14)
+                        adminRow("Device Name", value: UIDevice.current.name)
+                        Divider().padding(.leading, 14)
+                        adminRow("App Version", value: appVersion)
+                        Divider().padding(.leading, 14)
+                        adminRow("Build Date", value: buildIdentifier)
+                        Divider().padding(.leading, 14)
+                        adminRow("Bundle ID", value: Bundle.main.bundleIdentifier ?? "—")
+                        Divider().padding(.leading, 14)
+                        adminRow("Locale", value: Locale.current.identifier)
+                        Divider().padding(.leading, 14)
+                        adminRow("Timezone", value: TimeZone.current.identifier)
+                    }
+                }
+
+                // Device Registration
+                adminCard(title: "Device Registration", icon: "tv.and.mediabox.fill", iconColor: .green) {
+                    if let device = deviceManager.device {
+                        VStack(spacing: 0) {
+                            adminRow("Device ID", value: device.id)
+                            Divider().padding(.leading, 14)
+                            adminRow("Device Key", value: device.deviceKey)
+                            Divider().padding(.leading, 14)
+                            adminRow("Activation Code", value: device.activationCode)
+                            Divider().padding(.leading, 14)
+                            adminRow("Status", value: device.status.capitalized)
+                            Divider().padding(.leading, 14)
+                            adminRow("Platform", value: device.platform)
+                            Divider().padding(.leading, 14)
+                            adminRow("Model", value: device.model ?? "—")
+                            Divider().padding(.leading, 14)
+                            adminRow("OS Version", value: device.osVersion ?? "—")
+                            Divider().padding(.leading, 14)
+                            adminRow("Fingerprint", value: device.fingerprintHash ?? "—")
+                            Divider().padding(.leading, 14)
+                            adminRow("Reinstalls", value: "\(device.reinstallCount)")
+                            Divider().padding(.leading, 14)
+                            adminRow("Activated", value: device.activatedAt?.fullString ?? "—")
+                            Divider().padding(.leading, 14)
+                            adminRow("Last Seen", value: device.lastSeenAt?.fullString ?? "—")
+                            Divider().padding(.leading, 14)
+                            adminRow("Registered", value: device.createdAt.fullString)
+                        }
+                    } else {
+                        HStack {
+                            Spacer()
+                            Text("No device registered")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.vertical, 12)
+                    }
+                }
+
+                // Library Stats
+                adminCard(title: "Library", icon: "books.vertical.fill", iconColor: .purple) {
+                    VStack(spacing: 0) {
+                        adminRow("My List", value: "\(myList.count) items")
+                        Divider().padding(.leading, 14)
+                        adminRow("Favorite Channels", value: "\(channelFavorites.count) channels")
+                        Divider().padding(.leading, 14)
+                        adminRow("Theme", value: themeManager.isDefault ? "Default" : "Custom")
+                        Divider().padding(.leading, 14)
+                        adminRow("Accent Color", value: themeManager.matchingPreset()?.rawValue.capitalized ?? "Custom")
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private func adminCard<Content: View>(title: String, icon: String, iconColor: Color, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Card header
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                Text(title)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            content()
+        }
+        .background(Color(.systemGray6).opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(.red.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func adminRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 11, weight: .medium).monospaced())
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private var deviceModelName: String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(validatingUTF8: $0) ?? UIDevice.current.model
+            }
+        }
     }
 
     // MARK: - Helpers

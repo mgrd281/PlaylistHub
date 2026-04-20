@@ -12,6 +12,8 @@ final class AuthManager: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
+    var isAdmin: Bool { currentUser?.role == "admin" }
+
     private var supabase: SupabaseClient { SupabaseManager.shared.client }
 
     private init() {}

@@ -16,6 +16,13 @@ extension Date {
         formatter.timeStyle = .short
         return formatter.string(from: self)
     }
+
+    var fullString: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .long
+        formatter.timeStyle = .medium
+        return formatter.string(from: self)
+    }
 }
 
 // MARK: - Number formatting
