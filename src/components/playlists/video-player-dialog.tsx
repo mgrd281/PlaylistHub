@@ -1286,7 +1286,18 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused) { video.play(); } else { video.pause(); }
+    if (video.paused) {
+      video.play().catch(() => {
+        // Autoplay policy or transient error — retry muted so the user sees picture move
+        try {
+          video.muted = true;
+          setAutoplayMuted(true);
+          void video.play();
+        } catch { /* nothing more we can do */ }
+      });
+    } else {
+      video.pause();
+    }
   };
 
   const toggleMute = () => {
@@ -2758,64 +2769,65 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
         </div>
         </div>
 
-        {/* ═══════ PREMIUM SIDE PANEL — Live channels (desktop only, hidden on mobile) ═══════ */}
+        {/* ═══════ YOUTUBE-STYLE SIDE PANEL — Live channels (desktop only) ═══════ */}
         {sideVisible && !isVod && (
           <aside
             className={`hidden md:flex flex-col relative ${
-              viewMode === 'theater' ? 'w-[380px]' : 'w-[350px]'
+              viewMode === 'theater' ? 'w-[400px]' : 'w-[380px]'
             } ml-3 rounded-2xl overflow-hidden
-               bg-gradient-to-b from-[#0e0e12]/95 via-[#0a0a0c]/95 to-[#050507]/95
+               bg-[#0b0b0e]/95
                backdrop-blur-2xl
                border border-white/[0.06]
                shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8),inset_0_1px_0_0_rgba(255,255,255,0.04)]`}
           >
-            {/* Ambient accent glow — subtle violet wash from the top */}
-            <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-primary/[0.12] via-primary/[0.03] to-transparent pointer-events-none" />
+            {/* Ambient accent glow */}
+            <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-primary/[0.10] to-transparent pointer-events-none" />
 
-            {/* ── Header ── */}
-            <div className="relative shrink-0 px-4 pt-4 pb-3 border-b border-white/[0.05]">
+            {/* ── Sticky Header ── */}
+            <div className="relative shrink-0 px-4 pt-4 pb-3 border-b border-white/[0.06]">
               <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/25">
-                    <Tv className="h-4 w-4 text-primary" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="flex items-center gap-1 text-[10px] font-black tracking-[0.15em] text-red-400 uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                      Now Playing
+                    </span>
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="text-[13px] font-bold text-white truncate leading-tight tracking-tight">
-                      {item.group_title || 'Related Channels'}
-                    </h3>
-                    <p className="text-[11px] text-white/40 mt-0.5 tabular-nums">
-                      {liveSupportReady
-                        ? `${filteredLiveChannels.length} ${filteredLiveChannels.length === 1 ? 'channel' : 'channels'}`
-                        : 'Loading…'}
-                    </p>
-                  </div>
+                  <h3 className="text-[15px] font-bold text-white truncate leading-tight tracking-tight">
+                    {item.group_title || 'Live Channels'}
+                  </h3>
+                  <p className="text-[11.5px] text-white/45 mt-0.5 tabular-nums">
+                    {liveSupportReady
+                      ? `${filteredLiveChannels.length} ${filteredLiveChannels.length === 1 ? 'channel' : 'channels'}`
+                      : 'Loading…'}
+                  </p>
                 </div>
                 <button
                   onClick={() => setShowSidePanel(false)}
-                  className="shrink-0 -mr-1 flex h-7 w-7 items-center justify-center rounded-lg text-white/40 hover:text-white hover:bg-white/[0.06] transition-colors"
+                  className="shrink-0 -mr-1 flex h-8 w-8 items-center justify-center rounded-full text-white/50 hover:text-white hover:bg-white/[0.08] transition-colors"
                   title="Hide panel"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-4 w-4" />
                 </button>
               </div>
 
-              {/* In-panel search */}
+              {/* Search */}
               <div className="relative group">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/30 group-focus-within:text-primary/70 transition-colors" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/35 group-focus-within:text-white/80 transition-colors" />
                 <input
                   type="text"
-                  placeholder="Search channels…"
+                  placeholder="Search channels"
                   value={liveChannelSearch}
                   onChange={(e) => setLiveChannelSearch(e.target.value)}
-                  className="w-full h-9 pl-9 pr-9 rounded-xl bg-white/[0.04] border border-white/[0.06]
-                             text-[12.5px] text-white placeholder:text-white/25
-                             focus:outline-none focus:border-primary/30 focus:bg-white/[0.06]
-                             focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full h-9 pl-10 pr-9 rounded-full bg-white/[0.06] border border-white/[0.06]
+                             text-[13px] text-white placeholder:text-white/30
+                             focus:outline-none focus:bg-white/[0.10] focus:border-white/20
+                             transition-all"
                 />
                 {liveChannelSearch && (
                   <button
                     onClick={() => setLiveChannelSearch('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-md text-white/30 hover:text-white hover:bg-white/[0.06] transition-colors"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full text-white/40 hover:text-white hover:bg-white/[0.08] transition-colors"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -2823,24 +2835,29 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
               </div>
             </div>
 
-            {/* ── Channel list ── */}
+            {/* ── Channel list (YouTube Up-Next style) ── */}
             <div className="flex-1 overflow-y-auto scrollbar-none relative">
-              {/* Top gradient fade for scroll polish */}
-              <div className="sticky top-0 h-3 bg-gradient-to-b from-[#0a0a0c] to-transparent pointer-events-none z-10" />
+              <div className="sticky top-0 h-2 bg-gradient-to-b from-[#0b0b0e] to-transparent pointer-events-none z-10" />
 
-              <div className="px-2 py-1">
+              <div className="px-2 py-2">
                 {!liveSupportReady ? (
-                  <div className="space-y-1.5 px-1 pt-1">
-                    {Array.from({ length: 10 }).map((_, i) => (
+                  <div className="space-y-2 px-1 pt-1">
+                    {Array.from({ length: 8 }).map((_, i) => (
                       <div
                         key={i}
-                        className="h-[52px] rounded-xl bg-gradient-to-r from-white/[0.03] via-white/[0.05] to-white/[0.03] animate-pulse"
+                        className="flex gap-3 rounded-xl p-2 animate-pulse"
                         style={{ animationDelay: `${i * 70}ms` }}
-                      />
+                      >
+                        <div className="aspect-video w-[108px] shrink-0 rounded-lg bg-white/[0.05]" />
+                        <div className="flex-1 space-y-1.5 pt-1">
+                          <div className="h-3 w-4/5 rounded bg-white/[0.05]" />
+                          <div className="h-2.5 w-2/5 rounded bg-white/[0.03]" />
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ) : filteredLiveChannels.length > 0 ? (
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     {filteredLiveChannels.map((ch, idx) => {
                       const isActive = ch.id === item.id;
                       const gradient = stableChannelGradient(ch.name);
@@ -2850,81 +2867,89 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                         <button
                           key={ch.id}
                           onClick={() => navigateChannel(ch)}
-                          className={`group relative flex items-center gap-2.5 w-full rounded-xl px-2 py-2 text-left transition-all duration-200 ${
+                          className={`group relative flex items-start gap-3 w-full rounded-xl p-2 text-left transition-all duration-150 ${
                             isActive
-                              ? 'bg-gradient-to-r from-primary/[0.18] via-primary/[0.08] to-transparent ring-1 ring-primary/40 shadow-[0_0_24px_-4px_rgba(139,92,246,0.35)]'
-                              : 'ring-1 ring-transparent hover:bg-white/[0.035] hover:ring-white/[0.06]'
+                              ? 'bg-white/[0.08]'
+                              : 'hover:bg-white/[0.05]'
                           }`}
                         >
-                          {/* Active left accent bar */}
-                          {isActive && (
-                            <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-primary to-primary/60" />
-                          )}
-
-                          {/* Index */}
-                          <span
-                            className={`w-5 shrink-0 text-center text-[10px] font-bold tabular-nums tracking-tight ${
-                              isActive
-                                ? 'text-primary'
-                                : 'text-white/20 group-hover:text-white/40'
-                            }`}
-                          >
-                            {String(idx + 1).padStart(2, '0')}
-                          </span>
-
-                          {/* Logo with gradient fallback */}
-                          <div
-                            className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden ring-1 bg-gradient-to-br ${gradient} ${
-                              isActive ? 'ring-primary/40' : 'ring-white/[0.06] group-hover:ring-white/[0.12]'
-                            }`}
-                          >
-                            {/* Initials always visible beneath (in case logo fails) */}
-                            <span className="text-[11px] font-black text-white/85 tracking-tighter select-none pointer-events-none">
-                              {initials}
-                            </span>
+                          {/* 16:9 thumbnail — YouTube-style */}
+                          <div className={`relative aspect-video w-[112px] shrink-0 rounded-lg overflow-hidden bg-gradient-to-br ${gradient} ring-1 ${
+                            isActive ? 'ring-white/20' : 'ring-white/[0.04] group-hover:ring-white/10'
+                          }`}>
+                            {/* Initials fallback (always rendered beneath) */}
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-[18px] font-black text-white/90 tracking-tight select-none pointer-events-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]">
+                                {initials}
+                              </span>
+                            </div>
+                            {/* Real logo on top */}
                             {ch.tvg_logo && (
                               <img
                                 src={ch.tvg_logo}
                                 alt=""
                                 loading="lazy"
                                 decoding="async"
-                                className="absolute inset-0 h-full w-full object-contain p-1 bg-black/30"
+                                className="absolute inset-0 h-full w-full object-contain p-2 bg-black/30"
                                 onError={(e) => {
                                   (e.currentTarget as HTMLImageElement).style.display = 'none';
                                 }}
                               />
                             )}
+
+                            {/* Active overlay — subtle darken + play icon */}
+                            {isActive && (
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <div className="flex items-center gap-0.5">
+                                  <span className="block w-[3px] h-4 bg-white rounded-full animate-pulse" />
+                                  <span className="block w-[3px] h-5 bg-white rounded-full animate-pulse [animation-delay:150ms]" />
+                                  <span className="block w-[3px] h-3 bg-white rounded-full animate-pulse [animation-delay:300ms]" />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* LIVE badge on active thumbnail */}
+                            {isActive && (
+                              <div className="absolute top-1 left-1 flex items-center gap-1 bg-red-600 rounded px-1 py-[1px]">
+                                <span className="w-1 h-1 rounded-full bg-white animate-pulse" />
+                                <span className="text-[8px] font-black text-white tracking-wider leading-none">LIVE</span>
+                              </div>
+                            )}
+                            {!isActive && (
+                              <div className="absolute top-1 left-1 bg-black/70 rounded px-1 py-[1px]">
+                                <span className="text-[8px] font-bold text-white/90 tracking-wider leading-none">LIVE</span>
+                              </div>
+                            )}
+
+                            {/* Index badge */}
+                            <div className="absolute bottom-1 right-1 bg-black/70 rounded px-1 py-[1px]">
+                              <span className="text-[9px] font-bold text-white/90 tabular-nums leading-none">
+                                {String(idx + 1).padStart(2, '0')}
+                              </span>
+                            </div>
                           </div>
 
-                          {/* Name + group */}
-                          <div className="flex-1 min-w-0">
+                          {/* Info */}
+                          <div className="flex-1 min-w-0 pt-0.5 pr-1">
                             <p
-                              className={`text-[12.5px] truncate leading-tight transition-colors ${
-                                isActive
-                                  ? 'font-semibold text-white'
-                                  : 'font-medium text-white/80 group-hover:text-white'
+                              className={`text-[13.5px] font-medium leading-snug line-clamp-2 transition-colors ${
+                                isActive ? 'text-white font-semibold' : 'text-white/90 group-hover:text-white'
                               }`}
                             >
                               {ch.name}
                             </p>
-                            {ch.group_title && ch.group_title !== item.group_title && (
-                              <p className="text-[10px] text-white/35 truncate mt-0.5 font-medium tracking-wide uppercase">
+                            {ch.group_title && (
+                              <p className="text-[11.5px] text-white/50 truncate mt-1 font-normal">
                                 {ch.group_title}
                               </p>
                             )}
-                          </div>
-
-                          {/* Trailing state */}
-                          {isActive ? (
-                            <div className="flex items-center gap-1 shrink-0 bg-red-500/15 border border-red-500/30 rounded-md px-1.5 py-0.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                              <span className="text-[9px] font-black text-red-300 tracking-widest">
-                                LIVE
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className="flex items-center gap-1 text-[10px] font-semibold text-red-400/80">
+                                <span className={`w-1 h-1 rounded-full bg-red-500 ${isActive ? 'animate-pulse' : ''}`} />
+                                Live now
                               </span>
                             </div>
-                          ) : (
-                            <ChevronRight className="h-3.5 w-3.5 text-white/15 group-hover:text-white/50 transition-colors shrink-0" />
-                          )}
+                          </div>
                         </button>
                       );
                     })}
@@ -2948,8 +2973,7 @@ export function VideoPlayerDialog({ item, channelList, relatedItems, onClose, on
                 )}
               </div>
 
-              {/* Bottom gradient fade */}
-              <div className="sticky bottom-0 h-3 bg-gradient-to-t from-[#050507] to-transparent pointer-events-none" />
+              <div className="sticky bottom-0 h-2 bg-gradient-to-t from-[#0b0b0e] to-transparent pointer-events-none" />
             </div>
           </aside>
         )}
