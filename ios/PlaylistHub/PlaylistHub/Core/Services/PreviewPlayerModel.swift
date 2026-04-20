@@ -28,9 +28,12 @@ final class PreviewPlayerModel: ObservableObject {
     @Published var isReady = false
     @Published var isMuted = true
     @Published private(set) var previewProgress: Double = 0
+    /// True only when the player is actively rendering frames (timeControlStatus == .playing)
+    @Published private(set) var isActuallyPlaying = false
 
     let player = AVPlayer()
     private var statusObserver: AnyCancellable?
+    private var playbackStatusObserver: AnyCancellable?
     private var didStart = false
     private var previewStartTime: CMTime = .zero
     private var timeObserverToken: Any?
@@ -334,8 +337,20 @@ final class PreviewPlayerModel: ObservableObject {
         }
     }
 
+    /// Start observing actual playback status (retained properly)
+    private func setupPlaybackObserver() {
+        playbackStatusObserver?.cancel()
+        playbackStatusObserver = player.publisher(for: \.timeControlStatus)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                self?.isActuallyPlaying = status == .playing
+            }
+    }
+
     /// Loop the preview and track progress for the red bar
     private func setupClipLoop() {
+        setupPlaybackObserver()
+
         if let token = timeObserverToken {
             player.removeTimeObserver(token)
             timeObserverToken = nil
@@ -374,6 +389,14 @@ final class PreviewPlayerModel: ObservableObject {
         player.isMuted = isMuted
     }
 
+    func togglePlayPause() {
+        if isActuallyPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+    }
+
     func stop() {
         startTask?.cancel()
         startTask = nil
@@ -384,7 +407,10 @@ final class PreviewPlayerModel: ObservableObject {
         }
         player.replaceCurrentItem(with: nil)
         statusObserver = nil
+        playbackStatusObserver?.cancel()
+        playbackStatusObserver = nil
         isReady = false
+        isActuallyPlaying = false
         previewProgress = 0
         state = .idle
         hasPreviewSource = false

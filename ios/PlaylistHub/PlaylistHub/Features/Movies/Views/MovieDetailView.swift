@@ -5,9 +5,6 @@ import AVFoundation
 // MARK: - Netflix-Style Detail View (Movies & Series)
 
 struct MovieDetailView: View {
-        @State private var isActuallyPlaying = false
-        @State private var showControls = false
-        @State private var controlsHideTask: Task<Void, Never>? = nil
     let item: PlaylistItem
     var channelList: [PlaylistItem]?
     @Environment(\.dismiss) private var dismiss
@@ -199,19 +196,8 @@ struct MovieDetailView: View {
                 // Layer 2: Video preview (crossfades in over artwork when ready)
                 if previewVM.state == .ready {
                     InteractivePreviewVideoLayer(
-                        player: previewVM.player,
-                        isActuallyPlaying: $isActuallyPlaying,
-                        showControls: $showControls,
-                        onClose: { dismiss() },
-                        onPausePlay: {
-                            if isActuallyPlaying {
-                                previewVM.player.pause()
-                                isActuallyPlaying = false
-                            } else {
-                                previewVM.player.play()
-                                isActuallyPlaying = true
-                            }
-                        }
+                        previewVM: previewVM,
+                        onClose: { dismiss() }
                     )
                     .frame(width: width, height: heroHeight)
                     .clipped()
@@ -293,8 +279,8 @@ struct MovieDetailView: View {
                     Spacer()
                 }
 
-                // Netflix-style red progress line (above gradient, with spacing from title)
-                if previewVM.state == .ready && isActuallyPlaying {
+                // Netflix-style red progress line — ONLY after real playback has started
+                if previewVM.state == .ready && previewVM.isActuallyPlaying && previewVM.previewProgress > 0 {
                     VStack(spacing: 0) {
                         Spacer()
                         // Track background
@@ -788,81 +774,81 @@ struct MovieDetailView: View {
     }
 }
 
-// MARK: - Interactive Preview Video Layer (with controls)
+// MARK: - Interactive Preview Video Layer (Netflix-style controls)
 
 struct InteractivePreviewVideoLayer: View {
-    let player: AVPlayer
-    @Binding var isActuallyPlaying: Bool
-    @Binding var showControls: Bool
+    @ObservedObject var previewVM: PreviewPlayerModel
     var onClose: () -> Void
-    var onPausePlay: () -> Void
 
-    @State private var timeControlStatus: AVPlayer.TimeControlStatus = .paused
+    @State private var showControls = false
     @State private var autoHideTask: Task<Void, Never>? = nil
 
     var body: some View {
         ZStack {
-            PreviewVideoLayer(player: player)
+            // Video rendering layer
+            PreviewVideoLayer(player: previewVM.player)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    showControls = true
-                    InteractivePreviewVideoLayer.autoHideControls(task: &autoHideTask, showControls: $showControls)
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showControls.toggle()
+                    }
+                    if showControls {
+                        scheduleAutoHide()
+                    }
                 }
-                .onAppear {
-                    InteractivePreviewVideoLayer.observePlayer(player: player, isActuallyPlaying: $isActuallyPlaying)
-                }
+
+            // Controls overlay — Netflix-style scrim + controls
             if showControls {
-                Color.black.opacity(0.18)
-                    .ignoresSafeArea()
+                // Darkening scrim
+                Color.black.opacity(0.35)
+                    .allowsHitTesting(false)
+
+                // Close button (top-left)
                 VStack {
                     HStack {
-                        Spacer()
-                        Button(action: {
-                            onClose()
-                        }) {
+                        Button(action: onClose) {
                             Image(systemName: "xmark")
-                                .font(.system(size: 22, weight: .bold))
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.white)
-                                .padding(16)
+                                .frame(width: 36, height: 36)
                                 .background(.black.opacity(0.5), in: Circle())
+                                .overlay(Circle().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
                         }
+                        Spacer()
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
                     Spacer()
-                    Button(action: {
-                        onPausePlay()
-                        InteractivePreviewVideoLayer.autoHideControls(task: &autoHideTask, showControls: $showControls)
-                    }) {
-                        Image(systemName: isActuallyPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 44, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(24)
-                            .background(.black.opacity(0.5), in: Circle())
-                    }
-                    Spacer().frame(height: 40)
                 }
-                .padding(.top, 24)
-                .padding(.horizontal, 24)
-                .transition(.opacity)
+
+                // Center play/pause
+                Button {
+                    previewVM.togglePlayPause()
+                    scheduleAutoHide()
+                } label: {
+                    Image(systemName: previewVM.isActuallyPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 36, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 72, height: 72)
+                        .background(.ultraThinMaterial.opacity(0.6), in: Circle())
+                        .overlay(Circle().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 4)
+                }
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: showControls)
         .onDisappear {
             autoHideTask?.cancel()
         }
     }
 
-    static func observePlayer(player: AVPlayer, isActuallyPlaying: Binding<Bool>) {
-        let _ = player.publisher(for: \.timeControlStatus)
-            .sink { status in
-                isActuallyPlaying.wrappedValue = status == .playing
-            }
-    }
-
-    static func autoHideControls(task: inout Task<Void, Never>?, showControls: Binding<Bool>) {
-        task?.cancel()
-        task = Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            withAnimation {
-                showControls.wrappedValue = false
+    private func scheduleAutoHide() {
+        autoHideTask?.cancel()
+        autoHideTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showControls = false
             }
         }
     }
