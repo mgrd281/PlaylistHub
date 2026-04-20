@@ -5,7 +5,7 @@ import { TVShell } from '@/components/tv/tv-shell';
 export default async function TVPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  if (!user) redirect('/admin-portal');
 
   return <TVShell />;
 }

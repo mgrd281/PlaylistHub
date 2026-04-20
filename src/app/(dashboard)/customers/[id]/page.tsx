@@ -10,7 +10,7 @@ export default async function CustomerDetailPage({
   const { id } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  if (!user) redirect('/admin-portal');
 
   // Server-side admin check
   const svc = createServiceClient();

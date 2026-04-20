@@ -10,7 +10,7 @@ export default async function ActivatePage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) redirect('/login?next=/activate');
+  if (!user) redirect('/admin-portal?next=/activate');
 
   const { code } = await searchParams;
 

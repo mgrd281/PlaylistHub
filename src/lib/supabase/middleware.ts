@@ -10,14 +10,16 @@ export async function updateSession(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('your-project')) {
-    // Supabase not configured — let unauthenticated routes through, redirect others to login
+    // Supabase not configured — let public routes through, redirect others to admin portal
     if (
       !request.nextUrl.pathname.startsWith('/login') &&
       !request.nextUrl.pathname.startsWith('/signup') &&
+      !request.nextUrl.pathname.startsWith('/admin-portal') &&
+      !request.nextUrl.pathname.startsWith('/manage') &&
       request.nextUrl.pathname !== '/'
     ) {
       const url = request.nextUrl.clone();
-      url.pathname = '/login';
+      url.pathname = '/admin-portal';
       return NextResponse.redirect(url);
     }
     return supabaseResponse;
@@ -54,11 +56,14 @@ export async function updateSession(request: NextRequest) {
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
     !request.nextUrl.pathname.startsWith('/signup') &&
+    !request.nextUrl.pathname.startsWith('/admin-portal') &&
+    !request.nextUrl.pathname.startsWith('/manage') &&
     !request.nextUrl.pathname.startsWith('/auth') &&
+    !request.nextUrl.pathname.startsWith('/status') &&
     request.nextUrl.pathname !== '/'
   ) {
     const url = request.nextUrl.clone();
-    url.pathname = '/login';
+    url.pathname = '/admin-portal';
     return NextResponse.redirect(url);
   }
 

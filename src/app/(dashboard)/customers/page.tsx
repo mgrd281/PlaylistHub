@@ -5,7 +5,7 @@ import { CustomersView } from '@/components/admin/customers-view';
 export default async function CustomersPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  if (!user) redirect('/admin-portal');
 
   // Server-side admin check
   const svc = createServiceClient();
