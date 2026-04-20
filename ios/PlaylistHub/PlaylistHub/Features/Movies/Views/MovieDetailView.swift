@@ -193,7 +193,7 @@ struct MovieDetailView: View {
                 }
 
 
-                // Layer 2: Video preview (crossfades in over artwork when ready)
+                // Layer 2: Video preview (crossfades in over artwork when actually rendering)
                 if previewVM.state == .ready {
                     InteractivePreviewVideoLayer(
                         previewVM: previewVM,
@@ -201,7 +201,8 @@ struct MovieDetailView: View {
                     )
                     .frame(width: width, height: heroHeight)
                     .clipped()
-                    .transition(.opacity.animation(.easeIn(duration: 0.6)))
+                    .opacity(previewVM.isActuallyPlaying ? 1 : 0)
+                    .animation(.easeIn(duration: 0.6), value: previewVM.isActuallyPlaying)
                 }
 
                 // Overlay: loading or unavailable state (poster always visible)

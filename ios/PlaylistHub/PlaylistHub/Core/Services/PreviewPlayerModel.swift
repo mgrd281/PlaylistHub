@@ -346,13 +346,23 @@ final class PreviewPlayerModel: ObservableObject {
         previewStartTime = fallbackOffset
     }
 
-    /// Start observing actual playback status (retained properly)
+    /// Start observing actual playback status (retained properly).
+    /// Once `isActuallyPlaying` becomes true, it stays true during transient
+    /// seek/buffer pauses to prevent poster flash. Only explicit stop resets it.
     private func setupPlaybackObserver() {
         playbackStatusObserver?.cancel()
         playbackStatusObserver = player.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
-                self?.isActuallyPlaying = status == .playing
+                guard let self else { return }
+                if status == .playing {
+                    self.isActuallyPlaying = true
+                } else if status == .paused, self.player.rate == 0 {
+                    // Only mark not-playing on explicit pause (rate == 0),
+                    // not during transient buffering/seeking
+                    self.isActuallyPlaying = false
+                }
+                // .waitingToPlayAtSpecifiedRate → keep isActuallyPlaying as-is
             }
     }
 
