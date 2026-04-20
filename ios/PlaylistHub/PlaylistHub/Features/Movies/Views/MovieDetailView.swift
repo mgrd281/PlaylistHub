@@ -29,6 +29,10 @@ struct MovieDetailView: View {
     // Ken Burns animation for artwork fallback
     @State private var kenBurnsActive = false
 
+    // Real metadata
+    @State private var mediaDuration: String?
+    @State private var seriesInfo: String?
+
     // Parse metadata
     private var genre: String? {
         guard let group = item.groupTitle else { return nil }
@@ -53,9 +57,12 @@ struct MovieDetailView: View {
 
     private var metadataPills: [String] {
         var pills: [String] = []
+        if let year = item.parsedYear { pills.append(year) }
         if let cat = categoryTag { pills.append(cat) }
         pills.append(typeLabel)
         if let genre { pills.append(genre) }
+        if let mediaDuration { pills.append(mediaDuration) }
+        if let seriesInfo { pills.append(seriesInfo) }
         return pills
     }
 
@@ -88,6 +95,7 @@ struct MovieDetailView: View {
             await loadRelated()
             loadSavedRating()
             previewVM.startPreview(for: item)
+            await loadMediaMetadata()
         }
         .onDisappear {
             previewVM.stop()
@@ -575,6 +583,83 @@ struct MovieDetailView: View {
             relatedItems = []
         }
         isLoadingRelated = false
+    }
+
+    private func loadMediaMetadata() async {
+        if item.contentType == .movie {
+            // Extract duration from player once preview is ready
+            mediaDuration = await extractDurationFromPreview()
+        } else if item.contentType == .series {
+            // Fetch season/episode counts
+            do {
+                let response = try await DataService.shared.fetchSeriesEpisodes(streamUrl: item.streamUrl)
+                let seasonCount = response.seasons.count
+                let episodeCount = response.seasons.reduce(0) { $0 + $1.episodes.count }
+                if seasonCount > 0 {
+                    let parts = [
+                        seasonCount == 1 ? "1 Season" : "\(seasonCount) Seasons",
+                        "\(episodeCount) Ep."
+                    ]
+                    seriesInfo = parts.joined(separator: " · ")
+                }
+                // Try to get episode runtime from first episode's info
+                if mediaDuration == nil {
+                    let firstEp = response.seasons
+                        .sorted(by: { $0.season < $1.season })
+                        .first?.episodes
+                        .sorted(by: { $0.episode < $1.episode })
+                        .first
+                    if let dur = firstEp?.info?.duration, !dur.isEmpty {
+                        mediaDuration = formatEpisodeDuration(dur)
+                    }
+                }
+            } catch {
+                // Gracefully hidden
+            }
+        }
+    }
+
+    private func extractDurationFromPreview() async -> String? {
+        // Wait up to 8s for the player item to have a valid duration
+        for _ in 0..<40 {
+            if let playerItem = previewVM.player.currentItem {
+                let dur = playerItem.duration
+                if dur.isValid && !dur.isIndefinite {
+                    let total = Int(CMTimeGetSeconds(dur))
+                    if total > 60 {
+                        let h = total / 3600
+                        let m = (total % 3600) / 60
+                        if h > 0 {
+                            return "\(h)h \(m)m"
+                        } else {
+                            return "\(m) min"
+                        }
+                    }
+                }
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        return nil
+    }
+
+    /// Parse Xtream episode duration (can be "HH:MM:SS", minutes string, etc.)
+    private func formatEpisodeDuration(_ raw: String) -> String? {
+        // "01:23:45" format
+        let parts = raw.split(separator: ":")
+        if parts.count == 3,
+           let h = Int(parts[0]), let m = Int(parts[1]) {
+            if h > 0 { return "\(h)h \(m)m/ep" }
+            if m > 0 { return "\(m) min/ep" }
+        }
+        // "00:45:00" format
+        if parts.count == 3, let m = Int(parts[1]), m > 0 {
+            return "\(m) min/ep"
+        }
+        // Plain minutes
+        if let mins = Int(raw.trimmingCharacters(in: .whitespaces)), mins > 0 {
+            return "\(mins) min/ep"
+        }
+        return nil
     }
 }
 

@@ -170,6 +170,25 @@ struct PlaylistItem: Codable, Identifiable {
             options: .regularExpression
         )
     }
+
+    /// Extract a 4-digit year from the item name (e.g. "Movie (2024)" → "2024")
+    var parsedYear: String? {
+        // Match (2024), [2024], or trailing 2024
+        let patterns = [
+            #"\((\d{4})\)"#,   // (2024)
+            #"\[(\d{4})\]"#,   // [2024]
+            #"\b((?:19|20)\d{2})\s*$"#  // trailing year
+        ]
+        for pattern in patterns {
+            if let match = name.range(of: pattern, options: .regularExpression) {
+                let sub = name[match]
+                let digits = sub.filter(\.isNumber)
+                let year = Int(digits) ?? 0
+                if year >= 1920 && year <= 2030 { return digits }
+            }
+        }
+        return nil
+    }
 }
 
 struct Category: Codable, Identifiable {
