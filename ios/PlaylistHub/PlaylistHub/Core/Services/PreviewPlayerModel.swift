@@ -195,95 +195,97 @@ final class PreviewPlayerModel: ObservableObject {
         return ordered
     }
 
-    /// Fast URL probing: race all URLs in parallel — first to play wins
+    /// Fast URL probing: race all URLs in parallel OFF the main thread — first to play wins
     private func tryURLsFast(_ urls: [URL]) async -> Bool {
         guard !urls.isEmpty else { return false }
 
-        // Race all URLs in parallel — first readyToPlay wins
-        return await withCheckedContinuation { continuation in
-            var resolved = false
-            var activePlayers: [AVPlayer] = []
-            var observers: [AnyCancellable] = []
+        // Run the heavy AVPlayer creation + racing on a background thread
+        // to avoid blocking the UI. Only the winning item is brought to main.
+        let winningItem: AVPlayerItem? = await Task.detached(priority: .userInitiated) {
+            await withCheckedContinuation { continuation in
+                var resolved = false
+                var racers: [AVPlayer] = []
+                var observers: [AnyCancellable] = []
+                let lock = NSLock()
 
-            let timeoutTimer = DispatchSource.makeTimerSource(queue: .main)
-            timeoutTimer.schedule(deadline: .now() + Self.loadTimeout)
-            timeoutTimer.setEventHandler {
-                guard !resolved else { return }
-                resolved = true
-                timeoutTimer.cancel()
-                // Clean up all racers
-                for p in activePlayers where p !== self.player {
-                    p.pause()
-                    p.replaceCurrentItem(with: nil)
+                let timeoutTimer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+                timeoutTimer.schedule(deadline: .now() + PreviewPlayerModel.loadTimeout)
+                timeoutTimer.setEventHandler {
+                    lock.lock()
+                    guard !resolved else { lock.unlock(); return }
+                    resolved = true
+                    lock.unlock()
+                    timeoutTimer.cancel()
+                    for p in racers { p.pause(); p.replaceCurrentItem(with: nil) }
+                    observers.removeAll()
+                    continuation.resume(returning: nil)
                 }
-                observers.removeAll()
-                continuation.resume(returning: false)
-            }
-            timeoutTimer.resume()
+                timeoutTimer.resume()
 
-            for url in urls {
-                guard !resolved else { break }
+                for url in urls {
+                    lock.lock()
+                    guard !resolved else { lock.unlock(); break }
+                    lock.unlock()
 
-                let asset = AVURLAsset(url: url, options: [
-                    "AVURLAssetHTTPHeaderFieldsKey": [
-                        "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
-                    ]
-                ])
+                    let asset = AVURLAsset(url: url, options: [
+                        "AVURLAssetHTTPHeaderFieldsKey": [
+                            "User-Agent": "VLC/3.0.21 LibVLC/3.0.21"
+                        ]
+                    ])
 
-                let playerItem = AVPlayerItem(asset: asset)
-                playerItem.preferredForwardBufferDuration = 0
-                playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+                    let playerItem = AVPlayerItem(asset: asset)
+                    playerItem.preferredForwardBufferDuration = 0
+                    playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
 
-                // Use the main player for the first URL, throwaway players for the rest
-                let racer: AVPlayer
-                if activePlayers.isEmpty {
-                    racer = self.player
-                } else {
-                    racer = AVPlayer()
-                }
-                racer.automaticallyWaitsToMinimizeStalling = false
-                racer.replaceCurrentItem(with: playerItem)
-                racer.isMuted = true
-                racer.playImmediately(atRate: 1.0)
-                activePlayers.append(racer)
+                    let racer = AVPlayer()
+                    racer.automaticallyWaitsToMinimizeStalling = false
+                    racer.replaceCurrentItem(with: playerItem)
+                    racer.isMuted = true
+                    racer.playImmediately(atRate: 1.0)
+                    racers.append(racer)
 
-                let observer = racer.publisher(for: \.timeControlStatus)
-                    .filter { $0 == .playing }
-                    .first()
-                    .receive(on: DispatchQueue.main)
-                    .sink { [weak self] _ in
-                        guard !resolved, let self else { return }
-                        resolved = true
-                        timeoutTimer.cancel()
+                    let observer = racer.publisher(for: \.timeControlStatus)
+                        .filter { $0 == .playing }
+                        .first()
+                        .sink { _ in
+                            lock.lock()
+                            guard !resolved else { lock.unlock(); return }
+                            resolved = true
+                            lock.unlock()
+                            timeoutTimer.cancel()
 
-                        // If a non-main player won, steal its item
-                        if racer !== self.player {
+                            // Detach winning item from racer
                             racer.pause()
-                            let winningItem = racer.currentItem
+                            let item = racer.currentItem
                             racer.replaceCurrentItem(with: nil)
-                            self.player.automaticallyWaitsToMinimizeStalling = false
-                            self.player.replaceCurrentItem(with: winningItem)
-                            self.player.isMuted = true
-                            self.player.playImmediately(atRate: 1.0)
-                        }
-                        self.previewStartTime = .zero
 
-                        // Clean up losers
-                        for p in activePlayers where p !== self.player && p !== racer {
-                            p.pause()
-                            p.replaceCurrentItem(with: nil)
+                            // Clean up losers
+                            for p in racers where p !== racer {
+                                p.pause()
+                                p.replaceCurrentItem(with: nil)
+                            }
+                            observers.removeAll()
+                            continuation.resume(returning: item)
                         }
-                        observers.removeAll()
-
-                        if !self.isTrailerSource {
-                            Task { [weak self] in await self?.seekToStrongScene() }
-                        }
-                        self.setupClipLoop()
-                        continuation.resume(returning: true)
-                    }
-                observers.append(observer)
+                    observers.append(observer)
+                }
             }
+        }.value
+
+        // Back on MainActor — assign the winning item to the UI player
+        guard let winningItem else { return false }
+
+        player.automaticallyWaitsToMinimizeStalling = false
+        player.replaceCurrentItem(with: winningItem)
+        player.isMuted = true
+        player.playImmediately(atRate: 1.0)
+        previewStartTime = .zero
+
+        if !isTrailerSource {
+            Task { [weak self] in await self?.seekToStrongScene() }
         }
+        setupClipLoop()
+        return true
     }
 
     /// Compute smart seek offset based on content type and total duration.
