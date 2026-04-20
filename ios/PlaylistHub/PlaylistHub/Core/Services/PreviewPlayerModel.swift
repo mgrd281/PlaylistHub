@@ -227,24 +227,26 @@ final class PreviewPlayerModel: ObservableObject {
             forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
-            guard let self else { return }
-            let current = CMTimeGetSeconds(time)
-            let startSeconds = CMTimeGetSeconds(self.previewStartTime)
-            let clipEnd = startSeconds + Self.clipDuration
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let current = CMTimeGetSeconds(time)
+                let startSeconds = CMTimeGetSeconds(self.previewStartTime)
+                let clipEnd = startSeconds + Self.clipDuration
 
-            // Update progress for red bar
-            let elapsed = current - startSeconds
-            self.previewProgress = min(max(elapsed / Self.clipDuration, 0), 1)
+                // Update progress for red bar
+                let elapsed = current - startSeconds
+                self.previewProgress = min(max(elapsed / Self.clipDuration, 0), 1)
 
-            // Loop back when clip ends or near file end
-            let item = self.player.currentItem
-            let dur = item?.duration ?? .indefinite
-            let fileDuration = dur.isValid && !dur.isIndefinite ? CMTimeGetSeconds(dur) : Double.greatestFiniteMagnitude
+                // Loop back when clip ends or near file end
+                let item = self.player.currentItem
+                let dur = item?.duration ?? .indefinite
+                let fileDuration = dur.isValid && !dur.isIndefinite ? CMTimeGetSeconds(dur) : Double.greatestFiniteMagnitude
 
-            if current >= clipEnd || current >= fileDuration - 0.5 {
-                self.previewProgress = 0
-                self.player.seek(to: self.previewStartTime, toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 1, preferredTimescale: 600))
-                self.player.play()
+                if current >= clipEnd || current >= fileDuration - 0.5 {
+                    self.previewProgress = 0
+                    self.player.seek(to: self.previewStartTime, toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 1, preferredTimescale: 600))
+                    self.player.play()
+                }
             }
         }
     }
