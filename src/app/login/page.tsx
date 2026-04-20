@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { ListMusic, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import FloatingPostersLayout from '@/components/floating-posters';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -44,8 +45,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-muted/30 px-4">
-      <Card className="w-full max-w-md border-0 shadow-xl">
+    <FloatingPostersLayout>
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <Card className="w-full max-w-md border-0 bg-white/80 shadow-xl backdrop-blur-xl">
         <CardHeader className="space-y-4 pb-6 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
             <ListMusic className="h-7 w-7 text-primary-foreground" />
@@ -104,5 +106,6 @@ export default function LoginPage() {
         </CardFooter>
       </Card>
     </div>
+    </FloatingPostersLayout>
   );
 }
