@@ -21,7 +21,8 @@ struct SettingsView: View {
 
                     // ── Accent / Theme ──
                     settingsSection("Appearance") {
-                        VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            // Header
                             HStack(spacing: 10) {
                                 Image(systemName: "paintpalette.fill")
                                     .font(.system(size: 14))
@@ -30,24 +31,25 @@ struct SettingsView: View {
                                 Text("Accent Color")
                                     .font(.subheadline.weight(.medium))
                                 Spacer()
-                                Text(themeManager.accent.displayName)
+                                Text(themeManager.colorLabel)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .contentTransition(.numericText())
                             }
 
-                            // Color picker grid
+                            // Preset palette
                             HStack(spacing: 0) {
-                                ForEach(AccentTheme.allCases) { theme in
+                                ForEach(AccentPreset.allCases) { preset in
                                     Button {
                                         withAnimation(.easeInOut(duration: 0.2)) {
-                                            themeManager.accent = theme
+                                            themeManager.selectPreset(preset)
                                         }
                                     } label: {
                                         ZStack {
                                             Circle()
-                                                .fill(theme.color)
+                                                .fill(preset.color)
                                                 .frame(width: 28, height: 28)
-                                            if themeManager.accent == theme {
+                                            if themeManager.matchingPreset() == preset {
                                                 Circle()
                                                     .strokeBorder(.white, lineWidth: 2.5)
                                                     .frame(width: 28, height: 28)
@@ -60,6 +62,95 @@ struct SettingsView: View {
                                     .buttonStyle(.plain)
                                     .frame(maxWidth: .infinity)
                                 }
+                            }
+
+                            // Custom color picker
+                            HStack(spacing: 12) {
+                                ColorPicker("", selection: $themeManager.accentColor, supportsOpacity: false)
+                                    .labelsHidden()
+                                    .frame(width: 34, height: 34)
+                                    .scaleEffect(1.15)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Custom Color")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    Text("Tap the circle to pick any color")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if !themeManager.isDefault {
+                                    Button {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            themeManager.resetToDefault()
+                                        }
+                                    } label: {
+                                        Text("Reset")
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(accent)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(accent.opacity(0.12))
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+
+                            // Recent custom colors
+                            if !themeManager.recentHexColors.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Recent")
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 10) {
+                                        ForEach(themeManager.recentHexColors, id: \.self) { hex in
+                                            if let color = Color(hex: hex) {
+                                                Button {
+                                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                                        themeManager.accentColor = color
+                                                    }
+                                                } label: {
+                                                    ZStack {
+                                                        Circle()
+                                                            .fill(color)
+                                                            .frame(width: 24, height: 24)
+                                                        if themeManager.accentColor.toHex() == hex {
+                                                            Circle()
+                                                                .strokeBorder(.white, lineWidth: 2)
+                                                                .frame(width: 24, height: 24)
+                                                        }
+                                                    }
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                        Spacer()
+                                    }
+                                }
+                            }
+
+                            // Live preview swatch
+                            HStack(spacing: 10) {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(accent)
+                                    .frame(height: 36)
+                                    .overlay {
+                                        Text("Preview")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.white)
+                                    }
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(accent.opacity(0.15))
+                                    .frame(height: 36)
+                                    .overlay {
+                                        Text("Subtle")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(accent)
+                                    }
                             }
                         }
                         .padding(16)
