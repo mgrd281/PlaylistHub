@@ -13,5 +13,5 @@ export default async function Home() {
     // Supabase not configured or connection failed
   }
 
-  redirect('/manage');
+  redirect('/login');
 }

@@ -8,7 +8,7 @@ export default async function PlaylistsPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) redirect('/admin-portal');
+  if (!user) redirect('/login');
 
   const { data: playlists } = await supabase
     .from('playlists')
