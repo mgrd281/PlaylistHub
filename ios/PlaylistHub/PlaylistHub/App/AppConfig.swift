@@ -1,8 +1,8 @@
 import Foundation
 
 enum AppConfig {
-    static let supabaseURL = URL(string: "https://sawhczffdvrbzrhylfvf.supabase.co")!
-    static let supabaseAnonKey = "sb_publishable_2wChwzqqtK7Pv18B6aD0SA_Gh2a6aPX"
+    static let supabaseURL = URL(string: "https://smmpcnyvuumjxzzboyoz.supabase.co")!
+    static let supabaseAnonKey = "sb_publishable_4ZUNZ6yMQpDH_aKsswKpQA_ILqCP-OH"
 
     // The web app's production URL — used for stream proxy and series episodes
     static let webAppBaseURL = URL(string: "https://playlist-hub-kappa.vercel.app")!
