@@ -203,10 +203,26 @@ export async function POST(
     try {
       let content: string;
 
-      // Check if content was sent from client (client-side fetch)
-      const body = await request.json().catch(() => null);
-      if (body?.content) {
-        content = body.content;
+      // Content may arrive as gzip-compressed bytes (large uploads that would
+      // otherwise exceed the request body limit) or as plain JSON.
+      let clientContent: string | null = null;
+      if (request.headers.get('x-content-encoding') === 'gzip') {
+        try {
+          const { gunzipSync } = await import('zlib');
+          const compressed = Buffer.from(await request.arrayBuffer());
+          clientContent = gunzipSync(compressed).toString('utf-8');
+        } catch {
+          clientContent = null;
+        }
+      } else {
+        const body = await request.json().catch(() => null);
+        if (body && typeof body.content === 'string') {
+          clientContent = body.content;
+        }
+      }
+
+      if (clientContent) {
+        content = clientContent;
       } else {
         // Try multiple fetch strategies
         let fetchError = '';
@@ -368,8 +384,8 @@ export async function POST(
           metadata: item.metadata,
         }));
 
-        for (let i = 0; i < itemRows.length; i += 500) {
-          const batch = itemRows.slice(i, i + 500);
+        for (let i = 0; i < itemRows.length; i += 2000) {
+          const batch = itemRows.slice(i, i + 2000);
           await supabase.from('playlist_items').insert(batch);
         }
       }

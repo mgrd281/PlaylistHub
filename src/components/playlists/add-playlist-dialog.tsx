@@ -15,6 +15,18 @@ import {
 import { Plus, Loader2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Gzip-compress text in the browser so large playlists fit within the
+// server's request body limit. Returns null if compression is unavailable.
+async function gzipText(text: string): Promise<Blob | null> {
+  try {
+    if (typeof CompressionStream === 'undefined') return null;
+    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+    return await new Response(stream).blob();
+  } catch {
+    return null;
+  }
+}
+
 export function AddPlaylistDialog() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -78,10 +90,13 @@ export function AddPlaylistDialog() {
             }
           }
 
+          const gz = content ? await gzipText(content) : null;
           const scanRes = await fetch(`/api/playlists/${playlist.id}/scan`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(content ? { content } : {}),
+            headers: gz
+              ? { 'Content-Type': 'application/octet-stream', 'X-Content-Encoding': 'gzip' }
+              : { 'Content-Type': 'application/json' },
+            body: gz ?? JSON.stringify(content ? { content } : {}),
           });
 
           if (scanRes.ok) {
