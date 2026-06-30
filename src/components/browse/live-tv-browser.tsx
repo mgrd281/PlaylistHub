@@ -636,10 +636,13 @@ export function LiveTVBrowser() {
     const cached = liveTvPlaylistCache;
     if (cached) {
       setPlaylists(cached.playlists);
-      // Restore previously active playlist or auto-select single
-      const restored = liveTvActivePlaylistId
-        ? cached.playlists.find((p) => p.id === liveTvActivePlaylistId) ?? null
-        : cached.playlists.length === 1 ? cached.playlists[0] : null;
+      // Auto-select when only one channel playlist exists; otherwise restore
+      // the previously active one.
+      const restored = cached.playlists.length === 1
+        ? cached.playlists[0]
+        : liveTvActivePlaylistId
+          ? cached.playlists.find((p) => p.id === liveTvActivePlaylistId) ?? null
+          : null;
       if (restored) setActivePlaylist(restored);
       setPlaylistsLoading(false);
       if (Date.now() - cached.ts < 5 * 60 * 1000) return;
@@ -661,10 +664,19 @@ export function LiveTVBrowser() {
         }
         const data = await res.json();
         if (cancelled) return;
-        const list: BrowsePlaylist[] = data.playlists || [];
+        const all: BrowsePlaylist[] = data.playlists || [];
+        // Live TV only browses playlists that actually contain channels —
+        // movie/series-only playlists (channels_count 0) are excluded so the
+        // view doesn't default to an empty playlist.
+        const list = all.filter((p) => (p.channels_count || 0) > 0);
         setPlaylists(list);
         liveTvPlaylistCache = { playlists: list, ts: Date.now() };
-        if (list.length === 1) setActivePlaylist(list[0]);
+        if (list.length === 1) {
+          setActivePlaylist(list[0]);
+        } else if (liveTvActivePlaylistId) {
+          const restored = list.find((p) => p.id === liveTvActivePlaylistId);
+          if (restored) setActivePlaylist(restored);
+        }
       } catch {
         if (!cancelled) setPlaylistsError('Network error loading playlists.');
       }
