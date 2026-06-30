@@ -10,17 +10,12 @@ struct PlaylistHubApp: App {
     @StateObject private var remoteConfig = RemoteConfigService.shared
     @Environment(\.scenePhase) private var scenePhase
 
-    init() {
-        // Configure audio session for media playback — required so audio works
-        // even when the physical mute switch is on (standard for video/streaming apps)
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, options: [])
-            try session.setActive(true)
-        } catch {
-            print("[Audio] Failed to configure audio session: \(error)")
-        }
-    }
+    // NOTE: The audio session is intentionally NOT configured in init().
+    // Activating AVAudioSession during App init runs an early XPC call to
+    // mediaserverd before the app has finished launching, which can abort on
+    // some iOS versions (_xpc_serializer_pack → unrecognized selector). The
+    // session is configured/activated in the scenePhase `.active` handler
+    // below, which fires immediately after launch and before any playback.
 
     var body: some Scene {
         WindowGroup {
