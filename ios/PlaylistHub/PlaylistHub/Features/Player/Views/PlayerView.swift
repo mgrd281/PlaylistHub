@@ -85,6 +85,27 @@ struct PlayerView: View {
                 .padding(32)
             }
 
+            // 6b) Always-available close button while loading or erroring, so
+            //     the user is never stuck on a spinner with no way back.
+            if !vm.hasFirstFrame || vm.error != nil {
+                VStack {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 40, height: 40)
+                                .background(.black.opacity(0.45), in: Circle())
+                        }
+                        .padding(.leading, 16)
+                        .padding(.top, 12)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .transition(.opacity)
+            }
+
             // 7) Controls overlay (hidden when locked)
             if showControls && !isLocked {
                 controlsOverlay
